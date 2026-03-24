@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using MechanicaLauncher.Core.Game;
+using MechanicaLauncher.Core.Instances;
 using MechanicaLauncher.Core.Models;
 using MechanicaLauncher.Core.Profiles;
 
@@ -10,14 +11,15 @@ namespace MechanicaLauncher.Views;
 public sealed partial class HomePage : Page
 {
     private readonly LauncherSettings _settings = LauncherSettings.Load();
-    private readonly VersionManager _versionManager;
+    private readonly InstanceManager _im = new();
+    private VersionManager _vm = null!;
     private VersionManifest? _manifest;
     private Process? _gameProcess;
 
     public HomePage()
     {
         this.InitializeComponent();
-        _versionManager = new VersionManager(_settings.GameDir);
+        _vm = new VersionManager(_im.SharedDir);
         _ = LoadAsync();
     }
 
@@ -26,136 +28,128 @@ public sealed partial class HomePage : Page
     private async Task LoadAsync()
     {
         var allJava = JavaFinder.FindAllJava();
-        JavaVersionText.Text = allJava.Count > 0
-            ? $"Java {allJava.Max(j => j.MajorVersion)}"
-            : "Not found";
-
-        var modsDir = Path.Combine(_versionManager.GameDir, "mods");
-        if (Directory.Exists(modsDir))
-            ModCountText.Text = $"{Directory.GetFiles(modsDir, "*.jar").Length} active";
-
+        JavaVersionText.Text = allJava.Count > 0 ? $"Java {allJava.Max(j => j.MajorVersion)}" : "Not found";
         AccountText.Text = _settings.Username;
+
+        var instances = _im.GetAllInstances();
+        ProfileSelector.Items.Clear();
+
+        foreach (var inst in instances)
+        {
+            var label = inst.Loader != LoaderType.None
+                ? $"{inst.Name}  ·  {inst.McVersion}  ·  {inst.Loader}"
+                : $"{inst.Name}  ·  {inst.McVersion}";
+            ProfileSelector.Items.Add(new ComboBoxItem { Content = label, Tag = inst.Id });
+        }
+
+        if (ProfileSelector.Items.Count > 0)
+        {
+            var selectedIdx = 0;
+            if (_settings.SelectedInstanceId != null)
+            {
+                for (int i = 0; i < ProfileSelector.Items.Count; i++)
+                {
+                    if ((ProfileSelector.Items[i] as ComboBoxItem)?.Tag?.ToString() == _settings.SelectedInstanceId)
+                    { selectedIdx = i; break; }
+                }
+            }
+            ProfileSelector.SelectedIndex = selectedIdx;
+        }
+
+        var selected = GetSelectedInstance();
+        if (selected != null)
+        {
+            var modsDir = Path.Combine(_im.GetGameDir(selected.Id), "mods");
+            ModCountText.Text = Directory.Exists(modsDir) ? $"{Directory.GetFiles(modsDir, "*.jar").Length} active" : "0 active";
+        }
 
         try
         {
-            _manifest = await _versionManager.GetManifestAsync();
-            ProfileSelector.Items.Clear();
-
-            foreach (var installed in _versionManager.GetInstalledVersions().Take(5))
-                ProfileSelector.Items.Add(new ComboBoxItem { Content = installed, Tag = installed });
-
-            if (_manifest.Latest.Release is { } latest)
-                ProfileSelector.Items.Add(new ComboBoxItem { Content = $"{latest} (download)", Tag = latest });
-
-            if (ProfileSelector.Items.Count > 0)
-                ProfileSelector.SelectedIndex = 0;
-
-            NotificationBar.Message = $"Latest: {_manifest.Latest.Release}. {_versionManager.GetInstalledVersions().Count} installed.";
+            _manifest = await _vm.GetManifestAsync();
+            NotificationBar.Message = instances.Count > 0
+                ? $"{instances.Count} instance(s). Latest MC: {_manifest.Latest.Release}"
+                : "No instances. Go to Instances to create one.";
         }
         catch (Exception ex)
         {
             NotificationBar.Severity = InfoBarSeverity.Warning;
-            NotificationBar.Message = $"Offline mode — {ex.Message}";
+            NotificationBar.Message = $"Offline — {ex.Message}";
         }
+    }
+
+    private GameInstance? GetSelectedInstance()
+    {
+        var id = (ProfileSelector.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+        return id != null ? _im.GetInstance(id) : null;
     }
 
     private void UpdatePlayButton()
     {
-        if (IsGameRunning)
+        PlayButton.IsEnabled = !IsGameRunning;
+        PlayButton.Content = new StackPanel
         {
-            PlayButton.IsEnabled = false;
-            PlayButton.Content = new StackPanel
+            Orientation = Orientation.Horizontal,
+            Spacing = 12,
+            Children =
             {
-                Orientation = Orientation.Horizontal, Spacing = 12,
-                Children =
-                {
-                    new FontIcon { Glyph = "\uE769", FontSize = 22, Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White) },
-                    new TextBlock { Text = "RUNNING", FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }
-                }
-            };
-        }
-        else
-        {
-            PlayButton.IsEnabled = true;
-            PlayButton.Content = new StackPanel
-            {
-                Orientation = Orientation.Horizontal, Spacing = 12,
-                Children =
-                {
-                    new FontIcon { Glyph = "\uE768", FontSize = 22, Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White) },
-                    new TextBlock { Text = "P L A Y", FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }
-                }
-            };
-        }
+                new FontIcon { Glyph = IsGameRunning ? "\uE769" : "\uE768", FontSize = 22, Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White) },
+                new TextBlock { Text = IsGameRunning ? "RUNNING" : "P L A Y", FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }
+            }
+        };
     }
 
     private async void PlayButton_Click(object sender, RoutedEventArgs e)
     {
-        if (IsGameRunning)
-        {
-            ShowNotification(InfoBarSeverity.Warning, "Game is already running.");
-            return;
-        }
+        if (IsGameRunning) { ShowNotification(InfoBarSeverity.Warning, "Game is already running."); return; }
 
-        var selectedItem = ProfileSelector.SelectedItem as ComboBoxItem;
-        var versionId = selectedItem?.Tag?.ToString();
-        if (string.IsNullOrEmpty(versionId) || _manifest == null)
-        {
-            ShowNotification(InfoBarSeverity.Warning, "Select a version first.");
-            return;
-        }
+        var instance = GetSelectedInstance();
+        if (instance == null) { ShowNotification(InfoBarSeverity.Warning, "Select an instance first."); return; }
+
+        _settings.SelectedInstanceId = instance.Id;
+        _settings.Save();
 
         PlayButton.IsEnabled = false;
         ProgressPanel.Visibility = Visibility.Visible;
 
         try
         {
-            var entry = _manifest.Versions.FirstOrDefault(v => v.Id == versionId);
-            if (entry == null)
-            {
-                ShowNotification(InfoBarSeverity.Error, $"Version {versionId} not found.");
-                return;
-            }
+            var gameDir = _im.GetGameDir(instance.Id);
+            var versionId = instance.GetEffectiveVersionId();
 
-            ProgressText.Text = "Loading version info...";
+            ProgressText.Text = "Loading version...";
             DownloadProgress.IsIndeterminate = true;
 
-            var meta = await _versionManager.GetVersionMetaAsync(entry);
+            if (_manifest == null) _manifest = await _vm.GetManifestAsync();
+
+            var vanillaEntry = _manifest.Versions.FirstOrDefault(v => v.Id == instance.McVersion);
+            if (vanillaEntry != null)
+                await _vm.GetVersionMetaAsync(vanillaEntry);
+
+            var meta = await _vm.GetMergedMetaAsync(versionId, gameDir);
 
             var javaComponent = meta.JavaVersion?.Component ?? "java-runtime-delta";
-            var javaPath = !string.IsNullOrEmpty(_settings.JavaPath) && File.Exists(_settings.JavaPath)
-                ? _settings.JavaPath
+            var javaPath = !string.IsNullOrEmpty(instance.JavaPath) && File.Exists(instance.JavaPath)
+                ? instance.JavaPath
                 : JavaFinder.FindJava(javaComponent);
 
             if (javaPath == null)
             {
                 ProgressText.Text = $"Downloading Java ({javaComponent})...";
-                javaPath = await JavaFinder.DownloadJavaAsync(javaComponent, _versionManager.GameDir,
+                javaPath = await JavaFinder.DownloadJavaAsync(javaComponent, _im.SharedDir,
                     status => DispatcherQueue.TryEnqueue(() => ProgressText.Text = status));
-
-                if (javaPath == null)
-                {
-                    ShowNotification(InfoBarSeverity.Error, "Java not found. Set path in Settings.");
-                    return;
-                }
+                if (javaPath == null) { ShowNotification(InfoBarSeverity.Error, "Java not found."); return; }
             }
 
-            if (!_versionManager.IsVersionInstalled(versionId))
+            if (!_vm.IsVersionInstalled(versionId, gameDir))
             {
-                ProgressText.Text = "Downloading...";
-                var downloader = new AssetDownloader(_versionManager.GameDir);
+                ProgressText.Text = "Downloading game...";
+                var downloader = new AssetDownloader(_im.SharedDir, gameDir);
                 downloader.ProgressChanged += (status, progress) =>
-                {
                     DispatcherQueue.TryEnqueue(() =>
                     {
                         ProgressText.Text = status;
-                        if (progress >= 0)
-                        {
-                            DownloadProgress.IsIndeterminate = false;
-                            DownloadProgress.Value = progress;
-                        }
+                        if (progress >= 0) { DownloadProgress.IsIndeterminate = false; DownloadProgress.Value = progress; }
                     });
-                };
                 await Task.Run(() => downloader.DownloadVersionAsync(meta));
             }
 
@@ -163,30 +157,28 @@ public sealed partial class HomePage : Page
             DownloadProgress.IsIndeterminate = false;
             DownloadProgress.Value = 95;
 
-            var launcher = new GameLauncher(_versionManager.GameDir);
+            var launcher = new GameLauncher(gameDir, _im.SharedDir);
             _gameProcess = launcher.Launch(meta, javaPath, _settings.Username,
                 uuid: _settings.Uuid, accessToken: _settings.AccessToken,
-                minMem: _settings.MinMemoryMb, maxMem: _settings.MaxMemoryMb,
-                extraJvmArgs: _settings.JvmArgs,
-                windowWidth: _settings.WindowWidth, windowHeight: _settings.WindowHeight);
+                minMem: instance.MinMemoryMb, maxMem: instance.MaxMemoryMb,
+                extraJvmArgs: instance.JvmArgs,
+                windowWidth: instance.WindowWidth, windowHeight: instance.WindowHeight);
 
+            instance.LastPlayed = DateTime.UtcNow;
+            _im.SaveInstance(instance);
             UpdatePlayButton();
 
             _ = Task.Run(async () =>
             {
                 var stderr = await _gameProcess.StandardError.ReadToEndAsync();
                 await _gameProcess.WaitForExitAsync();
-                var exitCode = _gameProcess.ExitCode;
+                var exit = _gameProcess.ExitCode;
                 _gameProcess = null;
-
                 DispatcherQueue.TryEnqueue(() =>
                 {
                     UpdatePlayButton();
-                    if (exitCode != 0)
-                        ShowNotification(InfoBarSeverity.Error,
-                            $"Game crashed (exit {exitCode}): {stderr[..Math.Min(300, stderr.Length)]}");
-                    else
-                        ShowNotification(InfoBarSeverity.Success, "Game closed.");
+                    ShowNotification(exit != 0 ? InfoBarSeverity.Error : InfoBarSeverity.Success,
+                        exit != 0 ? $"Crashed (exit {exit}): {stderr[..Math.Min(300, stderr.Length)]}" : "Game closed.");
                 });
             });
 
@@ -195,13 +187,11 @@ public sealed partial class HomePage : Page
         }
         catch (Exception ex)
         {
-            ShowNotification(InfoBarSeverity.Error, $"Error: {ex.Message}");
+            ShowNotification(InfoBarSeverity.Error, ex.Message);
         }
         finally
         {
-            if (!IsGameRunning)
-                PlayButton.IsEnabled = true;
-
+            if (!IsGameRunning) PlayButton.IsEnabled = true;
             await Task.Delay(3000);
             ProgressPanel.Visibility = Visibility.Collapsed;
             DownloadProgress.Value = 0;

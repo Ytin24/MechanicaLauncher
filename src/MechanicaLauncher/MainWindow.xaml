@@ -22,7 +22,7 @@
                         <FontIcon Glyph="&#xE80F;" FontSize="16" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Versions" Tag="Versions">
+                <NavigationViewItem Content="Instances" Tag="Instances">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE74C;" FontSize="16" />
                     </NavigationViewItem.Icon>

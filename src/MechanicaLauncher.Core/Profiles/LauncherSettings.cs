@@ -17,35 +17,14 @@ public sealed class LauncherSettings
     [JsonPropertyName("accessToken")]
     public string AccessToken { get; set; } = "0";
 
-    [JsonPropertyName("selectedVersion")]
-    public string SelectedVersion { get; set; } = "";
-
-    [JsonPropertyName("javaPath")]
-    public string? JavaPath { get; set; }
-
-    [JsonPropertyName("minMemoryMb")]
-    public int MinMemoryMb { get; set; } = 2048;
-
-    [JsonPropertyName("maxMemoryMb")]
-    public int MaxMemoryMb { get; set; } = 4096;
-
-    [JsonPropertyName("jvmArgs")]
-    public string JvmArgs { get; set; } = "";
-
-    [JsonPropertyName("gameDir")]
-    public string? GameDir { get; set; }
+    [JsonPropertyName("selectedInstanceId")]
+    public string? SelectedInstanceId { get; set; }
 
     [JsonPropertyName("closeOnLaunch")]
     public bool CloseOnLaunch { get; set; }
 
     [JsonPropertyName("showSnapshots")]
     public bool ShowSnapshots { get; set; }
-
-    [JsonPropertyName("windowWidth")]
-    public int WindowWidth { get; set; } = 1920;
-
-    [JsonPropertyName("windowHeight")]
-    public int WindowHeight { get; set; } = 1080;
 
     [JsonPropertyName("theme")]
     public string Theme { get; set; } = "Dark";

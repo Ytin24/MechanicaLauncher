@@ -6,11 +6,13 @@ namespace MechanicaLauncher.Core.Game;
 
 public sealed class GameLauncher
 {
-    private readonly string _gameDir;
+    private readonly string _instanceGameDir;
+    private readonly string _sharedDir;
 
-    public GameLauncher(string gameDir)
+    public GameLauncher(string instanceGameDir, string sharedDir)
     {
-        _gameDir = gameDir;
+        _instanceGameDir = instanceGameDir;
+        _sharedDir = sharedDir;
     }
 
     public Process Launch(VersionMeta meta, string javaPath, string username,
@@ -19,10 +21,11 @@ public sealed class GameLauncher
                           string? extraJvmArgs = null,
                           int windowWidth = 1920, int windowHeight = 1080)
     {
-        var versionDir = Path.Combine(_gameDir, "versions", meta.Id);
+        var versionDir = Path.Combine(_instanceGameDir, "versions", meta.Id);
         var jarPath = Path.Combine(versionDir, $"{meta.Id}.jar");
         var nativesDir = Path.Combine(versionDir, "natives");
-        var assetsDir = Path.Combine(_gameDir, "assets");
+        var assetsDir = Path.Combine(_sharedDir, "assets");
+        var librariesDir = Path.Combine(_sharedDir, "libraries");
         var assetIndex = meta.AssetIndex?.Id ?? meta.Assets;
 
         if (!File.Exists(jarPath))
@@ -30,11 +33,13 @@ public sealed class GameLauncher
 
         Directory.CreateDirectory(nativesDir);
 
+        var classpath = BuildClasspath(meta, jarPath, librariesDir);
+
         var vars = new Dictionary<string, string>
         {
             ["${auth_player_name}"] = username,
             ["${version_name}"] = meta.Id,
-            ["${game_directory}"] = _gameDir,
+            ["${game_directory}"] = _instanceGameDir,
             ["${assets_root}"] = assetsDir,
             ["${assets_index_name}"] = assetIndex,
             ["${auth_uuid}"] = uuid,
@@ -46,17 +51,14 @@ public sealed class GameLauncher
             ["${natives_directory}"] = nativesDir,
             ["${launcher_name}"] = "mechanica-launcher",
             ["${launcher_version}"] = "1.0.0",
-            ["${classpath}"] = BuildClasspath(meta, jarPath),
+            ["${classpath}"] = classpath,
             ["${resolution_width}"] = windowWidth.ToString(),
             ["${resolution_height}"] = windowHeight.ToString(),
-            ["${library_directory}"] = Path.Combine(_gameDir, "libraries"),
+            ["${library_directory}"] = librariesDir,
             ["${classpath_separator}"] = Path.PathSeparator.ToString(),
         };
 
-        var args = new List<string>();
-
-        args.Add($"-Xms{minMem}M");
-        args.Add($"-Xmx{maxMem}M");
+        var args = new List<string> { $"-Xms{minMem}M", $"-Xmx{maxMem}M" };
 
         if (meta.Arguments?.Jvm != null)
         {
@@ -65,11 +67,7 @@ public sealed class GameLauncher
         }
         else
         {
-            args.Add($"-Djava.library.path={nativesDir}");
-            args.Add($"-Dminecraft.launcher.brand=mechanica-launcher");
-            args.Add($"-Dminecraft.launcher.version=1.0.0");
-            args.Add("-cp");
-            args.Add(vars["${classpath}"]);
+            args.AddRange([$"-Djava.library.path={nativesDir}", "-cp", classpath]);
         }
 
         if (!string.IsNullOrWhiteSpace(extraJvmArgs))
@@ -85,7 +83,7 @@ public sealed class GameLauncher
         else
         {
             args.AddRange(["--username", username, "--version", meta.Id,
-                "--gameDir", _gameDir, "--assetsDir", assetsDir,
+                "--gameDir", _instanceGameDir, "--assetsDir", assetsDir,
                 "--assetIndex", assetIndex, "--uuid", uuid,
                 "--accessToken", accessToken,
                 "--userType", accessToken == "0" ? "legacy" : "msa",
@@ -95,26 +93,20 @@ public sealed class GameLauncher
         var psi = new ProcessStartInfo
         {
             FileName = javaPath,
-            WorkingDirectory = _gameDir,
+            WorkingDirectory = _instanceGameDir,
             UseShellExecute = false,
             RedirectStandardError = true,
             RedirectStandardOutput = true,
         };
-
         foreach (var arg in args)
             psi.ArgumentList.Add(arg);
 
-        var proc = Process.Start(psi);
-        if (proc == null)
-            throw new Exception("Failed to start Java process");
-
-        return proc;
+        return Process.Start(psi) ?? throw new Exception("Failed to start Java process");
     }
 
-    private List<string> ResolveArgs(List<JsonElement> jsonArgs, Dictionary<string, string> vars)
+    private static List<string> ResolveArgs(List<JsonElement> jsonArgs, Dictionary<string, string> vars)
     {
         var result = new List<string>();
-
         foreach (var el in jsonArgs)
         {
             if (el.ValueKind == JsonValueKind.String)
@@ -123,58 +115,38 @@ public sealed class GameLauncher
             }
             else if (el.ValueKind == JsonValueKind.Object)
             {
-                if (el.TryGetProperty("rules", out var rules))
-                {
-                    if (!EvaluateRules(rules)) continue;
-                }
-
+                if (el.TryGetProperty("rules", out var rules) && !EvaluateRules(rules))
+                    continue;
                 if (el.TryGetProperty("value", out var value))
                 {
                     if (value.ValueKind == JsonValueKind.String)
-                    {
                         result.Add(Substitute(value.GetString()!, vars));
-                    }
                     else if (value.ValueKind == JsonValueKind.Array)
-                    {
                         foreach (var item in value.EnumerateArray())
-                        {
                             if (item.ValueKind == JsonValueKind.String)
                                 result.Add(Substitute(item.GetString()!, vars));
-                        }
-                    }
                 }
             }
         }
-
         return result;
     }
 
     private static bool EvaluateRules(JsonElement rules)
     {
         bool anyAllow = false;
-
         foreach (var rule in rules.EnumerateArray())
         {
             var action = rule.GetProperty("action").GetString();
-
-            if (rule.TryGetProperty("features", out _))
-                continue;
-
+            if (rule.TryGetProperty("features", out _)) continue;
             if (rule.TryGetProperty("os", out var os))
             {
                 if (os.TryGetProperty("name", out var name))
                 {
-                    var osName = name.GetString();
-                    bool isMatch = osName == "windows";
-
-                    if (action == "allow" && isMatch) anyAllow = true;
-                    if (action == "allow" && !isMatch) continue;
-                    if (action == "disallow" && isMatch) return false;
+                    bool isWin = name.GetString() == "windows";
+                    if (action == "allow" && isWin) anyAllow = true;
+                    if (action == "disallow" && isWin) return false;
                 }
-                else
-                {
-                    if (action == "allow") anyAllow = true;
-                }
+                else if (action == "allow") anyAllow = true;
             }
             else
             {
@@ -182,7 +154,6 @@ public sealed class GameLauncher
                 if (action == "disallow") return false;
             }
         }
-
         return anyAllow;
     }
 
@@ -193,38 +164,32 @@ public sealed class GameLauncher
         return template;
     }
 
-    private string BuildClasspath(VersionMeta meta, string clientJar)
+    private static string BuildClasspath(VersionMeta meta, string clientJar, string librariesDir)
     {
         var paths = new List<string>();
-        var librariesDir = Path.Combine(_gameDir, "libraries");
-
         foreach (var lib in meta.Libraries)
         {
             if (!AssetDownloader.ShouldIncludeLibrary(lib)) continue;
-
             if (lib.Downloads?.Artifact is { } artifact)
             {
-                var libPath = Path.Combine(librariesDir, artifact.Path.Replace('/', Path.DirectorySeparatorChar));
-                if (File.Exists(libPath))
-                    paths.Add(libPath);
+                var p = Path.Combine(librariesDir, artifact.Path.Replace('/', Path.DirectorySeparatorChar));
+                if (File.Exists(p)) paths.Add(p);
             }
             else
             {
-                var mavenPath = MavenNameToPath(lib.Name);
-                if (mavenPath != null)
+                var maven = MavenToPath(lib.Name);
+                if (maven != null)
                 {
-                    var libPath = Path.Combine(librariesDir, mavenPath);
-                    if (File.Exists(libPath))
-                        paths.Add(libPath);
+                    var p = Path.Combine(librariesDir, maven);
+                    if (File.Exists(p)) paths.Add(p);
                 }
             }
         }
-
         paths.Add(clientJar);
         return string.Join(Path.PathSeparator, paths);
     }
 
-    private static string? MavenNameToPath(string name)
+    private static string? MavenToPath(string name)
     {
         var parts = name.Split(':');
         if (parts.Length < 3) return null;
