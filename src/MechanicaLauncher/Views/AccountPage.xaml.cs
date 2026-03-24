@@ -41,22 +41,13 @@ public sealed partial class AccountPage : Page
     {
         var auth = new MicrosoftAuth();
         var cts = new CancellationTokenSource();
+        ContentDialog? activeDialog = null;
 
         try
         {
             var deviceCode = await auth.RequestDeviceCodeAsync();
 
-            var codeBlock = new TextBlock
-            {
-                Text = deviceCode.UserCode,
-                FontSize = 32,
-                FontWeight = Microsoft.UI.Text.FontWeights.Bold,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                IsTextSelectionEnabled = true,
-                Margin = new Thickness(0, 8, 0, 0)
-            };
-
-            var dialog = new ContentDialog
+            activeDialog = new ContentDialog
             {
                 Title = "Sign in with Microsoft",
                 Content = new StackPanel
@@ -71,40 +62,38 @@ public sealed partial class AccountPage : Page
                             NavigateUri = new Uri(deviceCode.VerificationUri)
                         },
                         new TextBlock { Text = "2. Enter this code:", Margin = new Thickness(0, 8, 0, 0) },
-                        codeBlock,
-                        new ProgressRing
-                        {
-                            IsActive = true,
-                            Width = 24, Height = 24,
-                            HorizontalAlignment = HorizontalAlignment.Center,
-                            Margin = new Thickness(0, 12, 0, 0)
-                        },
                         new TextBlock
                         {
-                            Text = "Waiting for authorization...",
-                            Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(
-                                Windows.UI.Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF)),
+                            Text = deviceCode.UserCode,
+                            FontSize = 32,
+                            FontWeight = Microsoft.UI.Text.FontWeights.Bold,
                             HorizontalAlignment = HorizontalAlignment.Center,
-                            FontSize = 12
-                        }
+                            IsTextSelectionEnabled = true,
+                            Margin = new Thickness(0, 8, 0, 0)
+                        },
+                        new ProgressRing { IsActive = true, Width = 24, Height = 24, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 12, 0, 0) },
+                        new TextBlock { Text = "Waiting for authorization...", Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF)), HorizontalAlignment = HorizontalAlignment.Center, FontSize = 12 }
                     }
                 },
                 CloseButtonText = "Cancel",
                 XamlRoot = this.XamlRoot
             };
 
-            dialog.CloseButtonClick += (_, _) => cts.Cancel();
+            activeDialog.CloseButtonClick += (_, _) => cts.Cancel();
 
-            var dialogTask = dialog.ShowAsync().AsTask();
+            var dialogTask = activeDialog.ShowAsync().AsTask();
             var authTask = auth.PollForTokenAsync(deviceCode, cts.Token);
 
             var completed = await Task.WhenAny(dialogTask, authTask);
 
+            try { activeDialog.Hide(); } catch { }
+            activeDialog = null;
+
+            await Task.Delay(200);
+
             if (completed == authTask)
             {
                 var result = await authTask;
-                dialog.Hide();
-
                 _settings.Username = result.Username;
                 _settings.AuthMode = "microsoft";
                 _settings.Save();
@@ -114,13 +103,20 @@ public sealed partial class AccountPage : Page
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            await new ContentDialog
+            try { activeDialog?.Hide(); } catch { }
+            await Task.Delay(300);
+
+            try
             {
-                Title = "Authorization Failed",
-                Content = new TextBlock { Text = ex.Message, TextWrapping = TextWrapping.Wrap },
-                CloseButtonText = "OK",
-                XamlRoot = this.XamlRoot
-            }.ShowAsync();
+                await new ContentDialog
+                {
+                    Title = "Authorization Failed",
+                    Content = new TextBlock { Text = ex.Message, TextWrapping = TextWrapping.Wrap, MaxWidth = 400 },
+                    CloseButtonText = "OK",
+                    XamlRoot = this.XamlRoot
+                }.ShowAsync();
+            }
+            catch { }
         }
     }
 }
