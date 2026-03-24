@@ -12,7 +12,7 @@
             <!-- Java -->
             <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="True">
                 <Expander.Header>
-                    <StackPanel Orientation="Horizontal" Spacing="10" Padding="4,8">
+                    <StackPanel Orientation="Horizontal" Spacing="10" Padding="4,8" HorizontalAlignment="Stretch">
                         <FontIcon Glyph="&#xE7F8;" FontSize="18" Foreground="{StaticResource AccentBrush}" />
                         <TextBlock Text="Java" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
                     </StackPanel>
@@ -55,7 +55,7 @@
             <!-- Appearance -->
             <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                 <Expander.Header>
-                    <StackPanel Orientation="Horizontal" Spacing="10" Padding="4,8">
+                    <StackPanel Orientation="Horizontal" Spacing="10" Padding="4,8" HorizontalAlignment="Stretch">
                         <FontIcon Glyph="&#xE771;" FontSize="18" Foreground="{StaticResource AccentBrush}" />
                         <TextBlock Text="Appearance" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
                     </StackPanel>
@@ -73,7 +73,7 @@
             <!-- Game -->
             <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                 <Expander.Header>
-                    <StackPanel Orientation="Horizontal" Spacing="10" Padding="4,8">
+                    <StackPanel Orientation="Horizontal" Spacing="10" Padding="4,8" HorizontalAlignment="Stretch">
                         <FontIcon Glyph="&#xE7FC;" FontSize="18" Foreground="{StaticResource AccentBrush}" />
                         <TextBlock Text="Game" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
                     </StackPanel>

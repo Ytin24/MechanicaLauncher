@@ -47,17 +47,7 @@
                 </NavigationViewItem>
             </NavigationView.FooterMenuItems>
 
-            <Frame x:Name="ContentFrame">
-                <Frame.ContentTransitions>
-                    <TransitionCollection>
-                        <NavigationThemeTransition>
-                            <NavigationThemeTransition.DefaultNavigationTransitionInfo>
-                                <DrillInNavigationTransitionInfo />
-                            </NavigationThemeTransition.DefaultNavigationTransitionInfo>
-                        </NavigationThemeTransition>
-                    </TransitionCollection>
-                </Frame.ContentTransitions>
-            </Frame>
+            <Frame x:Name="ContentFrame" />
         </NavigationView>
     </Grid>
 </Window>

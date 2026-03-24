@@ -133,6 +133,9 @@ public sealed partial class HomePage : Page
         finally
         {
             PlayButton.IsEnabled = true;
+            await Task.Delay(3000);
+            ProgressPanel.Visibility = Visibility.Collapsed;
+            DownloadProgress.Value = 0;
         }
     }
 }

@@ -25,7 +25,11 @@ public sealed partial class AccountPage : Page
     private void SaveOffline_Click(object sender, RoutedEventArgs e)
     {
         var nick = NicknameBox.Text?.Trim();
-        if (string.IsNullOrEmpty(nick)) return;
+        if (string.IsNullOrEmpty(nick))
+        {
+            NicknameBox.PlaceholderText = "Enter a nickname!";
+            return;
+        }
 
         _settings.Username = nick;
         _settings.AuthMode = "offline";
@@ -36,37 +40,52 @@ public sealed partial class AccountPage : Page
     private async void MsLogin_Click(object sender, RoutedEventArgs e)
     {
         var auth = new MicrosoftAuth();
+        var cts = new CancellationTokenSource();
 
         try
         {
             var deviceCode = await auth.RequestDeviceCodeAsync();
+
+            var codeBlock = new TextBlock
+            {
+                Text = deviceCode.UserCode,
+                FontSize = 32,
+                FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                IsTextSelectionEnabled = true,
+                Margin = new Thickness(0, 8, 0, 0)
+            };
 
             var dialog = new ContentDialog
             {
                 Title = "Sign in with Microsoft",
                 Content = new StackPanel
                 {
-                    Spacing = 12,
+                    Spacing = 8,
                     Children =
                     {
-                        new TextBlock
-                        {
-                            Text = "Open this link in your browser:",
-                            TextWrapping = TextWrapping.Wrap
-                        },
+                        new TextBlock { Text = "1. Open this link in your browser:", TextWrapping = TextWrapping.Wrap },
                         new HyperlinkButton
                         {
                             Content = deviceCode.VerificationUri,
                             NavigateUri = new Uri(deviceCode.VerificationUri)
                         },
-                        new TextBlock { Text = "And enter this code:" },
+                        new TextBlock { Text = "2. Enter this code:", Margin = new Thickness(0, 8, 0, 0) },
+                        codeBlock,
+                        new ProgressRing
+                        {
+                            IsActive = true,
+                            Width = 24, Height = 24,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            Margin = new Thickness(0, 12, 0, 0)
+                        },
                         new TextBlock
                         {
-                            Text = deviceCode.UserCode,
-                            FontSize = 28,
-                            FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+                            Text = "Waiting for authorization...",
+                            Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                                Windows.UI.Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF)),
                             HorizontalAlignment = HorizontalAlignment.Center,
-                            IsTextSelectionEnabled = true
+                            FontSize = 12
                         }
                     }
                 },
@@ -74,34 +93,34 @@ public sealed partial class AccountPage : Page
                 XamlRoot = this.XamlRoot
             };
 
-            var cts = new CancellationTokenSource();
             dialog.CloseButtonClick += (_, _) => cts.Cancel();
 
-            _ = dialog.ShowAsync();
+            var dialogTask = dialog.ShowAsync().AsTask();
+            var authTask = auth.PollForTokenAsync(deviceCode, cts.Token);
 
-            var result = await auth.PollForTokenAsync(deviceCode, cts.Token);
+            var completed = await Task.WhenAny(dialogTask, authTask);
 
-            dialog.Hide();
+            if (completed == authTask)
+            {
+                var result = await authTask;
+                dialog.Hide();
 
-            _settings.Username = result.Username;
-            _settings.AuthMode = "microsoft";
-            _settings.Save();
-            UpdateDisplay();
-
-            UsernameText.Text = result.Username;
-            AccountTypeText.Text = "Microsoft Account ✓";
+                _settings.Username = result.Username;
+                _settings.AuthMode = "microsoft";
+                _settings.Save();
+                UpdateDisplay();
+            }
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            var errorDialog = new ContentDialog
+            await new ContentDialog
             {
-                Title = "Auth Error",
-                Content = ex.Message,
+                Title = "Authorization Failed",
+                Content = new TextBlock { Text = ex.Message, TextWrapping = TextWrapping.Wrap },
                 CloseButtonText = "OK",
                 XamlRoot = this.XamlRoot
-            };
-            await errorDialog.ShowAsync();
+            }.ShowAsync();
         }
     }
 }
