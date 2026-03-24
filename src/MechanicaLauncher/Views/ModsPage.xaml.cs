@@ -2,11 +2,11 @@ using System.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Animation;
+using Microsoft.UI.Xaml.Navigation;
 using MechanicaLauncher.Core.Instances;
 using MechanicaLauncher.Core.Mods;
 using MechanicaLauncher.Core.Models;
-using MechanicaLauncher.Core.Profiles;
+using MechanicaLauncher.Helpers;
 
 namespace MechanicaLauncher.Views;
 
@@ -15,25 +15,30 @@ public sealed partial class ModsPage : Page
     private static readonly SolidColorBrush CardBg = new(Windows.UI.Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF));
     private static readonly SolidColorBrush Dim = new(Windows.UI.Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF));
     private static readonly SolidColorBrush Subtle = new(Windows.UI.Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF));
-    private static readonly SolidColorBrush Green = new(Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xAF, 0x50));
     private static readonly SolidColorBrush White = new(Microsoft.UI.Colors.White);
 
+    private static Core.Profiles.LauncherSettings S => App.Settings;
     private readonly InstanceManager _im = new();
-    private readonly LauncherSettings _settings = LauncherSettings.Load();
     private readonly ModrinthClient _modrinth = new();
     private GameInstance? _instance;
     private string _modsDir = "";
     private string _lastQuery = "";
+    private int _searchOffset;
 
     public ModsPage()
     {
         this.InitializeComponent();
+    }
+
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
         LoadInstance();
     }
 
     private void LoadInstance()
     {
-        _instance = _settings.SelectedInstanceId != null ? _im.GetInstance(_settings.SelectedInstanceId) : null;
+        _instance = S.SelectedInstanceId != null ? _im.GetInstance(S.SelectedInstanceId) : null;
         InstalledModsPanel.Children.Clear();
 
         if (_instance == null)
@@ -123,7 +128,7 @@ public sealed partial class ModsPage : Page
             card.Child = grid;
             InstalledModsPanel.Children.Add(card);
 
-            AnimateEntrance(card, delay);
+            AnimationHelper.SlideIn(card, delay);
             delay += 30;
         }
     }
@@ -140,11 +145,21 @@ public sealed partial class ModsPage : Page
             await DoSearch();
     }
 
-    private async Task DoSearch()
+    private async Task DoSearch(bool append = false)
     {
         if (_instance == null) return;
 
-        SearchResultsPanel.Children.Clear();
+        if (!append)
+        {
+            _searchOffset = 0;
+            SearchResultsPanel.Children.Clear();
+        }
+        else
+        {
+            var loadMoreBtn = SearchResultsPanel.Children.LastOrDefault();
+            if (loadMoreBtn is Button) SearchResultsPanel.Children.Remove(loadMoreBtn);
+        }
+
         SearchResultsPanel.Children.Add(new ProgressRing { IsActive = true, Width = 24, Height = 24, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 20, 0, 0) });
         ResultsInfo.Text = "Searching...";
 
@@ -159,9 +174,10 @@ public sealed partial class ModsPage : Page
             var result = await _modrinth.SearchAsync(
                 _lastQuery, _instance.McVersion, loader,
                 projectType: type, category: category,
-                sortBy: sort, limit: 30);
+                sortBy: sort, offset: _searchOffset, limit: 50);
 
-            SearchResultsPanel.Children.Clear();
+            SearchResultsPanel.Children.RemoveAt(SearchResultsPanel.Children.Count - 1); // remove spinner
+            _searchOffset += result.Hits.Count;
             ResultsInfo.Text = $"{result.TotalHits} results";
 
             int delay = 0;
@@ -226,14 +242,28 @@ public sealed partial class ModsPage : Page
                 card.Child = grid;
                 SearchResultsPanel.Children.Add(card);
 
-                AnimateEntrance(card, delay);
+                AnimationHelper.SlideIn(card, delay);
                 delay += 40;
             }
 
-            if (result.Hits.Count == 0)
+            if (result.Hits.Count == 0 && _searchOffset == 0)
             {
                 SearchResultsPanel.Children.Add(MakeText("No results found."));
                 ResultsInfo.Text = "0 results";
+            }
+
+            if (_searchOffset < result.TotalHits)
+            {
+                var loadMore = new Button
+                {
+                    Content = $"Load More ({result.TotalHits - _searchOffset} remaining)",
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Center,
+                    MinHeight = 40, CornerRadius = new CornerRadius(8),
+                    Margin = new Thickness(0, 4, 0, 0)
+                };
+                loadMore.Click += async (_, _) => await DoSearch(append: true);
+                SearchResultsPanel.Children.Add(loadMore);
             }
         }
         catch (Exception ex)
@@ -284,34 +314,6 @@ public sealed partial class ModsPage : Page
 
     private void RefreshMods_Click(object sender, RoutedEventArgs e) => LoadInstance();
 
-    private static void AnimateEntrance(UIElement el, int delayMs)
-    {
-        var storyboard = new Storyboard();
-
-        var fadeIn = new DoubleAnimation
-        {
-            From = 0, To = 1,
-            Duration = new Duration(TimeSpan.FromMilliseconds(300)),
-            BeginTime = TimeSpan.FromMilliseconds(delayMs),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        };
-        Storyboard.SetTarget(fadeIn, el);
-        Storyboard.SetTargetProperty(fadeIn, "Opacity");
-
-        var slideUp = new DoubleAnimation
-        {
-            From = 20, To = 0,
-            Duration = new Duration(TimeSpan.FromMilliseconds(300)),
-            BeginTime = TimeSpan.FromMilliseconds(delayMs),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        };
-        Storyboard.SetTarget(slideUp, el.RenderTransform);
-        Storyboard.SetTargetProperty(slideUp, "Y");
-
-        storyboard.Children.Add(fadeIn);
-        storyboard.Children.Add(slideUp);
-        storyboard.Begin();
-    }
 
     private static TextBlock MakeText(string text) => new()
     {

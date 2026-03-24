@@ -28,6 +28,9 @@ public sealed class VersionMeta
     [JsonPropertyName("arguments")]
     public GameArguments? Arguments { get; set; }
 
+    [JsonPropertyName("minecraftArguments")]
+    public string? MinecraftArguments { get; set; }
+
     [JsonPropertyName("javaVersion")]
     public JavaVersionInfo? JavaVersion { get; set; }
 

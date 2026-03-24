@@ -17,8 +17,8 @@ public static class JavaFinder
             if (match != default) return match.Path;
         }
 
-        var best = found.OrderByDescending(j => j.MajorVersion).FirstOrDefault();
-        return best.Path;
+        if (found.Count == 0) return null;
+        return found.OrderByDescending(j => j.MajorVersion).First().Path;
     }
 
     public static List<(string Path, int MajorVersion)> FindAllJava()

@@ -7,9 +7,9 @@ namespace MechanicaLauncher.Core.Auth;
 public sealed class MicrosoftAuth
 {
     private static readonly HttpClient Http = new();
-    private const string ClientId = "c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb";
-    private const string AuthBase = "https://login.microsoftonline.com/consumers/oauth2/v2.0";
-    private const string Scope = "XboxLive.SignIn XboxLive.offline_access";
+    private const string ClientId = "00000000441cc96b";
+    private const string AuthBase = "https://login.live.com";
+    private const string Scope = "service::user.auth.xboxlive.com::MBI_SSL";
 
     public sealed class DeviceCodeInfo
     {
@@ -24,10 +24,11 @@ public sealed class MicrosoftAuth
         var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["client_id"] = ClientId,
-            ["scope"] = Scope
+            ["scope"] = Scope,
+            ["response_type"] = "device_code"
         });
 
-        var resp = await Http.PostAsync($"{AuthBase}/devicecode", content);
+        var resp = await Http.PostAsync($"{AuthBase}/oauth20_connect.srf", content);
         var json = await resp.Content.ReadAsStringAsync();
         if (!resp.IsSuccessStatusCode)
             throw new Exception($"Device code request failed: {json[..Math.Min(300, json.Length)]}");
@@ -57,7 +58,7 @@ public sealed class MicrosoftAuth
                 ["grant_type"] = "urn:ietf:params:oauth:grant-type:device_code"
             });
 
-            var resp = await Http.PostAsync($"{AuthBase}/token", content, ct);
+            var resp = await Http.PostAsync($"{AuthBase}/oauth20_token.srf", content, ct);
             var json = await resp.Content.ReadAsStringAsync(ct);
             var data = JsonSerializer.Deserialize<JsonElement>(json);
 
@@ -88,7 +89,7 @@ public sealed class MicrosoftAuth
             {
                 AuthMethod = "RPS",
                 SiteName = "user.auth.xboxlive.com",
-                RpsTicket = $"d={msaToken}"
+                RpsTicket = $"t={msaToken}"
             },
             RelyingParty = "http://auth.xboxlive.com",
             TokenType = "JWT"

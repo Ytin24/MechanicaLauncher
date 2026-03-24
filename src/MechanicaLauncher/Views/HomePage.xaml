@@ -38,11 +38,12 @@
                 <ComboBox
                     x:Name="ProfileSelector"
                     HorizontalAlignment="Stretch"
-                    PlaceholderText="Select version..."
+                    PlaceholderText="Select instance..."
                     FontSize="14"
                     MinHeight="36"
                     BorderThickness="0"
-                    Background="Transparent">
+                    Background="Transparent"
+                    SelectionChanged="ProfileSelector_Changed">
                     <ComboBoxItem Content="1.21.11  ·  Fabric 0.18.4" IsSelected="True" />
                     <ComboBoxItem Content="1.21.11  ·  Vanilla" />
                     <ComboBoxItem Content="1.20.4  ·  Fabric 0.15.11" />

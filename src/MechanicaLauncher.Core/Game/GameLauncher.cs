@@ -69,7 +69,12 @@ public sealed class GameLauncher
         }
         else
         {
-            args.AddRange([$"-Djava.library.path={nativesDir}", "-cp", classpath]);
+            args.AddRange([
+                $"-Djava.library.path={nativesDir}",
+                "-Dminecraft.launcher.brand=mechanica-launcher",
+                "-Dminecraft.launcher.version=1.0.0",
+                "-cp", classpath
+            ]);
         }
 
         if (!string.IsNullOrWhiteSpace(extraJvmArgs))
@@ -81,6 +86,11 @@ public sealed class GameLauncher
         {
             foreach (var gameArg in ResolveArgs(meta.Arguments.Game, vars))
                 args.Add(gameArg);
+        }
+        else if (!string.IsNullOrEmpty(meta.MinecraftArguments))
+        {
+            foreach (var arg in meta.MinecraftArguments.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                args.Add(Substitute(arg, vars));
         }
         else
         {

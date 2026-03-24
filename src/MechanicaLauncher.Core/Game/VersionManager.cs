@@ -88,6 +88,7 @@ public sealed class VersionManager
             Downloads = child.Downloads.Count > 0 ? child.Downloads : parent.Downloads,
             Libraries = [.. child.Libraries, .. parent.Libraries],
             Arguments = MergeArguments(parent.Arguments, child.Arguments),
+            MinecraftArguments = child.MinecraftArguments ?? parent.MinecraftArguments,
             JavaVersion = child.JavaVersion ?? parent.JavaVersion,
         };
     }

@@ -1,20 +1,26 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Navigation;
 using MechanicaLauncher.Core.Game;
 using MechanicaLauncher.Core.Instances;
-using MechanicaLauncher.Core.Profiles;
+using MechanicaLauncher.Helpers;
 
 namespace MechanicaLauncher.Views;
 
 public sealed partial class InstancesPage : Page
 {
+    private static Core.Profiles.LauncherSettings S => App.Settings;
     private readonly InstanceManager _im = new();
-    private readonly LauncherSettings _settings = LauncherSettings.Load();
 
     public InstancesPage()
     {
         this.InitializeComponent();
+    }
+
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
         LoadInstances();
     }
 
@@ -36,8 +42,14 @@ public sealed partial class InstancesPage : Page
             return;
         }
 
+        int delay = 0;
         foreach (var inst in instances)
-            InstancesList.Children.Add(CreateCard(inst));
+        {
+            var card = CreateCard(inst);
+            InstancesList.Children.Add(card);
+            AnimationHelper.SlideIn(card, delay);
+            delay += 50;
+        }
     }
 
     private Border CreateCard(GameInstance inst)
@@ -131,12 +143,12 @@ public sealed partial class InstancesPage : Page
 
         var selectBtn = new Button
         {
-            Content = _settings.SelectedInstanceId == inst.Id ? "Selected" : "Select",
+            Content = S.SelectedInstanceId == inst.Id ? "Selected" : "Select",
             FontSize = 13, Padding = new Thickness(16, 6, 16, 6),
             MinWidth = 72, MinHeight = 32, CornerRadius = new CornerRadius(6),
             Tag = inst.Id
         };
-        if (_settings.SelectedInstanceId == inst.Id)
+        if (S.SelectedInstanceId == inst.Id)
         {
             selectBtn.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xAF, 0x50));
             selectBtn.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF));
@@ -177,8 +189,8 @@ public sealed partial class InstancesPage : Page
     {
         if (sender is Button btn && btn.Tag is string id)
         {
-            _settings.SelectedInstanceId = id;
-            _settings.Save();
+            S.SelectedInstanceId = id;
+            S.Save();
             LoadInstances();
         }
     }
@@ -212,10 +224,10 @@ public sealed partial class InstancesPage : Page
                     }.ShowAsync();
                     return;
                 }
-                if (_settings.SelectedInstanceId == id)
+                if (S.SelectedInstanceId == id)
                 {
-                    _settings.SelectedInstanceId = null;
-                    _settings.Save();
+                    S.SelectedInstanceId = null;
+                    S.Save();
                 }
                 LoadInstances();
             }
@@ -384,8 +396,8 @@ public sealed partial class InstancesPage : Page
         }
         catch { }
 
-        _settings.SelectedInstanceId = instance.Id;
-        _settings.Save();
+        S.SelectedInstanceId = instance.Id;
+        S.Save();
         LoadInstances();
     }
 }

@@ -1,17 +1,22 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using MechanicaLauncher.Core.Profiles;
+using Microsoft.UI.Xaml.Navigation;
 
 namespace MechanicaLauncher.Views;
 
 public sealed partial class SettingsPage : Page
 {
-    private readonly LauncherSettings _settings = LauncherSettings.Load();
+    private static Core.Profiles.LauncherSettings S => App.Settings;
 
     public SettingsPage()
     {
         this.InitializeComponent();
-        ThemeSelector.SelectedIndex = _settings.Theme switch
+    }
+
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        ThemeSelector.SelectedIndex = S.Theme switch
         {
             "Dark" => 0,
             "Light" => 1,
@@ -23,8 +28,8 @@ public sealed partial class SettingsPage : Page
     {
         if (ThemeSelector?.SelectedItem is not ComboBoxItem item) return;
         var theme = item.Content?.ToString() ?? "Dark";
-        _settings.Theme = theme;
-        _settings.Save();
+        S.Theme = theme;
+        S.Save();
 
         if (App.MainWindow?.Content is FrameworkElement root)
         {

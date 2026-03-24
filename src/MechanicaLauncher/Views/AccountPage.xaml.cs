@@ -1,32 +1,37 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Navigation;
 using MechanicaLauncher.Core.Auth;
-using MechanicaLauncher.Core.Profiles;
 
 namespace MechanicaLauncher.Views;
 
 public sealed partial class AccountPage : Page
 {
-    private readonly LauncherSettings _settings = LauncherSettings.Load();
+    private static Core.Profiles.LauncherSettings S => App.Settings;
 
     public AccountPage()
     {
         this.InitializeComponent();
-        NicknameBox.Text = _settings.Username;
+    }
+
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        NicknameBox.Text = S.Username;
         SyncUi();
     }
 
     private void SyncUi()
     {
-        var loggedIn = _settings.AuthMode != "offline" && _settings.Username != "Player";
+        var loggedIn = S.AuthMode != "offline" && S.Username != "Player";
 
         LoggedInPanel.Visibility = loggedIn ? Visibility.Visible : Visibility.Collapsed;
         LoginPanel.Visibility = loggedIn ? Visibility.Collapsed : Visibility.Visible;
 
         if (loggedIn)
         {
-            UsernameText.Text = _settings.Username;
-            AccountBadge.Text = _settings.AuthMode == "microsoft" ? "Microsoft" : "Offline";
+            UsernameText.Text = S.Username;
+            AccountBadge.Text = S.AuthMode == "microsoft" ? "Microsoft" : "Offline";
         }
     }
 
@@ -35,21 +40,21 @@ public sealed partial class AccountPage : Page
         var nick = NicknameBox.Text?.Trim();
         if (string.IsNullOrEmpty(nick)) return;
 
-        _settings.Username = nick;
-        _settings.AuthMode = "offline";
-        _settings.Uuid = Guid.NewGuid().ToString("N");
-        _settings.AccessToken = "0";
-        _settings.Save();
+        S.Username = nick;
+        S.AuthMode = "offline";
+        S.Uuid = Guid.NewGuid().ToString("N");
+        S.AccessToken = "0";
+        S.Save();
         SyncUi();
     }
 
     private void SignOut_Click(object sender, RoutedEventArgs e)
     {
-        _settings.Username = "Player";
-        _settings.AuthMode = "offline";
-        _settings.Uuid = "0";
-        _settings.AccessToken = "0";
-        _settings.Save();
+        S.Username = "Player";
+        S.AuthMode = "offline";
+        S.Uuid = "0";
+        S.AccessToken = "0";
+        S.Save();
         NicknameBox.Text = "";
         SyncUi();
     }
@@ -96,11 +101,11 @@ public sealed partial class AccountPage : Page
             if (winner == authTask)
             {
                 var result = await authTask;
-                _settings.Username = result.Username;
-                _settings.Uuid = result.Uuid;
-                _settings.AccessToken = result.AccessToken;
-                _settings.AuthMode = "microsoft";
-                _settings.Save();
+                S.Username = result.Username;
+                S.Uuid = result.Uuid;
+                S.AccessToken = result.AccessToken;
+                S.AuthMode = "microsoft";
+                S.Save();
                 SyncUi();
             }
         }
