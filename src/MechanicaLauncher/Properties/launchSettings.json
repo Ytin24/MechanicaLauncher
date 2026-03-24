@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "MechanicaLauncher (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "MechanicaLauncher (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
