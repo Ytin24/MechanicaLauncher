@@ -137,7 +137,17 @@ public sealed partial class InstancesPage : Page
         };
         deleteBtn.Click += DeleteInstance_Click;
 
+        var editBtn = new Button
+        {
+            Content = new FontIcon { Glyph = "\uE70F", FontSize = 14 },
+            FontSize = 13, Padding = new Thickness(8, 6, 8, 6),
+            MinHeight = 32, CornerRadius = new CornerRadius(6),
+            Tag = inst.Id
+        };
+        editBtn.Click += EditInstance_Click;
+
         buttons.Children.Add(selectBtn);
+        buttons.Children.Add(editBtn);
         buttons.Children.Add(deleteBtn);
         Grid.SetColumn(buttons, 2);
 
@@ -181,6 +191,65 @@ public sealed partial class InstancesPage : Page
                 LoadInstances();
             }
         }
+    }
+
+    private async void EditInstance_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not string id) return;
+        var inst = _im.GetInstance(id);
+        if (inst == null) return;
+
+        var nameBox = new TextBox { Text = inst.Name, MinHeight = 36 };
+        var minMemSlider = new Slider { Minimum = 512, Maximum = 16384, Value = inst.MinMemoryMb, StepFrequency = 512, SnapsTo = Microsoft.UI.Xaml.Controls.Primitives.SliderSnapsTo.StepValues };
+        var maxMemSlider = new Slider { Minimum = 512, Maximum = 16384, Value = inst.MaxMemoryMb, StepFrequency = 512, SnapsTo = Microsoft.UI.Xaml.Controls.Primitives.SliderSnapsTo.StepValues };
+        var minMemLabel = new TextBlock { Text = $"Min Memory: {inst.MinMemoryMb} MB", FontSize = 13 };
+        var maxMemLabel = new TextBlock { Text = $"Max Memory: {inst.MaxMemoryMb} MB", FontSize = 13 };
+        var jvmBox = new TextBox { Text = inst.JvmArgs, PlaceholderText = "-XX:+UseG1GC", MinHeight = 36 };
+        var widthBox = new TextBox { Text = inst.WindowWidth.ToString(), MinHeight = 36, MinWidth = 80 };
+        var heightBox = new TextBox { Text = inst.WindowHeight.ToString(), MinHeight = 36, MinWidth = 80 };
+
+        minMemSlider.ValueChanged += (_, args) => minMemLabel.Text = $"Min Memory: {(int)args.NewValue} MB";
+        maxMemSlider.ValueChanged += (_, args) => maxMemLabel.Text = $"Max Memory: {(int)args.NewValue} MB";
+
+        var content = new StackPanel
+        {
+            Spacing = 10, MinWidth = 360,
+            Children =
+            {
+                new TextBlock { Text = "Name" }, nameBox,
+                new TextBlock { Text = $"Version: {inst.McVersion}  ·  {inst.Loader}{(inst.LoaderVersion != null ? $" {inst.LoaderVersion}" : "")}", Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF)), FontSize = 13 },
+                minMemLabel, minMemSlider,
+                maxMemLabel, maxMemSlider,
+                new TextBlock { Text = "JVM Arguments" }, jvmBox,
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children =
+                {
+                    new StackPanel { Spacing = 4, Children = { new TextBlock { Text = "Width", FontSize = 12 }, widthBox } },
+                    new TextBlock { Text = "×", VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 10) },
+                    new StackPanel { Spacing = 4, Children = { new TextBlock { Text = "Height", FontSize = 12 }, heightBox } }
+                }}
+            }
+        };
+
+        var dialog = new ContentDialog
+        {
+            Title = "Edit Instance",
+            Content = new ScrollViewer { Content = content, MaxHeight = 500 },
+            PrimaryButtonText = "Save",
+            CloseButtonText = "Cancel",
+            XamlRoot = this.XamlRoot
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+        inst.Name = nameBox.Text?.Trim() ?? inst.Name;
+        inst.MinMemoryMb = (int)minMemSlider.Value;
+        inst.MaxMemoryMb = (int)maxMemSlider.Value;
+        inst.JvmArgs = jvmBox.Text ?? "";
+        if (int.TryParse(widthBox.Text, out var w)) inst.WindowWidth = w;
+        if (int.TryParse(heightBox.Text, out var h)) inst.WindowHeight = h;
+
+        _im.SaveInstance(inst);
+        LoadInstances();
     }
 
     private async void NewInstance_Click(object sender, RoutedEventArgs e)
