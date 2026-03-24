@@ -11,6 +11,12 @@ public sealed class LauncherSettings
     [JsonPropertyName("authMode")]
     public string AuthMode { get; set; } = "offline";
 
+    [JsonPropertyName("uuid")]
+    public string Uuid { get; set; } = "0";
+
+    [JsonPropertyName("accessToken")]
+    public string AccessToken { get; set; } = "0";
+
     [JsonPropertyName("selectedVersion")]
     public string SelectedVersion { get; set; } = "";
 

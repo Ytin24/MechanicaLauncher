@@ -9,62 +9,67 @@
         <StackPanel Spacing="20" MaxWidth="560" HorizontalAlignment="Center">
             <TextBlock Text="Account" Style="{StaticResource PageHeader}" HorizontalAlignment="Center" />
 
-            <!-- Current Account Status -->
-            <Border Style="{StaticResource CardPanelWide}" Padding="24">
+            <!-- Logged In State -->
+            <Border x:Name="LoggedInPanel" Style="{StaticResource CardPanelWide}" Padding="24" Visibility="Collapsed">
                 <StackPanel HorizontalAlignment="Center" Spacing="16">
                     <PersonPicture Width="80" Height="80" HorizontalAlignment="Center" />
                     <StackPanel HorizontalAlignment="Center" Spacing="4">
-                        <TextBlock x:Name="UsernameText" Text="Not signed in"
-                                   FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                        <TextBlock x:Name="AccountTypeText" Text="Offline mode"
-                                   Foreground="{StaticResource DimBrush}" FontSize="13" HorizontalAlignment="Center" />
+                        <TextBlock x:Name="UsernameText" Text="" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center" />
+                        <Border Background="{StaticResource AccentBrush}" CornerRadius="4" Padding="10,4" HorizontalAlignment="Center">
+                            <TextBlock x:Name="AccountBadge" Text="Microsoft" FontSize="11" Foreground="White" FontWeight="SemiBold" />
+                        </Border>
                     </StackPanel>
+                    <Button x:Name="SignOutBtn" Content="Sign Out" Click="SignOut_Click"
+                            Style="{StaticResource SmallButton}" HorizontalAlignment="Center"
+                            Foreground="#FF6B6B" />
                 </StackPanel>
             </Border>
 
-            <!-- Microsoft Sign In -->
-            <Border Style="{StaticResource CardPanelWide}" Padding="24">
-                <StackPanel Spacing="14">
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <FontIcon Glyph="&#xE8AB;" FontSize="22" Foreground="{StaticResource AccentBrush}" />
-                        <TextBlock Text="Microsoft Account" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
-                    </StackPanel>
-                    <TextBlock Text="Sign in with your Microsoft account to play on multiplayer servers, access Realms, and use your custom skin."
-                               Foreground="{StaticResource DimBrush}" FontSize="13" TextWrapping="Wrap" />
-                    <Button Style="{StaticResource AccentSmallButton}" HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Center" Padding="0,12"
-                            Click="MsLogin_Click">
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <FontIcon Glyph="&#xE72E;" FontSize="15" Foreground="White" />
-                            <TextBlock Text="Sign in with Microsoft" FontSize="14" />
+            <!-- Not Logged In State -->
+            <StackPanel x:Name="LoginPanel" Spacing="20">
+                <!-- Microsoft Sign In -->
+                <Border Style="{StaticResource CardPanelWide}" Padding="24">
+                    <StackPanel Spacing="14">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <FontIcon Glyph="&#xE8AB;" FontSize="22" Foreground="{StaticResource AccentBrush}" />
+                            <TextBlock Text="Microsoft Account" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
                         </StackPanel>
-                    </Button>
-                </StackPanel>
-            </Border>
-
-            <!-- Divider -->
-            <Grid ColumnDefinitions="*,Auto,*">
-                <Border Grid.Column="0" Height="1" Background="{StaticResource DimBrush}" VerticalAlignment="Center" Opacity="0.2" />
-                <TextBlock Grid.Column="1" Text="or" Foreground="{StaticResource DimBrush}" Margin="20,0" FontSize="13" />
-                <Border Grid.Column="2" Height="1" Background="{StaticResource DimBrush}" VerticalAlignment="Center" Opacity="0.2" />
-            </Grid>
-
-            <!-- Offline Mode -->
-            <Border Style="{StaticResource CardPanelWide}" Padding="24">
-                <StackPanel Spacing="14">
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <FontIcon Glyph="&#xE77B;" FontSize="22" Foreground="{StaticResource SubtleBrush}" />
-                        <TextBlock Text="Play Offline" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <TextBlock Text="Sign in to play on multiplayer servers, access Realms, and use your custom skin."
+                                   Foreground="{StaticResource DimBrush}" FontSize="13" TextWrapping="Wrap" />
+                        <Button Style="{StaticResource AccentSmallButton}" HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center" Padding="0,12" Click="MsLogin_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <FontIcon Glyph="&#xE72E;" FontSize="15" Foreground="White" />
+                                <TextBlock Text="Sign in with Microsoft" FontSize="14" />
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
-                    <TextBlock Text="Enter a nickname to play without authentication. Multiplayer on licensed servers won't be available."
-                               Foreground="{StaticResource DimBrush}" FontSize="13" TextWrapping="Wrap" />
-                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                        <TextBox x:Name="NicknameBox" PlaceholderText="Your nickname..." />
-                        <Button Grid.Column="1" Style="{StaticResource SmallButton}" Content="Save" Margin="8,0,0,0"
-                                Click="SaveOffline_Click" />
-                    </Grid>
-                </StackPanel>
-            </Border>
+                </Border>
+
+                <!-- Divider -->
+                <Grid ColumnDefinitions="*,Auto,*">
+                    <Border Height="1" Background="{StaticResource DimBrush}" VerticalAlignment="Center" Opacity="0.2" />
+                    <TextBlock Grid.Column="1" Text="or" Foreground="{StaticResource DimBrush}" Margin="20,0" FontSize="13" />
+                    <Border Grid.Column="2" Height="1" Background="{StaticResource DimBrush}" VerticalAlignment="Center" Opacity="0.2" />
+                </Grid>
+
+                <!-- Offline -->
+                <Border Style="{StaticResource CardPanelWide}" Padding="24">
+                    <StackPanel Spacing="14">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <FontIcon Glyph="&#xE77B;" FontSize="22" Foreground="{StaticResource SubtleBrush}" />
+                            <TextBlock Text="Play Offline" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock Text="No auth needed. Multiplayer on licensed servers won't be available."
+                                   Foreground="{StaticResource DimBrush}" FontSize="13" TextWrapping="Wrap" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBox x:Name="NicknameBox" PlaceholderText="Your nickname..." />
+                            <Button Grid.Column="1" Style="{StaticResource SmallButton}" Content="Save" Margin="8,0,0,0"
+                                    Click="SaveOffline_Click" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
         </StackPanel>
     </ScrollViewer>
 </Page>

@@ -13,99 +13,102 @@ public sealed partial class AccountPage : Page
     {
         this.InitializeComponent();
         NicknameBox.Text = _settings.Username;
-        UpdateDisplay();
+        SyncUi();
     }
 
-    private void UpdateDisplay()
+    private void SyncUi()
     {
-        UsernameText.Text = _settings.Username;
-        AccountTypeText.Text = _settings.AuthMode == "microsoft" ? "Microsoft Account" : "Offline mode";
+        var loggedIn = _settings.AuthMode != "offline" && _settings.Username != "Player";
+
+        LoggedInPanel.Visibility = loggedIn ? Visibility.Visible : Visibility.Collapsed;
+        LoginPanel.Visibility = loggedIn ? Visibility.Collapsed : Visibility.Visible;
+
+        if (loggedIn)
+        {
+            UsernameText.Text = _settings.Username;
+            AccountBadge.Text = _settings.AuthMode == "microsoft" ? "Microsoft" : "Offline";
+        }
     }
 
     private void SaveOffline_Click(object sender, RoutedEventArgs e)
     {
         var nick = NicknameBox.Text?.Trim();
-        if (string.IsNullOrEmpty(nick))
-        {
-            NicknameBox.PlaceholderText = "Enter a nickname!";
-            return;
-        }
+        if (string.IsNullOrEmpty(nick)) return;
 
         _settings.Username = nick;
         _settings.AuthMode = "offline";
+        _settings.Uuid = Guid.NewGuid().ToString("N");
+        _settings.AccessToken = "0";
         _settings.Save();
-        UpdateDisplay();
+        SyncUi();
+    }
+
+    private void SignOut_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.Username = "Player";
+        _settings.AuthMode = "offline";
+        _settings.Uuid = "0";
+        _settings.AccessToken = "0";
+        _settings.Save();
+        NicknameBox.Text = "";
+        SyncUi();
     }
 
     private async void MsLogin_Click(object sender, RoutedEventArgs e)
     {
         var auth = new MicrosoftAuth();
         var cts = new CancellationTokenSource();
-        ContentDialog? activeDialog = null;
+        ContentDialog? dialog = null;
 
         try
         {
-            var deviceCode = await auth.RequestDeviceCodeAsync();
+            var dc = await auth.RequestDeviceCodeAsync();
 
-            activeDialog = new ContentDialog
+            dialog = new ContentDialog
             {
                 Title = "Sign in with Microsoft",
                 Content = new StackPanel
                 {
-                    Spacing = 8,
+                    Spacing = 12,
                     Children =
                     {
-                        new TextBlock { Text = "1. Open this link in your browser:", TextWrapping = TextWrapping.Wrap },
-                        new HyperlinkButton
-                        {
-                            Content = deviceCode.VerificationUri,
-                            NavigateUri = new Uri(deviceCode.VerificationUri)
-                        },
-                        new TextBlock { Text = "2. Enter this code:", Margin = new Thickness(0, 8, 0, 0) },
-                        new TextBlock
-                        {
-                            Text = deviceCode.UserCode,
-                            FontSize = 32,
-                            FontWeight = Microsoft.UI.Text.FontWeights.Bold,
-                            HorizontalAlignment = HorizontalAlignment.Center,
-                            IsTextSelectionEnabled = true,
-                            Margin = new Thickness(0, 8, 0, 0)
-                        },
-                        new ProgressRing { IsActive = true, Width = 24, Height = 24, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 12, 0, 0) },
-                        new TextBlock { Text = "Waiting for authorization...", Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF)), HorizontalAlignment = HorizontalAlignment.Center, FontSize = 12 }
+                        new TextBlock { Text = "Go to this link:", TextWrapping = TextWrapping.Wrap },
+                        new HyperlinkButton { Content = dc.VerificationUri, NavigateUri = new Uri(dc.VerificationUri) },
+                        new TextBlock { Text = "Enter this code:", Margin = new Thickness(0, 4, 0, 0) },
+                        new TextBlock { Text = dc.UserCode, FontSize = 32, FontWeight = Microsoft.UI.Text.FontWeights.Bold, HorizontalAlignment = HorizontalAlignment.Center, IsTextSelectionEnabled = true },
+                        new ProgressRing { IsActive = true, Width = 20, Height = 20, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 8, 0, 0) },
+                        new TextBlock { Text = "Waiting for you to sign in...", HorizontalAlignment = HorizontalAlignment.Center, FontSize = 12, Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF)) }
                     }
                 },
                 CloseButtonText = "Cancel",
                 XamlRoot = this.XamlRoot
             };
+            dialog.CloseButtonClick += (_, _) => cts.Cancel();
 
-            activeDialog.CloseButtonClick += (_, _) => cts.Cancel();
+            var showTask = dialog.ShowAsync().AsTask();
+            var authTask = auth.PollForTokenAsync(dc, cts.Token);
+            var winner = await Task.WhenAny(showTask, authTask);
 
-            var dialogTask = activeDialog.ShowAsync().AsTask();
-            var authTask = auth.PollForTokenAsync(deviceCode, cts.Token);
-
-            var completed = await Task.WhenAny(dialogTask, authTask);
-
-            try { activeDialog.Hide(); } catch { }
-            activeDialog = null;
-
+            try { dialog.Hide(); } catch { }
+            dialog = null;
             await Task.Delay(200);
 
-            if (completed == authTask)
+            if (winner == authTask)
             {
                 var result = await authTask;
                 _settings.Username = result.Username;
+                _settings.Uuid = result.Uuid;
+                _settings.AccessToken = result.AccessToken;
                 _settings.AuthMode = "microsoft";
                 _settings.Save();
-                UpdateDisplay();
+                SyncUi();
             }
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            try { activeDialog?.Hide(); } catch { }
+            try { dialog?.Hide(); } catch { }
             await Task.Delay(300);
-
             try
             {
                 await new ContentDialog

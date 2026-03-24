@@ -117,6 +117,7 @@ public sealed partial class HomePage : Page
             ProgressText.Text = "Launching...";
             var launcher = new GameLauncher(_versionManager.GameDir);
             launcher.Launch(meta, java, _settings.Username,
+                uuid: _settings.Uuid, accessToken: _settings.AccessToken,
                 minMem: _settings.MinMemoryMb, maxMem: _settings.MaxMemoryMb,
                 extraJvmArgs: _settings.JvmArgs);
 
