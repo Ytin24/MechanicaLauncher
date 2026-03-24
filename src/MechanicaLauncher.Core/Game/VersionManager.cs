@@ -33,10 +33,12 @@ public sealed class VersionManager
             return JsonSerializer.Deserialize<VersionMeta>(json) ?? new();
         }
 
-        var meta = await Http.GetFromJsonAsync<VersionMeta>(entry.Url) ?? new();
+        var rawJson = await Http.GetStringAsync(entry.Url);
+
         Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
-        await File.WriteAllTextAsync(localPath, JsonSerializer.Serialize(meta));
-        return meta;
+        await File.WriteAllTextAsync(localPath, rawJson);
+
+        return JsonSerializer.Deserialize<VersionMeta>(rawJson) ?? new();
     }
 
     public bool IsVersionInstalled(string versionId)

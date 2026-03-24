@@ -115,15 +115,33 @@ public sealed partial class HomePage : Page
             }
 
             ProgressText.Text = "Launching...";
+            DownloadProgress.IsIndeterminate = false;
+            DownloadProgress.Value = 95;
+
             var launcher = new GameLauncher(_versionManager.GameDir);
-            launcher.Launch(meta, java, _settings.Username,
+            var proc = launcher.Launch(meta, java, _settings.Username,
                 uuid: _settings.Uuid, accessToken: _settings.AccessToken,
                 minMem: _settings.MinMemoryMb, maxMem: _settings.MaxMemoryMb,
-                extraJvmArgs: _settings.JvmArgs);
+                extraJvmArgs: _settings.JvmArgs,
+                windowWidth: _settings.WindowWidth, windowHeight: _settings.WindowHeight);
+
+            _ = Task.Run(async () =>
+            {
+                await proc.WaitForExitAsync();
+                if (proc.ExitCode != 0)
+                {
+                    var stderr = await proc.StandardError.ReadToEndAsync();
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        NotificationBar.Severity = InfoBarSeverity.Error;
+                        NotificationBar.Message = $"Game crashed (exit {proc.ExitCode}): {stderr[..Math.Min(300, stderr.Length)]}";
+                        NotificationBar.IsOpen = true;
+                    });
+                }
+            });
 
             ProgressText.Text = "Game launched!";
             DownloadProgress.Value = 100;
-            DownloadProgress.IsIndeterminate = false;
         }
         catch (Exception ex)
         {

@@ -1,4 +1,4 @@
-using System.Net.Http.Json;
+using System.IO.Compression;
 using MechanicaLauncher.Core.Models;
 
 namespace MechanicaLauncher.Core.Game;
@@ -17,38 +17,36 @@ public sealed class AssetDownloader
 
     public async Task DownloadVersionAsync(VersionMeta meta)
     {
-        // Download client jar
         if (meta.Downloads.TryGetValue("client", out var client))
         {
             var jarPath = Path.Combine(_gameDir, "versions", meta.Id, $"{meta.Id}.jar");
-            await DownloadFileAsync(client.Url, jarPath, "Downloading client...");
+            if (!File.Exists(jarPath))
+                await DownloadFileAsync(client.Url, jarPath, "Downloading client...");
         }
 
-        // Download libraries
-        var libs = meta.Libraries.Where(l => ShouldInclude(l)).ToList();
+        var libs = meta.Libraries.Where(ShouldIncludeLibrary).ToList();
         for (int i = 0; i < libs.Count; i++)
         {
             var lib = libs[i];
             if (lib.Downloads?.Artifact is { } artifact && !string.IsNullOrEmpty(artifact.Url))
             {
-                var libPath = Path.Combine(_gameDir, "libraries", artifact.Path);
+                var libPath = Path.Combine(_gameDir, "libraries", artifact.Path.Replace('/', Path.DirectorySeparatorChar));
                 if (!File.Exists(libPath))
                 {
-                    var progress = (double)(i + 1) / libs.Count * 80;
+                    var progress = (double)(i + 1) / libs.Count * 70;
                     ProgressChanged?.Invoke($"Libraries ({i + 1}/{libs.Count})", progress);
                     await DownloadFileAsync(artifact.Url, libPath);
                 }
             }
         }
 
-        // Download asset index
+        await ExtractNativesAsync(meta);
+
         if (meta.AssetIndex is { } assetIndex)
         {
             var indexPath = Path.Combine(_gameDir, "assets", "indexes", $"{assetIndex.Id}.json");
             if (!File.Exists(indexPath))
-            {
                 await DownloadFileAsync(assetIndex.Url, indexPath, "Downloading asset index...");
-            }
 
             var indexJson = await File.ReadAllTextAsync(indexPath);
             var assets = System.Text.Json.JsonSerializer.Deserialize<AssetIndexData>(indexJson);
@@ -64,7 +62,7 @@ public sealed class AssetDownloader
                     {
                         if (i % 50 == 0)
                         {
-                            var progress = 80 + (double)(i + 1) / objects.Count * 20;
+                            var progress = 70 + (double)(i + 1) / objects.Count * 30;
                             ProgressChanged?.Invoke($"Assets ({i + 1}/{objects.Count})", progress);
                         }
                         var url = $"https://resources.download.minecraft.net/{prefix}/{obj.Hash}";
@@ -77,24 +75,87 @@ public sealed class AssetDownloader
         ProgressChanged?.Invoke("Done!", 100);
     }
 
+    private async Task ExtractNativesAsync(VersionMeta meta)
+    {
+        var nativesDir = Path.Combine(_gameDir, "versions", meta.Id, "natives");
+        Directory.CreateDirectory(nativesDir);
+
+        ProgressChanged?.Invoke("Extracting natives...", 70);
+
+        foreach (var lib in meta.Libraries)
+        {
+            if (!IsWindowsNative(lib)) continue;
+
+            if (lib.Downloads?.Artifact is { } artifact && !string.IsNullOrEmpty(artifact.Url))
+            {
+                var jarPath = Path.Combine(_gameDir, "libraries", artifact.Path.Replace('/', Path.DirectorySeparatorChar));
+                if (!File.Exists(jarPath)) continue;
+
+                try
+                {
+                    using var zip = ZipFile.OpenRead(jarPath);
+                    foreach (var entry in zip.Entries)
+                    {
+                        if (entry.FullName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ||
+                            entry.FullName.EndsWith(".so", StringComparison.OrdinalIgnoreCase) ||
+                            entry.FullName.EndsWith(".dylib", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var dest = Path.Combine(nativesDir, entry.Name);
+                            if (!File.Exists(dest))
+                                entry.ExtractToFile(dest, true);
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+    }
+
+    private static bool IsWindowsNative(Library lib)
+    {
+        return lib.Name.Contains("natives-windows", StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task DownloadFileAsync(string url, string path, string? status = null)
     {
         if (status != null) ProgressChanged?.Invoke(status, -1);
-
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var bytes = await Http.GetByteArrayAsync(url);
         await File.WriteAllBytesAsync(path, bytes);
     }
 
-    private static bool ShouldInclude(Library lib)
+    public static bool ShouldIncludeLibrary(Library lib)
     {
-        if (lib.Rules == null || lib.Rules.Count == 0) return true;
+        if (lib.Rules == null || lib.Rules.Count == 0)
+        {
+            if (lib.Name.Contains("natives-linux") || lib.Name.Contains("natives-macos") ||
+                lib.Name.Contains("natives-osx") || lib.Name.Contains("linux-") ||
+                lib.Name.Contains("macos-"))
+                return false;
+            return true;
+        }
+
+        bool allowed = false;
+        bool hasOsRule = false;
+
         foreach (var rule in lib.Rules)
         {
-            if (rule.Os?.Name == "osx" && rule.Action == "allow") return false;
-            if (rule.Os?.Name == "linux" && rule.Action == "allow") return false;
-            if (rule.Os?.Name == "windows" && rule.Action == "disallow") return false;
+            if (rule.Os != null)
+            {
+                hasOsRule = true;
+                if (rule.Os.Name == "windows")
+                {
+                    if (rule.Action == "allow") allowed = true;
+                    if (rule.Action == "disallow") return false;
+                }
+            }
+            else
+            {
+                if (rule.Action == "allow") allowed = true;
+            }
         }
+
+        if (hasOsRule && !allowed) return false;
         return true;
     }
 }
