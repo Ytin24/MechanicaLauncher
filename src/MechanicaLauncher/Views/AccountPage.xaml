@@ -32,7 +32,8 @@
                     <TextBlock Text="Sign in with your Microsoft account to play on multiplayer servers, access Realms, and use your custom skin."
                                Foreground="{StaticResource DimBrush}" FontSize="13" TextWrapping="Wrap" />
                     <Button Style="{StaticResource AccentSmallButton}" HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Center" Padding="0,12">
+                            HorizontalContentAlignment="Center" Padding="0,12"
+                            Click="MsLogin_Click">
                         <StackPanel Orientation="Horizontal" Spacing="10">
                             <FontIcon Glyph="&#xE72E;" FontSize="15" Foreground="White" />
                             <TextBlock Text="Sign in with Microsoft" FontSize="14" />
