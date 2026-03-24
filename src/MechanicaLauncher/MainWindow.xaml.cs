@@ -2,7 +2,6 @@ using Microsoft.UI;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml.Media;
-using MechanicaLauncher.Core.Profiles;
 using MechanicaLauncher.Views;
 using WinRT.Interop;
 
@@ -22,10 +21,9 @@ public sealed partial class MainWindow : Window
         appWindow.Resize(new Windows.Graphics.SizeInt32(1100, 700));
         appWindow.Title = "Mechanica Launcher";
 
-        var settings = LauncherSettings.Load();
         if (Content is FrameworkElement root)
         {
-            root.RequestedTheme = settings.Theme switch
+            root.RequestedTheme = App.Settings.Theme switch
             {
                 "Light" => ElementTheme.Light,
                 "Dark" => ElementTheme.Dark,
@@ -33,6 +31,7 @@ public sealed partial class MainWindow : Window
             };
         }
 
+        ContentFrame.CacheSize = 5;
         ContentFrame.Navigate(typeof(HomePage));
     }
 

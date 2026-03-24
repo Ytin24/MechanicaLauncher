@@ -3,7 +3,8 @@
     x:Class="MechanicaLauncher.Views.HomePage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Background="Transparent">
+    Background="Transparent"
+    NavigationCacheMode="Enabled">
 
     <Grid Padding="{StaticResource PagePadding}">
         <Grid.RowDefinitions>
