@@ -190,6 +190,8 @@ public sealed partial class InstancesPage : Page
         var loaderBox = new ComboBox { MinWidth = 280, MinHeight = 36 };
         loaderBox.Items.Add(new ComboBoxItem { Content = "None", Tag = "None" });
         loaderBox.Items.Add(new ComboBoxItem { Content = "Fabric", Tag = "Fabric" });
+        loaderBox.Items.Add(new ComboBoxItem { Content = "Quilt", Tag = "Quilt" });
+        loaderBox.Items.Add(new ComboBoxItem { Content = "Forge", Tag = "Forge" });
         loaderBox.SelectedIndex = 0;
 
         var content = new StackPanel
@@ -242,7 +244,13 @@ public sealed partial class InstancesPage : Page
 
         if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(mcVersion)) return;
 
-        var loader = loaderStr == "Fabric" ? LoaderType.Fabric : LoaderType.None;
+        var loader = loaderStr switch
+        {
+            "Fabric" => LoaderType.Fabric,
+            "Quilt" => LoaderType.Quilt,
+            "Forge" => LoaderType.Forge,
+            _ => LoaderType.None
+        };
         string? loaderVersion = null;
 
         if (loader == LoaderType.Fabric)
@@ -255,19 +263,28 @@ public sealed partial class InstancesPage : Page
             }
             catch { }
         }
-
-        var instance = _im.CreateInstance(name, mcVersion, loader, loaderVersion);
-
-        if (loader == LoaderType.Fabric && loaderVersion != null)
+        else if (loader == LoaderType.Quilt)
         {
             try
             {
-                var gameDir = _im.GetGameDir(instance.Id);
-                var fi = new FabricInstaller(_im.SharedDir, gameDir);
-                await fi.InstallAsync(mcVersion, loaderVersion);
+                var qi = new QuiltInstaller(_im.SharedDir, "");
+                var versions = await qi.GetLoaderVersionsAsync(mcVersion);
+                loaderVersion = versions.FirstOrDefault();
             }
             catch { }
         }
+
+        var instance = _im.CreateInstance(name, mcVersion, loader, loaderVersion);
+        var gameDir = _im.GetGameDir(instance.Id);
+
+        try
+        {
+            if (loader == LoaderType.Fabric && loaderVersion != null)
+                await new FabricInstaller(_im.SharedDir, gameDir).InstallAsync(mcVersion, loaderVersion);
+            else if (loader == LoaderType.Quilt && loaderVersion != null)
+                await new QuiltInstaller(_im.SharedDir, gameDir).InstallAsync(mcVersion, loaderVersion);
+        }
+        catch { }
 
         _settings.SelectedInstanceId = instance.Id;
         _settings.Save();

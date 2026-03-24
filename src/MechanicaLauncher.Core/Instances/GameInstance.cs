@@ -47,6 +47,8 @@ public sealed class GameInstance
     {
         LoaderType.Fabric when !string.IsNullOrEmpty(LoaderVersion)
             => $"fabric-loader-{LoaderVersion}-{McVersion}",
+        LoaderType.Quilt when !string.IsNullOrEmpty(LoaderVersion)
+            => $"quilt-loader-{LoaderVersion}-{McVersion}",
         LoaderType.Forge when !string.IsNullOrEmpty(LoaderVersion)
             => $"{McVersion}-forge-{LoaderVersion}",
         _ => McVersion
@@ -58,5 +60,6 @@ public enum LoaderType
 {
     None,
     Fabric,
-    Forge
+    Forge,
+    Quilt
 }

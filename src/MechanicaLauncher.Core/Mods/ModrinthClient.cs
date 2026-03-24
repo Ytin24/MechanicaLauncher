@@ -24,7 +24,7 @@ public sealed class ModrinthClient
             facets.Add($"[\"categories:{loader}\"]");
 
         var facetsStr = $"[{string.Join(",", facets)}]";
-        var url = $"{ApiBase}/search?query={HttpUtility.UrlEncode(query)}&facets={HttpUtility.UrlEncode(facetsStr)}&offset={offset}&limit={limit}";
+        var url = $"{ApiBase}/search?query={Uri.EscapeDataString(query)}&facets={facetsStr}&offset={offset}&limit={limit}";
 
         return await Http.GetFromJsonAsync<ModrinthSearchResult>(url) ?? new();
     }
