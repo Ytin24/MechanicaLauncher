@@ -5,42 +5,88 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Background="Transparent">
 
-    <Grid Padding="{StaticResource PagePadding}" ColumnDefinitions="*,16,*" RowDefinitions="Auto,*">
+    <Grid Padding="{StaticResource PagePadding}" ColumnDefinitions="5*,16,7*" RowDefinitions="Auto,*">
 
-        <TextBlock Text="Mods" Style="{StaticResource PageHeader}" Grid.ColumnSpan="3" />
-
-        <!-- Left: Installed -->
-        <Grid Grid.Row="1" Grid.Column="0" RowDefinitions="Auto,*,Auto" MinHeight="300">
-            <TextBlock Text="INSTALLED" Style="{StaticResource SectionHeader}" />
-
-            <ScrollViewer Grid.Row="1" MinHeight="200">
-                <StackPanel x:Name="InstalledModsPanel" Spacing="6" />
-            </ScrollViewer>
-
-            <Border Grid.Row="2" Style="{StaticResource CardPanel}" Margin="0,12,0,0"
-                    BorderBrush="{StaticResource DimBrush}" BorderThickness="1"
-                    HorizontalAlignment="Stretch" MinHeight="64">
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="4">
-                    <FontIcon Glyph="&#xE710;" FontSize="20" Foreground="{StaticResource DimBrush}"
-                              HorizontalAlignment="Center" Width="20" Height="20" />
-                    <TextBlock Text="Drop .jar files here" Foreground="{StaticResource DimBrush}"
-                               FontSize="12" HorizontalAlignment="Center" Height="18" />
-                </StackPanel>
-            </Border>
+        <!-- Header -->
+        <Grid Grid.ColumnSpan="3" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Mods" Style="{StaticResource PageHeader}" Margin="0" />
+                <TextBlock x:Name="InstanceLabel" Text="No instance selected"
+                           Foreground="{StaticResource DimBrush}" FontSize="12" Height="18" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+                <Button x:Name="OpenFolderBtn" Style="{StaticResource SmallButton}" Click="OpenFolder_Click"
+                        ToolTipService.ToolTip="Open mods folder">
+                    <FontIcon Glyph="&#xE838;" FontSize="14" />
+                </Button>
+                <Button Style="{StaticResource SmallButton}" Click="RefreshMods_Click"
+                        ToolTipService.ToolTip="Refresh">
+                    <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                </Button>
+            </StackPanel>
         </Grid>
 
-        <!-- Right: Browse -->
-        <Grid Grid.Row="1" Grid.Column="2" RowDefinitions="Auto,Auto,*" MinHeight="300">
-            <TextBlock Text="BROWSE MODRINTH" Style="{StaticResource SectionHeader}" />
+        <!-- Left: Installed Mods -->
+        <Grid Grid.Row="1" Grid.Column="0" RowDefinitions="Auto,*" MinHeight="300">
+            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+                <TextBlock Text="INSTALLED" Style="{StaticResource SectionHeader}" Margin="0" />
+                <TextBlock x:Name="ModCountLabel" Grid.Column="1" Text="0" FontSize="12"
+                           Foreground="{StaticResource DimBrush}" VerticalAlignment="Center" />
+            </Grid>
 
-            <AutoSuggestBox Grid.Row="1" PlaceholderText="Search mods..." QueryIcon="Find"
-                            Margin="0,0,0,12" MinHeight="36"
-                            x:Name="ModSearchBox" QuerySubmitted="ModSearch_QuerySubmitted" />
+            <ScrollViewer Grid.Row="1">
+                <StackPanel x:Name="InstalledModsPanel" Spacing="6" />
+            </ScrollViewer>
+        </Grid>
 
-            <ScrollViewer Grid.Row="2" MinHeight="200">
+        <!-- Right: Browse Modrinth -->
+        <Grid Grid.Row="1" Grid.Column="2" RowDefinitions="Auto,Auto,Auto,*" MinHeight="300">
+
+            <!-- Search -->
+            <AutoSuggestBox PlaceholderText="Search mods, shaders, modpacks..." QueryIcon="Find"
+                            MinHeight="36" x:Name="ModSearchBox" QuerySubmitted="ModSearch_QuerySubmitted" />
+
+            <!-- Filters -->
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                <ComboBox x:Name="TypeFilter" MinWidth="100" MinHeight="32" SelectedIndex="0"
+                          SelectionChanged="Filter_Changed">
+                    <ComboBoxItem Content="Mods" Tag="mod" />
+                    <ComboBoxItem Content="Shaders" Tag="shader" />
+                    <ComboBoxItem Content="Resource Packs" Tag="resourcepack" />
+                    <ComboBoxItem Content="Modpacks" Tag="modpack" />
+                    <ComboBoxItem Content="Datapacks" Tag="datapack" />
+                </ComboBox>
+                <ComboBox x:Name="SortFilter" MinWidth="110" MinHeight="32" SelectedIndex="0"
+                          SelectionChanged="Filter_Changed">
+                    <ComboBoxItem Content="Relevance" Tag="relevance" />
+                    <ComboBoxItem Content="Downloads" Tag="downloads" />
+                    <ComboBoxItem Content="Newest" Tag="newest" />
+                    <ComboBoxItem Content="Updated" Tag="updated" />
+                </ComboBox>
+                <ComboBox x:Name="CategoryFilter" MinWidth="110" MinHeight="32" SelectedIndex="0"
+                          SelectionChanged="Filter_Changed">
+                    <ComboBoxItem Content="All" Tag="" />
+                    <ComboBoxItem Content="Optimization" Tag="optimization" />
+                    <ComboBoxItem Content="Utility" Tag="utility" />
+                    <ComboBoxItem Content="Library" Tag="library" />
+                    <ComboBoxItem Content="Decoration" Tag="decoration" />
+                    <ComboBoxItem Content="Adventure" Tag="adventure" />
+                    <ComboBoxItem Content="Technology" Tag="technology" />
+                    <ComboBoxItem Content="Magic" Tag="magic" />
+                    <ComboBoxItem Content="Storage" Tag="storage" />
+                    <ComboBoxItem Content="World Gen" Tag="worldgen" />
+                </ComboBox>
+            </StackPanel>
+
+            <!-- Results count -->
+            <TextBlock Grid.Row="2" x:Name="ResultsInfo" Text="" FontSize="12"
+                       Foreground="{StaticResource DimBrush}" Margin="0,8,0,4" Height="18" />
+
+            <!-- Results -->
+            <ScrollViewer Grid.Row="3">
                 <StackPanel x:Name="SearchResultsPanel" Spacing="6">
                     <Border Style="{StaticResource CardPanelWide}" Opacity="0.5" MinHeight="48">
-                        <TextBlock Text="Type to search mods on Modrinth..."
+                        <TextBlock Text="Search or browse mods from Modrinth"
                                    Foreground="{StaticResource DimBrush}" FontSize="13"
                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>

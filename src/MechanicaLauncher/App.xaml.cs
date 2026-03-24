@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 
 namespace MechanicaLauncher;
@@ -5,7 +6,7 @@ namespace MechanicaLauncher;
 public partial class App : Application
 {
     public static Window MainWindow { get; private set; } = null!;
-    public static Process? GameProcess { get; set; }
+    public static ConcurrentDictionary<string, Process> RunningInstances { get; } = new();
 
     public App()
     {

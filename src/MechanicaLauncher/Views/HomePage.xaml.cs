@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using MechanicaLauncher.Core.Game;
 using MechanicaLauncher.Core.Instances;
 using MechanicaLauncher.Core.Models;
@@ -14,7 +16,6 @@ public sealed partial class HomePage : Page
     private readonly InstanceManager _im = new();
     private VersionManager _vm = null!;
     private VersionManifest? _manifest;
-    private Process? GameProcess { get => App.GameProcess; set => App.GameProcess = value; }
 
     public HomePage()
     {
@@ -23,11 +24,11 @@ public sealed partial class HomePage : Page
         _ = LoadAsync();
     }
 
-    private bool IsGameRunning => GameProcess is { HasExited: false };
+    private bool IsInstanceRunning(string instanceId) =>
+        App.RunningInstances.TryGetValue(instanceId, out var p) && !p.HasExited;
 
     private async Task LoadAsync()
     {
-        UpdatePlayButton();
         var allJava = JavaFinder.FindAllJava();
         JavaVersionText.Text = allJava.Count > 0 ? $"Java {allJava.Max(j => j.MajorVersion)}" : "Not found";
         AccountText.Text = _settings.Username;
@@ -37,9 +38,11 @@ public sealed partial class HomePage : Page
 
         foreach (var inst in instances)
         {
+            var running = IsInstanceRunning(inst.Id);
             var label = inst.Loader != LoaderType.None
                 ? $"{inst.Name}  ·  {inst.McVersion}  ·  {inst.Loader}"
                 : $"{inst.Name}  ·  {inst.McVersion}";
+            if (running) label += "  ▶";
             ProfileSelector.Items.Add(new ComboBoxItem { Content = label, Tag = inst.Id });
         }
 
@@ -53,24 +56,31 @@ public sealed partial class HomePage : Page
             ProfileSelector.SelectedIndex = idx;
         }
 
-        var selected = GetSelectedInstance();
-        if (selected != null)
-        {
-            var modsDir = Path.Combine(_im.GetGameDir(selected.Id), "mods");
-            ModCountText.Text = Directory.Exists(modsDir) ? $"{Directory.GetFiles(modsDir, "*.jar").Length} active" : "0";
-        }
+        UpdatePlayButton();
+        UpdateModCount();
 
         try
         {
             _manifest = await _vm.GetManifestAsync();
+            var running = App.RunningInstances.Count(kv => !kv.Value.HasExited);
             NotificationBar.Message = instances.Count > 0
-                ? $"{instances.Count} instance(s). Latest MC: {_manifest.Latest.Release}"
+                ? $"{instances.Count} instance(s){(running > 0 ? $", {running} running" : "")}. Latest: {_manifest.Latest.Release}"
                 : "Create an instance in the Instances tab.";
         }
         catch (Exception ex)
         {
             NotificationBar.Severity = InfoBarSeverity.Warning;
             NotificationBar.Message = $"Offline — {ex.Message}";
+        }
+    }
+
+    private void UpdateModCount()
+    {
+        var inst = GetSelectedInstance();
+        if (inst != null)
+        {
+            var modsDir = Path.Combine(_im.GetGameDir(inst.Id), "mods");
+            ModCountText.Text = Directory.Exists(modsDir) ? $"{Directory.GetFiles(modsDir, "*.jar").Length} active" : "0";
         }
     }
 
@@ -82,24 +92,26 @@ public sealed partial class HomePage : Page
 
     private void UpdatePlayButton()
     {
-        PlayButton.IsEnabled = !IsGameRunning;
+        var inst = GetSelectedInstance();
+        var running = inst != null && IsInstanceRunning(inst.Id);
+
+        PlayButton.IsEnabled = !running;
         PlayButton.Content = new StackPanel
         {
             Orientation = Orientation.Horizontal, Spacing = 12,
             Children =
             {
-                new FontIcon { Glyph = IsGameRunning ? "\uE769" : "\uE768", FontSize = 22, Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White) },
-                new TextBlock { Text = IsGameRunning ? "RUNNING" : "P L A Y", FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }
+                new FontIcon { Glyph = running ? "\uE769" : "\uE768", FontSize = 22, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White) },
+                new TextBlock { Text = running ? "RUNNING" : "P L A Y", FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }
             }
         };
     }
 
     private async void PlayButton_Click(object sender, RoutedEventArgs e)
     {
-        if (IsGameRunning) { ShowNotification(InfoBarSeverity.Warning, "Game is already running."); return; }
-
         var instance = GetSelectedInstance();
-        if (instance == null) { ShowNotification(InfoBarSeverity.Warning, "Select an instance first."); return; }
+        if (instance == null) { ShowNotification(InfoBarSeverity.Warning, "Select an instance."); return; }
+        if (IsInstanceRunning(instance.Id)) { ShowNotification(InfoBarSeverity.Warning, "This instance is already running."); return; }
 
         _settings.SelectedInstanceId = instance.Id;
         _settings.Save();
@@ -118,22 +130,12 @@ public sealed partial class HomePage : Page
 
             if (_manifest == null) _manifest = await _vm.GetManifestAsync();
 
-            // Always ensure vanilla version meta is cached
             var vanillaEntry = _manifest.Versions.FirstOrDefault(v => v.Id == instance.McVersion);
-            if (vanillaEntry == null)
-            {
-                ShowNotification(InfoBarSeverity.Error, $"MC {instance.McVersion} not found in manifest.");
-                return;
-            }
+            if (vanillaEntry == null) { ShowNotification(InfoBarSeverity.Error, $"MC {instance.McVersion} not found."); return; }
 
             var vanillaMeta = await _vm.GetVersionMetaAsync(vanillaEntry);
+            var meta = isModded ? await _vm.GetMergedMetaAsync(versionId, gameDir) : vanillaMeta;
 
-            // For modded: get merged meta; for vanilla: use vanilla directly
-            var meta = isModded
-                ? await _vm.GetMergedMetaAsync(versionId, gameDir)
-                : vanillaMeta;
-
-            // Java
             var javaComponent = meta.JavaVersion?.Component ?? "java-runtime-delta";
             var javaPath = !string.IsNullOrEmpty(instance.JavaPath) && File.Exists(instance.JavaPath)
                 ? instance.JavaPath
@@ -147,36 +149,25 @@ public sealed partial class HomePage : Page
                 if (javaPath == null) { ShowNotification(InfoBarSeverity.Error, "Java not found."); return; }
             }
 
-            // Always download vanilla version files (jar, libraries, assets)
             var vanillaJar = Path.Combine(gameDir, "versions", instance.McVersion, $"{instance.McVersion}.jar");
             if (!File.Exists(vanillaJar))
             {
                 ProgressText.Text = "Downloading game...";
-                var downloader = new AssetDownloader(_im.SharedDir, gameDir);
-                downloader.ProgressChanged += (status, progress) =>
-                    DispatcherQueue.TryEnqueue(() =>
-                    {
-                        ProgressText.Text = status;
-                        if (progress >= 0) { DownloadProgress.IsIndeterminate = false; DownloadProgress.Value = progress; }
-                    });
-                await Task.Run(() => downloader.DownloadVersionAsync(vanillaMeta));
+                var dl = new AssetDownloader(_im.SharedDir, gameDir);
+                dl.ProgressChanged += (s, p) => DispatcherQueue.TryEnqueue(() =>
+                {
+                    ProgressText.Text = s;
+                    if (p >= 0) { DownloadProgress.IsIndeterminate = false; DownloadProgress.Value = p; }
+                });
+                await Task.Run(() => dl.DownloadVersionAsync(vanillaMeta));
             }
 
-            // For modded: also download loader libraries
             if (isModded && meta.Libraries.Count > vanillaMeta.Libraries.Count)
             {
-                ProgressText.Text = "Downloading loader libraries...";
-                var downloader = new AssetDownloader(_im.SharedDir, gameDir);
-                downloader.ProgressChanged += (status, progress) =>
-                    DispatcherQueue.TryEnqueue(() => ProgressText.Text = status);
-                // Download only the extra libraries (loader adds them)
-                var loaderMeta = new VersionMeta
-                {
-                    Id = versionId,
-                    Libraries = meta.Libraries,
-                    Downloads = [],
-                };
-                await Task.Run(() => downloader.DownloadVersionAsync(loaderMeta));
+                ProgressText.Text = "Loader libraries...";
+                var dl = new AssetDownloader(_im.SharedDir, gameDir);
+                dl.ProgressChanged += (s, _) => DispatcherQueue.TryEnqueue(() => ProgressText.Text = s);
+                await Task.Run(() => dl.DownloadVersionAsync(new VersionMeta { Id = versionId, Libraries = meta.Libraries, Downloads = [] }));
             }
 
             ProgressText.Text = "Launching...";
@@ -184,24 +175,25 @@ public sealed partial class HomePage : Page
             DownloadProgress.Value = 95;
 
             var launcher = new GameLauncher(gameDir, _im.SharedDir);
-            GameProcess = launcher.Launch(meta, javaPath, _settings.Username,
+            var proc = launcher.Launch(meta, javaPath, _settings.Username,
                 uuid: _settings.Uuid, accessToken: _settings.AccessToken,
                 minMem: instance.MinMemoryMb, maxMem: instance.MaxMemoryMb,
                 extraJvmArgs: instance.JvmArgs,
                 windowWidth: instance.WindowWidth, windowHeight: instance.WindowHeight,
                 vanillaVersionId: isModded ? instance.McVersion : null);
 
+            App.RunningInstances[instance.Id] = proc;
             instance.LastPlayed = DateTime.UtcNow;
             _im.SaveInstance(instance);
             UpdatePlayButton();
 
+            var instId = instance.Id;
             _ = Task.Run(async () =>
             {
-                var proc = GameProcess!;
                 var stderr = await proc.StandardError.ReadToEndAsync();
                 await proc.WaitForExitAsync();
                 var exit = proc.ExitCode;
-                GameProcess = null;
+                App.RunningInstances.TryRemove(instId, out _);
                 DispatcherQueue.TryEnqueue(() =>
                 {
                     UpdatePlayButton();
@@ -219,7 +211,8 @@ public sealed partial class HomePage : Page
         }
         finally
         {
-            if (!IsGameRunning) PlayButton.IsEnabled = true;
+            if (GetSelectedInstance() is not { } si || !IsInstanceRunning(si.Id))
+                PlayButton.IsEnabled = true;
             await Task.Delay(3000);
             ProgressPanel.Visibility = Visibility.Collapsed;
             DownloadProgress.Value = 0;

@@ -105,6 +105,21 @@ public sealed partial class InstancesPage : Page
 
         info.Children.Add(titleRow);
 
+        var isRunning = App.RunningInstances.TryGetValue(inst.Id, out var proc) && !proc.HasExited;
+
+        if (isRunning)
+        {
+            var runBadge = new Border
+            {
+                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0x21, 0x96, 0xF3)),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(8, 3, 8, 3),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            runBadge.Child = new TextBlock { Text = "Running", FontSize = 10, Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
+            titleRow.Children.Add(runBadge);
+        }
+
         var sub = $"{inst.McVersion}";
         if (inst.LastPlayed.HasValue)
             sub += $"  ·  Last played {inst.LastPlayed.Value:MMM dd}";
@@ -182,7 +197,21 @@ public sealed partial class InstancesPage : Page
             };
             if (await dialog.ShowAsync() == ContentDialogResult.Primary)
             {
-                _im.DeleteInstance(id);
+                try
+                {
+                    _im.DeleteInstance(id);
+                }
+                catch (Exception ex)
+                {
+                    await new ContentDialog
+                    {
+                        Title = "Error",
+                        Content = $"Could not delete: {ex.Message}",
+                        CloseButtonText = "OK",
+                        XamlRoot = this.XamlRoot
+                    }.ShowAsync();
+                    return;
+                }
                 if (_settings.SelectedInstanceId == id)
                 {
                     _settings.SelectedInstanceId = null;
