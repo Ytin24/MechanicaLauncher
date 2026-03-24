@@ -8,7 +8,8 @@ public sealed class MicrosoftAuth
 {
     private static readonly HttpClient Http = new();
     private const string ClientId = "00000000402b5328";
-    private const string Scope = "service::user.auth.xboxlive.com::MBI_SSL";
+    private const string AuthBase = "https://login.microsoftonline.com/consumers/oauth2/v2.0";
+    private const string Scope = "XboxLive.signin offline_access";
 
     public sealed class DeviceCodeInfo
     {
@@ -23,21 +24,21 @@ public sealed class MicrosoftAuth
         var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["client_id"] = ClientId,
-            ["scope"] = Scope,
-            ["response_type"] = "device_code"
+            ["scope"] = Scope
         });
 
-        var resp = await Http.PostAsync("https://login.live.com/oauth20_connect.srf", content);
-        if (!resp.IsSuccessStatusCode)
-            throw new Exception($"Failed to request device code: {resp.StatusCode}");
-
+        var resp = await Http.PostAsync($"{AuthBase}/devicecode", content);
         var json = await resp.Content.ReadAsStringAsync();
-        var data = JsonSerializer.Deserialize<JsonElement>(json);
+        if (!resp.IsSuccessStatusCode)
+            throw new Exception($"Device code request failed: {json[..Math.Min(300, json.Length)]}");
 
+        var data = JsonSerializer.Deserialize<JsonElement>(json);
         return new DeviceCodeInfo
         {
             UserCode = GetString(data, "user_code"),
-            VerificationUri = GetString(data, "verification_uri"),
+            VerificationUri = data.TryGetProperty("verification_uri", out var vu)
+                ? vu.GetString() ?? "https://microsoft.com/devicelogin"
+                : "https://microsoft.com/devicelogin",
             DeviceCode = GetString(data, "device_code"),
             Interval = data.TryGetProperty("interval", out var i) ? i.GetInt32() : 5
         };
@@ -56,16 +57,17 @@ public sealed class MicrosoftAuth
                 ["grant_type"] = "urn:ietf:params:oauth:grant-type:device_code"
             });
 
-            var resp = await Http.PostAsync("https://login.live.com/oauth20_token.srf", content, ct);
+            var resp = await Http.PostAsync($"{AuthBase}/token", content, ct);
             var json = await resp.Content.ReadAsStringAsync(ct);
             var data = JsonSerializer.Deserialize<JsonElement>(json);
 
             if (data.TryGetProperty("error", out var error))
             {
-                var errorStr = error.GetString();
-                if (errorStr == "authorization_pending") continue;
-                if (errorStr == "slow_down") { await Task.Delay(2000, ct); continue; }
-                throw new Exception($"Auth error: {errorStr}");
+                var err = error.GetString();
+                if (err == "authorization_pending") continue;
+                if (err == "slow_down") { await Task.Delay(5000, ct); continue; }
+                if (err == "expired_token") throw new Exception("Code expired. Try again.");
+                throw new Exception($"Auth error: {err}");
             }
 
             if (!data.TryGetProperty("access_token", out var tokenProp))
@@ -82,46 +84,65 @@ public sealed class MicrosoftAuth
         // Xbox Live
         var xblResp = await PostJsonAsync("https://user.auth.xboxlive.com/user/authenticate", new
         {
-            Properties = new { AuthMethod = "RPS", SiteName = "user.auth.xboxlive.com", RpsTicket = $"d={msToken}" },
+            Properties = new
+            {
+                AuthMethod = "RPS",
+                SiteName = "user.auth.xboxlive.com",
+                RpsTicket = $"d={msToken}"
+            },
             RelyingParty = "http://auth.xboxlive.com",
             TokenType = "JWT"
         });
 
         var xblToken = GetString(xblResp, "Token");
-        var userHash = xblResp.GetProperty("DisplayClaims").GetProperty("xui")[0].GetProperty("uhs").GetString()
-                       ?? throw new Exception("Missing uhs in Xbox Live response");
+        var uhs = xblResp.GetProperty("DisplayClaims").GetProperty("xui")[0].GetProperty("uhs").GetString()
+                  ?? throw new Exception("Missing uhs");
 
         // XSTS
         var xstsResp = await PostJsonAsync("https://xsts.auth.xboxlive.com/xsts/authorize", new
         {
-            Properties = new { SandboxId = "RETAIL", UserTokens = new[] { xblToken } },
+            Properties = new
+            {
+                SandboxId = "RETAIL",
+                UserTokens = new[] { xblToken }
+            },
             RelyingParty = "rp://api.minecraftservices.com/",
             TokenType = "JWT"
         });
 
         if (xstsResp.TryGetProperty("XErr", out var xErr))
-            throw new Exception($"Xbox error {xErr.GetInt64()}: check your Xbox account");
+        {
+            var code = xErr.GetInt64();
+            var msg = code switch
+            {
+                2148916233 => "This Microsoft account has no Xbox account. Sign up at xbox.com first.",
+                2148916235 => "Xbox Live is not available in your country.",
+                2148916238 => "This account belongs to someone under 18. Add it to a Family.",
+                _ => $"Xbox error {code}"
+            };
+            throw new Exception(msg);
+        }
 
         var xstsToken = GetString(xstsResp, "Token");
 
         // Minecraft Auth
         var mcResp = await PostJsonAsync(
             "https://api.minecraftservices.com/authentication/login_with_xbox",
-            new { identityToken = $"XBL3.0 x={userHash};{xstsToken}" });
+            new { identityToken = $"XBL3.0 x={uhs};{xstsToken}" });
 
         var mcToken = GetString(mcResp, "access_token");
 
         // Minecraft Profile
-        using var profileReq = new HttpRequestMessage(HttpMethod.Get, "https://api.minecraftservices.com/minecraft/profile");
+        using var profileReq = new HttpRequestMessage(HttpMethod.Get,
+            "https://api.minecraftservices.com/minecraft/profile");
         profileReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", mcToken);
         var profileResp = await Http.SendAsync(profileReq);
+        var profileJson = await profileResp.Content.ReadAsStringAsync();
 
         if (!profileResp.IsSuccessStatusCode)
-            throw new Exception($"Failed to get MC profile: {profileResp.StatusCode}. Do you own Minecraft?");
+            throw new Exception("Failed to get MC profile. Do you own Minecraft Java Edition?");
 
-        var profileJson = await profileResp.Content.ReadAsStringAsync();
         var profile = JsonSerializer.Deserialize<JsonElement>(profileJson);
-
         return new AuthResult
         {
             Username = GetString(profile, "name"),
@@ -134,20 +155,23 @@ public sealed class MicrosoftAuth
     private static async Task<JsonElement> PostJsonAsync(string url, object payload)
     {
         var json = JsonSerializer.Serialize(payload);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
         var resp = await Http.PostAsync(url, content);
+        var respBody = await resp.Content.ReadAsStringAsync();
 
-        var respJson = await resp.Content.ReadAsStringAsync();
         if (!resp.IsSuccessStatusCode)
-            throw new Exception($"Request to {new Uri(url).Host} failed ({resp.StatusCode}): {respJson[..Math.Min(200, respJson.Length)]}");
+        {
+            var host = new Uri(url).Host;
+            throw new Exception($"Request to {host} failed ({resp.StatusCode}): {respBody[..Math.Min(200, respBody.Length)]}");
+        }
 
-        return JsonSerializer.Deserialize<JsonElement>(respJson);
+        return JsonSerializer.Deserialize<JsonElement>(respBody);
     }
 
-    private static string GetString(JsonElement data, string property)
+    private static string GetString(JsonElement data, string prop)
     {
-        if (!data.TryGetProperty(property, out var prop))
-            throw new Exception($"Missing '{property}' in response");
-        return prop.GetString() ?? throw new Exception($"'{property}' is null");
+        if (!data.TryGetProperty(prop, out var val))
+            throw new Exception($"Missing '{prop}' in response");
+        return val.GetString() ?? throw new Exception($"'{prop}' is null");
     }
 }
