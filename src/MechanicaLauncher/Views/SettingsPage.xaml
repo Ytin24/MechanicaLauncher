@@ -6,63 +6,67 @@
     Background="Transparent">
 
     <ScrollViewer Padding="{StaticResource PagePadding}">
-        <StackPanel Spacing="16" MaxWidth="600" HorizontalAlignment="Center">
+        <StackPanel Spacing="16" Width="560" HorizontalAlignment="Center">
             <TextBlock Text="Settings" Style="{StaticResource PageHeader}" HorizontalAlignment="Center" />
 
             <!-- Java -->
-            <Border Style="{StaticResource CardPanelWide}" Padding="24">
-                <StackPanel Spacing="16">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
+            <Border Style="{StaticResource CardPanelWide}" Padding="24" MinHeight="280">
+                <StackPanel Spacing="16" HorizontalAlignment="Stretch">
+                    <StackPanel Orientation="Horizontal" Spacing="10" Height="28">
                         <FontIcon Glyph="&#xE7F8;" FontSize="18" Foreground="{StaticResource AccentBrush}" />
                         <TextBlock Text="Java" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center" />
                     </StackPanel>
 
                     <StackPanel Spacing="4">
-                        <TextBlock Text="Java Path" Foreground="{StaticResource SubtleBrush}" FontSize="12" />
+                        <TextBlock Text="Java Path" Foreground="{StaticResource SubtleBrush}" FontSize="12" Height="18" />
                         <Grid ColumnDefinitions="*,Auto">
-                            <TextBox x:Name="JavaPathBox" PlaceholderText="Auto-detect" />
-                            <Button Grid.Column="1" Content="Browse" Margin="8,0,0,0" Style="{StaticResource SmallButton}" />
+                            <TextBox x:Name="JavaPathBox" PlaceholderText="Auto-detect" MinHeight="36" />
+                            <Button Grid.Column="1" Content="Browse" Margin="8,0,0,0"
+                                    Style="{StaticResource SmallButton}" MinHeight="36" />
                         </Grid>
                     </StackPanel>
 
                     <StackPanel Spacing="6">
-                        <Grid ColumnDefinitions="*,Auto">
+                        <Grid ColumnDefinitions="*,Auto" Height="18">
                             <TextBlock Text="Min Memory" Foreground="{StaticResource SubtleBrush}" FontSize="12" />
                             <TextBlock Grid.Column="1" FontSize="13" FontWeight="SemiBold">
                                 <Run x:Name="MinMemText" Text="2048" /><Run Text=" MB" />
                             </TextBlock>
                         </Grid>
                         <Slider x:Name="MinMemSlider" Minimum="512" Maximum="16384" Value="2048"
-                                StepFrequency="512" SnapsTo="StepValues" ValueChanged="MinMemSlider_Changed" />
+                                StepFrequency="512" SnapsTo="StepValues" Height="40"
+                                ValueChanged="MinMemSlider_Changed" />
                     </StackPanel>
 
                     <StackPanel Spacing="6">
-                        <Grid ColumnDefinitions="*,Auto">
+                        <Grid ColumnDefinitions="*,Auto" Height="18">
                             <TextBlock Text="Max Memory" Foreground="{StaticResource SubtleBrush}" FontSize="12" />
                             <TextBlock Grid.Column="1" FontSize="13" FontWeight="SemiBold">
                                 <Run x:Name="MaxMemText" Text="4096" /><Run Text=" MB" />
                             </TextBlock>
                         </Grid>
                         <Slider x:Name="MaxMemSlider" Minimum="512" Maximum="16384" Value="4096"
-                                StepFrequency="512" SnapsTo="StepValues" ValueChanged="MaxMemSlider_Changed" />
+                                StepFrequency="512" SnapsTo="StepValues" Height="40"
+                                ValueChanged="MaxMemSlider_Changed" />
                     </StackPanel>
 
                     <StackPanel Spacing="4">
-                        <TextBlock Text="JVM Arguments" Foreground="{StaticResource SubtleBrush}" FontSize="12" />
-                        <TextBox x:Name="JvmArgsBox" PlaceholderText="-XX:+UseG1GC -XX:+ParallelRefProcEnabled" />
+                        <TextBlock Text="JVM Arguments" Foreground="{StaticResource SubtleBrush}" FontSize="12" Height="18" />
+                        <TextBox x:Name="JvmArgsBox" PlaceholderText="-XX:+UseG1GC -XX:+ParallelRefProcEnabled"
+                                 MinHeight="36" />
                     </StackPanel>
                 </StackPanel>
             </Border>
 
             <!-- Appearance -->
-            <Border Style="{StaticResource CardPanelWide}" Padding="24">
-                <StackPanel Spacing="16">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
+            <Border Style="{StaticResource CardPanelWide}" Padding="24" MinHeight="100">
+                <StackPanel Spacing="16" HorizontalAlignment="Stretch">
+                    <StackPanel Orientation="Horizontal" Spacing="10" Height="28">
                         <FontIcon Glyph="&#xE771;" FontSize="18" Foreground="{StaticResource AccentBrush}" />
                         <TextBlock Text="Appearance" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center" />
                     </StackPanel>
                     <ComboBox Header="Theme" x:Name="ThemeSelector" SelectionChanged="Theme_Changed"
-                              MinWidth="200" SelectedIndex="0">
+                              MinWidth="200" MinHeight="36" SelectedIndex="0">
                         <ComboBoxItem Content="Dark" />
                         <ComboBoxItem Content="Light" />
                         <ComboBoxItem Content="System" />
@@ -71,37 +75,41 @@
             </Border>
 
             <!-- Game -->
-            <Border Style="{StaticResource CardPanelWide}" Padding="24">
-                <StackPanel Spacing="16">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
+            <Border Style="{StaticResource CardPanelWide}" Padding="24" MinHeight="260">
+                <StackPanel Spacing="16" HorizontalAlignment="Stretch">
+                    <StackPanel Orientation="Horizontal" Spacing="10" Height="28">
                         <FontIcon Glyph="&#xE7FC;" FontSize="18" Foreground="{StaticResource AccentBrush}" />
                         <TextBlock Text="Game" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center" />
                     </StackPanel>
 
                     <StackPanel Spacing="4">
-                        <TextBlock Text="Game Directory" Foreground="{StaticResource SubtleBrush}" FontSize="12" />
+                        <TextBlock Text="Game Directory" Foreground="{StaticResource SubtleBrush}" FontSize="12" Height="18" />
                         <Grid ColumnDefinitions="*,Auto">
-                            <TextBox PlaceholderText="%APPDATA%\.minecraft" />
-                            <Button Grid.Column="1" Content="Browse" Margin="8,0,0,0" Style="{StaticResource SmallButton}" />
+                            <TextBox PlaceholderText="%APPDATA%\.minecraft" MinHeight="36" />
+                            <Button Grid.Column="1" Content="Browse" Margin="8,0,0,0"
+                                    Style="{StaticResource SmallButton}" MinHeight="36" />
                         </Grid>
                     </StackPanel>
 
-                    <ToggleSwitch Header="Close launcher when game starts" IsOn="False" />
-                    <ToggleSwitch Header="Show snapshot versions" IsOn="False" />
+                    <ToggleSwitch Header="Close launcher when game starts" IsOn="False" MinHeight="44" />
+                    <ToggleSwitch Header="Show snapshot versions" IsOn="False" MinHeight="44" />
 
                     <Grid ColumnDefinitions="*,Auto,*">
-                        <TextBox Header="Window Width" PlaceholderText="1920" />
-                        <TextBlock Grid.Column="1" Text="×" VerticalAlignment="Bottom" Margin="12,0,12,10" FontSize="16" />
-                        <TextBox Grid.Column="2" Header="Window Height" PlaceholderText="1080" />
+                        <TextBox Header="Window Width" PlaceholderText="1920" MinHeight="36" />
+                        <TextBlock Grid.Column="1" Text="×" VerticalAlignment="Bottom"
+                                   Margin="12,0,12,10" FontSize="16" Height="24" />
+                        <TextBox Grid.Column="2" Header="Window Height" PlaceholderText="1080" MinHeight="36" />
                     </Grid>
                 </StackPanel>
             </Border>
 
             <!-- About -->
-            <Border Style="{StaticResource CardPanelWide}" Padding="20">
-                <StackPanel HorizontalAlignment="Center" Spacing="4">
-                    <TextBlock Text="Mechanica Launcher" FontWeight="SemiBold" FontSize="15" HorizontalAlignment="Center" />
-                    <TextBlock Text="v1.0.0  ·  WinUI 3  ·  .NET 9" Foreground="{StaticResource DimBrush}" FontSize="12" HorizontalAlignment="Center" />
+            <Border Style="{StaticResource CardPanelWide}" Padding="20" MinHeight="60">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="4">
+                    <TextBlock Text="Mechanica Launcher" FontWeight="SemiBold" FontSize="15"
+                               HorizontalAlignment="Center" Height="22" />
+                    <TextBlock Text="v1.0.0  ·  WinUI 3  ·  .NET 9" Foreground="{StaticResource DimBrush}"
+                               FontSize="12" HorizontalAlignment="Center" Height="18" />
                 </StackPanel>
             </Border>
         </StackPanel>

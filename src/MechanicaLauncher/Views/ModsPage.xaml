@@ -10,37 +10,39 @@
         <TextBlock Text="Mods" Style="{StaticResource PageHeader}" Grid.ColumnSpan="3" />
 
         <!-- Left: Installed -->
-        <Grid Grid.Row="1" Grid.Column="0" RowDefinitions="Auto,*,Auto">
+        <Grid Grid.Row="1" Grid.Column="0" RowDefinitions="Auto,*,Auto" MinHeight="300">
             <TextBlock Text="INSTALLED" Style="{StaticResource SectionHeader}" />
 
-            <ScrollViewer Grid.Row="1">
+            <ScrollViewer Grid.Row="1" MinHeight="200">
                 <StackPanel x:Name="InstalledModsPanel" Spacing="6" />
             </ScrollViewer>
 
-            <!-- Drop zone -->
             <Border Grid.Row="2" Style="{StaticResource CardPanel}" Margin="0,12,0,0"
                     BorderBrush="{StaticResource DimBrush}" BorderThickness="1"
-                    HorizontalAlignment="Stretch">
-                <StackPanel HorizontalAlignment="Center" Spacing="4">
-                    <FontIcon Glyph="&#xE710;" FontSize="20" Foreground="{StaticResource DimBrush}" HorizontalAlignment="Center" />
-                    <TextBlock Text="Drop .jar files here" Foreground="{StaticResource DimBrush}" FontSize="12" HorizontalAlignment="Center" />
+                    HorizontalAlignment="Stretch" MinHeight="64">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="4">
+                    <FontIcon Glyph="&#xE710;" FontSize="20" Foreground="{StaticResource DimBrush}"
+                              HorizontalAlignment="Center" Width="20" Height="20" />
+                    <TextBlock Text="Drop .jar files here" Foreground="{StaticResource DimBrush}"
+                               FontSize="12" HorizontalAlignment="Center" Height="18" />
                 </StackPanel>
             </Border>
         </Grid>
 
         <!-- Right: Browse -->
-        <Grid Grid.Row="1" Grid.Column="2" RowDefinitions="Auto,Auto,*">
+        <Grid Grid.Row="1" Grid.Column="2" RowDefinitions="Auto,Auto,*" MinHeight="300">
             <TextBlock Text="BROWSE MODRINTH" Style="{StaticResource SectionHeader}" />
 
             <AutoSuggestBox Grid.Row="1" PlaceholderText="Search mods..." QueryIcon="Find"
-                            Margin="0,0,0,12" x:Name="ModSearchBox" QuerySubmitted="ModSearch_QuerySubmitted" />
+                            Margin="0,0,0,12" MinHeight="36"
+                            x:Name="ModSearchBox" QuerySubmitted="ModSearch_QuerySubmitted" />
 
-            <ScrollViewer Grid.Row="2">
+            <ScrollViewer Grid.Row="2" MinHeight="200">
                 <StackPanel x:Name="SearchResultsPanel" Spacing="6">
-                    <Border Style="{StaticResource CardPanelWide}" Opacity="0.5">
+                    <Border Style="{StaticResource CardPanelWide}" Opacity="0.5" MinHeight="48">
                         <TextBlock Text="Type to search mods on Modrinth..."
                                    Foreground="{StaticResource DimBrush}" FontSize="13"
-                                   HorizontalAlignment="Center" />
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                 </StackPanel>
             </ScrollViewer>

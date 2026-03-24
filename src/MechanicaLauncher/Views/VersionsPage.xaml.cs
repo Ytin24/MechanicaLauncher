@@ -77,6 +77,7 @@ public sealed partial class VersionsPage : Page
             Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF)),
             CornerRadius = new CornerRadius(10),
             Padding = new Thickness(20),
+            MinHeight = 72,
         };
 
         var grid = new Grid
@@ -93,7 +94,7 @@ public sealed partial class VersionsPage : Page
         {
             Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0x2D, 0x2D, 0x2D)),
             CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(12),
+            Width = 48, Height = 48,
             VerticalAlignment = VerticalAlignment.Center
         };
         var iconColor = isInstalled
@@ -101,7 +102,7 @@ public sealed partial class VersionsPage : Page
             : isLatest
                 ? Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x98, 0x00)
                 : Windows.UI.Color.FromArgb(0xFF, 0x88, 0x88, 0x88);
-        iconBorder.Child = new FontIcon { Glyph = "\uE74C", FontSize = 22, Foreground = new SolidColorBrush(iconColor) };
+        iconBorder.Child = new FontIcon { Glyph = "\uE74C", FontSize = 20, Foreground = new SolidColorBrush(iconColor), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
 
         var info = new StackPanel { Margin = new Thickness(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Spacing = 4 };
         var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
@@ -132,7 +133,9 @@ public sealed partial class VersionsPage : Page
         {
             Content = isInstalled ? "Play" : "Install",
             VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 13, Padding = new Thickness(16, 6, 16, 6),
+            FontSize = 13,
+            Padding = new Thickness(16, 6, 16, 6),
+            MinWidth = 72, MinHeight = 32,
             CornerRadius = new CornerRadius(6)
         };
         if (isInstalled)

@@ -36,13 +36,17 @@
                 <Setter Property="FontWeight" Value="SemiBold" />
                 <Setter Property="CornerRadius" Value="{StaticResource MediumRadius}" />
                 <Setter Property="Padding" Value="56,16" />
+                <Setter Property="MinWidth" Value="220" />
+                <Setter Property="MinHeight" Value="56" />
                 <Setter Property="HorizontalAlignment" Value="Center" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
             </Style>
 
             <Style x:Key="CardPanel" TargetType="Border">
                 <Setter Property="Background" Value="{StaticResource CardBrush}" />
                 <Setter Property="CornerRadius" Value="{StaticResource MediumRadius}" />
                 <Setter Property="Padding" Value="20,16" />
+                <Setter Property="MinHeight" Value="48" />
             </Style>
 
             <Style x:Key="CardPanelWide" TargetType="Border" BasedOn="{StaticResource CardPanel}">
@@ -54,6 +58,7 @@
                 <Setter Property="FontSize" Value="28" />
                 <Setter Property="FontWeight" Value="SemiBold" />
                 <Setter Property="Margin" Value="0,0,0,20" />
+                <Setter Property="Height" Value="40" />
             </Style>
 
             <Style x:Key="SectionHeader" TargetType="TextBlock">
@@ -62,23 +67,36 @@
                 <Setter Property="Foreground" Value="{StaticResource SubtleBrush}" />
                 <Setter Property="Margin" Value="0,8,0,10" />
                 <Setter Property="CharacterSpacing" Value="60" />
+                <Setter Property="Height" Value="20" />
             </Style>
 
             <Style x:Key="Badge" TargetType="Border">
                 <Setter Property="CornerRadius" Value="4" />
                 <Setter Property="Padding" Value="8,3" />
+                <Setter Property="MinHeight" Value="22" />
                 <Setter Property="HorizontalAlignment" Value="Left" />
+                <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
 
             <Style x:Key="SmallButton" TargetType="Button">
                 <Setter Property="FontSize" Value="13" />
                 <Setter Property="Padding" Value="16,6" />
+                <Setter Property="MinWidth" Value="72" />
+                <Setter Property="MinHeight" Value="32" />
                 <Setter Property="CornerRadius" Value="{StaticResource SmallRadius}" />
             </Style>
 
             <Style x:Key="AccentSmallButton" TargetType="Button" BasedOn="{StaticResource SmallButton}">
                 <Setter Property="Background" Value="{StaticResource AccentBrush}" />
                 <Setter Property="Foreground" Value="White" />
+            </Style>
+
+            <Style x:Key="IconBox" TargetType="Border">
+                <Setter Property="Background" Value="#2D2D2D" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Width" Value="48" />
+                <Setter Property="Height" Value="48" />
+                <Setter Property="Padding" Value="0" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>
