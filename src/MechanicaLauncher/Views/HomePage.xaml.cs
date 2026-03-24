@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using MechanicaLauncher.Core.Game;
@@ -11,6 +12,7 @@ public sealed partial class HomePage : Page
     private readonly LauncherSettings _settings = LauncherSettings.Load();
     private readonly VersionManager _versionManager;
     private VersionManifest? _manifest;
+    private Process? _gameProcess;
 
     public HomePage()
     {
@@ -19,25 +21,18 @@ public sealed partial class HomePage : Page
         _ = LoadAsync();
     }
 
+    private bool IsGameRunning => _gameProcess is { HasExited: false };
+
     private async Task LoadAsync()
     {
         var allJava = JavaFinder.FindAllJava();
-        if (allJava.Count > 0)
-        {
-            var best = allJava.OrderByDescending(j => j.MajorVersion).First();
-            JavaVersionText.Text = $"Java {best.MajorVersion}";
-        }
-        else
-        {
-            JavaVersionText.Text = "Not found";
-        }
+        JavaVersionText.Text = allJava.Count > 0
+            ? $"Java {allJava.Max(j => j.MajorVersion)}"
+            : "Not found";
 
         var modsDir = Path.Combine(_versionManager.GameDir, "mods");
         if (Directory.Exists(modsDir))
-        {
-            var count = Directory.GetFiles(modsDir, "*.jar").Length;
-            ModCountText.Text = $"{count} active";
-        }
+            ModCountText.Text = $"{Directory.GetFiles(modsDir, "*.jar").Length} active";
 
         AccountText.Text = _settings.Username;
 
@@ -64,8 +59,44 @@ public sealed partial class HomePage : Page
         }
     }
 
+    private void UpdatePlayButton()
+    {
+        if (IsGameRunning)
+        {
+            PlayButton.IsEnabled = false;
+            PlayButton.Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 12,
+                Children =
+                {
+                    new FontIcon { Glyph = "\uE769", FontSize = 22, Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White) },
+                    new TextBlock { Text = "RUNNING", FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }
+                }
+            };
+        }
+        else
+        {
+            PlayButton.IsEnabled = true;
+            PlayButton.Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 12,
+                Children =
+                {
+                    new FontIcon { Glyph = "\uE768", FontSize = 22, Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White) },
+                    new TextBlock { Text = "P L A Y", FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }
+                }
+            };
+        }
+    }
+
     private async void PlayButton_Click(object sender, RoutedEventArgs e)
     {
+        if (IsGameRunning)
+        {
+            ShowNotification(InfoBarSeverity.Warning, "Game is already running.");
+            return;
+        }
+
         var selectedItem = ProfileSelector.SelectedItem as ComboBoxItem;
         var versionId = selectedItem?.Tag?.ToString();
         if (string.IsNullOrEmpty(versionId) || _manifest == null)
@@ -82,7 +113,7 @@ public sealed partial class HomePage : Page
             var entry = _manifest.Versions.FirstOrDefault(v => v.Id == versionId);
             if (entry == null)
             {
-                ShowNotification(InfoBarSeverity.Error, $"Version {versionId} not found in manifest.");
+                ShowNotification(InfoBarSeverity.Error, $"Version {versionId} not found.");
                 return;
             }
 
@@ -104,8 +135,7 @@ public sealed partial class HomePage : Page
 
                 if (javaPath == null)
                 {
-                    ShowNotification(InfoBarSeverity.Error,
-                        $"Java not found and download failed. Install Java manually or set path in Settings.");
+                    ShowNotification(InfoBarSeverity.Error, "Java not found. Set path in Settings.");
                     return;
                 }
             }
@@ -113,7 +143,6 @@ public sealed partial class HomePage : Page
             if (!_versionManager.IsVersionInstalled(versionId))
             {
                 ProgressText.Text = "Downloading...";
-
                 var downloader = new AssetDownloader(_versionManager.GameDir);
                 downloader.ProgressChanged += (status, progress) =>
                 {
@@ -127,7 +156,6 @@ public sealed partial class HomePage : Page
                         }
                     });
                 };
-
                 await Task.Run(() => downloader.DownloadVersionAsync(meta));
             }
 
@@ -136,22 +164,30 @@ public sealed partial class HomePage : Page
             DownloadProgress.Value = 95;
 
             var launcher = new GameLauncher(_versionManager.GameDir);
-            var proc = launcher.Launch(meta, javaPath, _settings.Username,
+            _gameProcess = launcher.Launch(meta, javaPath, _settings.Username,
                 uuid: _settings.Uuid, accessToken: _settings.AccessToken,
                 minMem: _settings.MinMemoryMb, maxMem: _settings.MaxMemoryMb,
                 extraJvmArgs: _settings.JvmArgs,
                 windowWidth: _settings.WindowWidth, windowHeight: _settings.WindowHeight);
 
+            UpdatePlayButton();
+
             _ = Task.Run(async () =>
             {
-                var stderr = await proc.StandardError.ReadToEndAsync();
-                await proc.WaitForExitAsync();
-                if (proc.ExitCode != 0)
+                var stderr = await _gameProcess.StandardError.ReadToEndAsync();
+                await _gameProcess.WaitForExitAsync();
+                var exitCode = _gameProcess.ExitCode;
+                _gameProcess = null;
+
+                DispatcherQueue.TryEnqueue(() =>
                 {
-                    DispatcherQueue.TryEnqueue(() =>
+                    UpdatePlayButton();
+                    if (exitCode != 0)
                         ShowNotification(InfoBarSeverity.Error,
-                            $"Game crashed (exit {proc.ExitCode}): {stderr[..Math.Min(300, stderr.Length)]}"));
-                }
+                            $"Game crashed (exit {exitCode}): {stderr[..Math.Min(300, stderr.Length)]}");
+                    else
+                        ShowNotification(InfoBarSeverity.Success, "Game closed.");
+                });
             });
 
             ProgressText.Text = "Game launched!";
@@ -163,7 +199,9 @@ public sealed partial class HomePage : Page
         }
         finally
         {
-            PlayButton.IsEnabled = true;
+            if (!IsGameRunning)
+                PlayButton.IsEnabled = true;
+
             await Task.Delay(3000);
             ProgressPanel.Visibility = Visibility.Collapsed;
             DownloadProgress.Value = 0;
