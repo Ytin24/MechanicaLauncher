@@ -19,10 +19,12 @@ public sealed class GameLauncher
                           string uuid = "0", string accessToken = "0",
                           int minMem = 2048, int maxMem = 4096,
                           string? extraJvmArgs = null,
-                          int windowWidth = 1920, int windowHeight = 1080)
+                          int windowWidth = 1920, int windowHeight = 1080,
+                          string? vanillaVersionId = null)
     {
-        var versionDir = Path.Combine(_instanceGameDir, "versions", meta.Id);
-        var jarPath = Path.Combine(versionDir, $"{meta.Id}.jar");
+        var clientVersionId = vanillaVersionId ?? meta.InheritsFrom ?? meta.Id;
+        var versionDir = Path.Combine(_instanceGameDir, "versions", clientVersionId);
+        var jarPath = Path.Combine(versionDir, $"{clientVersionId}.jar");
         var nativesDir = Path.Combine(versionDir, "natives");
         var assetsDir = Path.Combine(_sharedDir, "assets");
         var librariesDir = Path.Combine(_sharedDir, "libraries");

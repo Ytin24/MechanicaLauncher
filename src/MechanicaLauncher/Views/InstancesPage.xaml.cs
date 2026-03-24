@@ -219,7 +219,6 @@ public sealed partial class InstancesPage : Page
                 var manifest = await vm.GetManifestAsync();
                 var versions = manifest.Versions
                     .Where(v => v.Type == "release")
-                    .Take(30)
                     .ToList();
 
                 DispatcherQueue.TryEnqueue(() =>
@@ -261,9 +260,13 @@ public sealed partial class InstancesPage : Page
 
         if (loader == LoaderType.Fabric && loaderVersion != null)
         {
-            var gameDir = _im.GetGameDir(instance.Id);
-            var fi = new FabricInstaller(_im.SharedDir, gameDir);
-            await fi.InstallAsync(mcVersion, loaderVersion);
+            try
+            {
+                var gameDir = _im.GetGameDir(instance.Id);
+                var fi = new FabricInstaller(_im.SharedDir, gameDir);
+                await fi.InstallAsync(mcVersion, loaderVersion);
+            }
+            catch { }
         }
 
         _settings.SelectedInstanceId = instance.Id;
