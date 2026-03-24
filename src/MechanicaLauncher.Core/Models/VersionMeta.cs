@@ -28,8 +28,20 @@ public sealed class VersionMeta
     [JsonPropertyName("arguments")]
     public GameArguments? Arguments { get; set; }
 
+    [JsonPropertyName("javaVersion")]
+    public JavaVersionInfo? JavaVersion { get; set; }
+
     [JsonPropertyName("inheritsFrom")]
     public string? InheritsFrom { get; set; }
+}
+
+public sealed class JavaVersionInfo
+{
+    [JsonPropertyName("component")]
+    public string Component { get; set; } = "";
+
+    [JsonPropertyName("majorVersion")]
+    public int MajorVersion { get; set; }
 }
 
 public sealed class AssetIndex

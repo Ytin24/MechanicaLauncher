@@ -21,8 +21,16 @@ public sealed partial class HomePage : Page
 
     private async Task LoadAsync()
     {
-        var java = JavaFinder.FindJava();
-        JavaVersionText.Text = java != null ? JavaFinder.GetJavaVersion(java) : "Not found";
+        var allJava = JavaFinder.FindAllJava();
+        if (allJava.Count > 0)
+        {
+            var best = allJava.OrderByDescending(j => j.MajorVersion).First();
+            JavaVersionText.Text = $"Java {best.MajorVersion}";
+        }
+        else
+        {
+            JavaVersionText.Text = "Not found";
+        }
 
         var modsDir = Path.Combine(_versionManager.GameDir, "mods");
         if (Directory.Exists(modsDir))
@@ -39,20 +47,15 @@ public sealed partial class HomePage : Page
             ProfileSelector.Items.Clear();
 
             foreach (var installed in _versionManager.GetInstalledVersions().Take(5))
-            {
                 ProfileSelector.Items.Add(new ComboBoxItem { Content = installed, Tag = installed });
-            }
 
             if (_manifest.Latest.Release is { } latest)
-            {
-                var item = new ComboBoxItem { Content = $"{latest} (download)", Tag = latest };
-                ProfileSelector.Items.Add(item);
-            }
+                ProfileSelector.Items.Add(new ComboBoxItem { Content = $"{latest} (download)", Tag = latest });
 
             if (ProfileSelector.Items.Count > 0)
                 ProfileSelector.SelectedIndex = 0;
 
-            NotificationBar.Message = $"Latest: {_manifest.Latest.Release}. {_versionManager.GetInstalledVersions().Count} versions installed.";
+            NotificationBar.Message = $"Latest: {_manifest.Latest.Release}. {_versionManager.GetInstalledVersions().Count} installed.";
         }
         catch (Exception ex)
         {
@@ -63,22 +66,11 @@ public sealed partial class HomePage : Page
 
     private async void PlayButton_Click(object sender, RoutedEventArgs e)
     {
-        var java = JavaFinder.FindJava();
-        if (java == null)
-        {
-            NotificationBar.Severity = InfoBarSeverity.Error;
-            NotificationBar.Message = "Java not found. Install Java 21 or set path in Settings.";
-            NotificationBar.IsOpen = true;
-            return;
-        }
-
         var selectedItem = ProfileSelector.SelectedItem as ComboBoxItem;
         var versionId = selectedItem?.Tag?.ToString();
         if (string.IsNullOrEmpty(versionId) || _manifest == null)
         {
-            NotificationBar.Severity = InfoBarSeverity.Warning;
-            NotificationBar.Message = "Select a version first.";
-            NotificationBar.IsOpen = true;
+            ShowNotification(InfoBarSeverity.Warning, "Select a version first.");
             return;
         }
 
@@ -88,14 +80,39 @@ public sealed partial class HomePage : Page
         try
         {
             var entry = _manifest.Versions.FirstOrDefault(v => v.Id == versionId);
-            if (entry == null) return;
+            if (entry == null)
+            {
+                ShowNotification(InfoBarSeverity.Error, $"Version {versionId} not found in manifest.");
+                return;
+            }
+
+            ProgressText.Text = "Loading version info...";
+            DownloadProgress.IsIndeterminate = true;
 
             var meta = await _versionManager.GetVersionMetaAsync(entry);
+
+            var javaComponent = meta.JavaVersion?.Component ?? "java-runtime-delta";
+            var javaPath = !string.IsNullOrEmpty(_settings.JavaPath) && File.Exists(_settings.JavaPath)
+                ? _settings.JavaPath
+                : JavaFinder.FindJava(javaComponent);
+
+            if (javaPath == null)
+            {
+                ProgressText.Text = $"Downloading Java ({javaComponent})...";
+                javaPath = await JavaFinder.DownloadJavaAsync(javaComponent, _versionManager.GameDir,
+                    status => DispatcherQueue.TryEnqueue(() => ProgressText.Text = status));
+
+                if (javaPath == null)
+                {
+                    ShowNotification(InfoBarSeverity.Error,
+                        $"Java not found and download failed. Install Java manually or set path in Settings.");
+                    return;
+                }
+            }
 
             if (!_versionManager.IsVersionInstalled(versionId))
             {
                 ProgressText.Text = "Downloading...";
-                DownloadProgress.IsIndeterminate = true;
 
                 var downloader = new AssetDownloader(_versionManager.GameDir);
                 downloader.ProgressChanged += (status, progress) =>
@@ -119,7 +136,7 @@ public sealed partial class HomePage : Page
             DownloadProgress.Value = 95;
 
             var launcher = new GameLauncher(_versionManager.GameDir);
-            var proc = launcher.Launch(meta, java, _settings.Username,
+            var proc = launcher.Launch(meta, javaPath, _settings.Username,
                 uuid: _settings.Uuid, accessToken: _settings.AccessToken,
                 minMem: _settings.MinMemoryMb, maxMem: _settings.MaxMemoryMb,
                 extraJvmArgs: _settings.JvmArgs,
@@ -127,16 +144,13 @@ public sealed partial class HomePage : Page
 
             _ = Task.Run(async () =>
             {
+                var stderr = await proc.StandardError.ReadToEndAsync();
                 await proc.WaitForExitAsync();
                 if (proc.ExitCode != 0)
                 {
-                    var stderr = await proc.StandardError.ReadToEndAsync();
                     DispatcherQueue.TryEnqueue(() =>
-                    {
-                        NotificationBar.Severity = InfoBarSeverity.Error;
-                        NotificationBar.Message = $"Game crashed (exit {proc.ExitCode}): {stderr[..Math.Min(300, stderr.Length)]}";
-                        NotificationBar.IsOpen = true;
-                    });
+                        ShowNotification(InfoBarSeverity.Error,
+                            $"Game crashed (exit {proc.ExitCode}): {stderr[..Math.Min(300, stderr.Length)]}"));
                 }
             });
 
@@ -145,9 +159,7 @@ public sealed partial class HomePage : Page
         }
         catch (Exception ex)
         {
-            NotificationBar.Severity = InfoBarSeverity.Error;
-            NotificationBar.Message = $"Error: {ex.Message}";
-            NotificationBar.IsOpen = true;
+            ShowNotification(InfoBarSeverity.Error, $"Error: {ex.Message}");
         }
         finally
         {
@@ -156,5 +168,12 @@ public sealed partial class HomePage : Page
             ProgressPanel.Visibility = Visibility.Collapsed;
             DownloadProgress.Value = 0;
         }
+    }
+
+    private void ShowNotification(InfoBarSeverity severity, string message)
+    {
+        NotificationBar.Severity = severity;
+        NotificationBar.Message = message;
+        NotificationBar.IsOpen = true;
     }
 }
