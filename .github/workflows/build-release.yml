@@ -13,10 +13,6 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        platform: [x64, arm64]
-
     steps:
       - uses: actions/checkout@v4
 
@@ -25,28 +21,29 @@ jobs:
           dotnet-version: '9.0.x'
 
       - name: Restore
-        run: dotnet restore -p:Platform=${{ matrix.platform }}
+        run: dotnet restore -p:Platform=x64
 
       - name: Build
-        run: dotnet build -c Release -p:Platform=${{ matrix.platform }} --no-restore
+        run: dotnet build -c Release -p:Platform=x64 --no-restore
 
       - name: Publish
         run: |
           dotnet publish src/MechanicaLauncher/MechanicaLauncher.csproj `
             -c Release `
-            -p:Platform=${{ matrix.platform }} `
+            -p:Platform=x64 `
             -p:PublishSingleFile=true `
             -p:SelfContained=true `
             -p:PublishTrimmed=false `
-            --output ./publish/${{ matrix.platform }}
+            -r win-x64 `
+            --output ./publish
 
       - name: Zip artifacts
-        run: Compress-Archive -Path ./publish/${{ matrix.platform }}/* -DestinationPath MechanicaLauncher-${{ matrix.platform }}.zip
+        run: Compress-Archive -Path ./publish/* -DestinationPath MechanicaLauncher-x64.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: MechanicaLauncher-${{ matrix.platform }}
-          path: MechanicaLauncher-${{ matrix.platform }}.zip
+          name: MechanicaLauncher-x64
+          path: MechanicaLauncher-x64.zip
 
   release:
     needs: build
@@ -62,6 +59,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: |
-            artifacts/MechanicaLauncher-x64/MechanicaLauncher-x64.zip
-            artifacts/MechanicaLauncher-arm64/MechanicaLauncher-arm64.zip
+          files: artifacts/MechanicaLauncher-x64/MechanicaLauncher-x64.zip
