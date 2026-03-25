@@ -10,13 +10,30 @@ public sealed class ModInstaller
     public event Action<string>? StatusChanged;
 
     public async Task InstallModAsync(ModrinthVersion version, string modsDir,
-                                       string? mcVersion = null, string? loader = null)
+                                       string? mcVersion = null, string? loader = null,
+                                       string? gameDir = null)
     {
         Directory.CreateDirectory(modsDir);
 
+        var mrpack = version.Files.FirstOrDefault(f => f.Filename.EndsWith(".mrpack"));
+        if (mrpack != null && gameDir != null)
+        {
+            var tmpPath = Path.Combine(Path.GetTempPath(), mrpack.Filename);
+            StatusChanged?.Invoke($"Downloading modpack {mrpack.Filename}...");
+            var bytes = await Http.GetByteArrayAsync(mrpack.Url);
+            await File.WriteAllBytesAsync(tmpPath, bytes);
+
+            var packInstaller = new ModpackInstaller();
+            packInstaller.ProgressChanged += (s, _) => StatusChanged?.Invoke(s);
+            await packInstaller.InstallAsync(tmpPath, gameDir);
+
+            try { File.Delete(tmpPath); } catch { }
+            return;
+        }
+
         var file = version.Files.FirstOrDefault(f => f.Primary && f.Filename.EndsWith(".jar"))
                 ?? version.Files.FirstOrDefault(f => f.Filename.EndsWith(".jar"));
-        if (file == null) throw new Exception("No .jar file found — this might be a modpack (.mrpack), not a mod.");
+        if (file == null) throw new Exception("No .jar file found for this project.");
 
         var dest = Path.Combine(modsDir, file.Filename);
         if (!File.Exists(dest))

@@ -294,7 +294,8 @@ public sealed partial class ModsPage : Page
             if (version == null) { btn.Content = "N/A"; return; }
 
             var installer = new ModInstaller();
-            await installer.InstallModAsync(version, _modsDir, _instance.McVersion, loader);
+            var gameDir = Path.GetDirectoryName(_modsDir)!;
+            await installer.InstallModAsync(version, _modsDir, _instance.McVersion, loader, gameDir);
 
             btn.Content = new FontIcon { Glyph = "\uE73E", FontSize = 14, Foreground = White };
             LoadInstance();
