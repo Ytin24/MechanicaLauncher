@@ -81,8 +81,6 @@ public sealed partial class HomePage : Page
         AnimationHelper.AddButtonSpring(PlayButton);
         AnimationHelper.StartBreathing(PlayButton);
 
-        _ = ShowCatAsync();
-
         try
         {
             _manifest = await _vm.GetManifestAsync();
@@ -284,37 +282,16 @@ public sealed partial class HomePage : Page
         }
     }
 
-    private int _catSeed = Random.Shared.Next(10000);
-
-    private async Task ShowCatAsync()
-    {
-        await Task.Delay(5000);
-        CatImage.Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(
-            new Uri($"https://cataas.com/cat?width=100&height=100&r={_catSeed}"));
-        AnimationHelper.SlideIn(PeekCat, 0);
-    }
-
-    private void Cat_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
-    {
-        _catSeed = Random.Shared.Next(10000);
-        CatImage.Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(
-            new Uri($"https://cataas.com/cat?width=100&height=100&r={_catSeed}"));
-    }
-
     private void ToggleLog_Click(object sender, RoutedEventArgs e)
     {
-        if (LogPanel.Visibility == Visibility.Visible)
-        {
-            LogPanel.Visibility = Visibility.Collapsed;
-            LogRow.Height = new GridLength(0);
-        }
-        else
-        {
-            LogPanel.Visibility = Visibility.Visible;
-            LogRow.Height = GridLength.Auto;
-            AnimationHelper.SlideIn(LogPanel, 0);
-        }
+        var expanding = LogExpanded.Visibility == Visibility.Collapsed;
+        LogExpanded.Visibility = expanding ? Visibility.Visible : Visibility.Collapsed;
+        LogBarCollapsed.Visibility = expanding ? Visibility.Collapsed : Visibility.Visible;
+        if (expanding)
+            AnimationHelper.SlideIn(LogExpanded, 0);
     }
+
+    private void ClearLog_Click(object sender, RoutedEventArgs e) => LogText.Text = "";
 
     private void AppendLog(string line)
     {
@@ -323,6 +300,7 @@ public sealed partial class HomePage : Page
             if (LogText.Text.Length > 10000)
                 LogText.Text = LogText.Text[5000..];
             LogText.Text += line + "\n";
+            LogBarStatus.Text = line.Length > 60 ? line[..60] + "..." : line;
         });
     }
 
