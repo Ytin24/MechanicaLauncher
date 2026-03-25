@@ -18,6 +18,7 @@ public sealed partial class HomePage : Page
     private VersionManager _vm = null!;
     private VersionManifest? _manifest;
     private bool _loading;
+    private bool _logAutoScroll = true;
 
     public HomePage()
     {
@@ -37,14 +38,13 @@ public sealed partial class HomePage : Page
     private async Task LoadAsync()
     {
         _loading = true;
-
         SplashText.Text = SettingsPage.GetRandomSplash();
 
         var allJava = JavaFinder.FindAllJava();
-        JavaVersionText.Text = allJava.Count > 0 ? $"Java {allJava.Max(j => j.MajorVersion)}" : "Not found";
         AccountText.Text = S.Username;
 
         var instances = _im.GetAllInstances();
+        InstanceCountText.Text = instances.Count.ToString();
         ProfileSelector.Items.Clear();
 
         foreach (var inst in instances)
@@ -70,7 +70,7 @@ public sealed partial class HomePage : Page
         _loading = false;
 
         UpdatePlayButton();
-        UpdateModCount();
+        UpdateInstanceInfo();
 
         AnimationHelper.SlideIn(Card0, 80);
         AnimationHelper.SlideIn(Card1, 140);
@@ -86,7 +86,7 @@ public sealed partial class HomePage : Page
             _manifest = await _vm.GetManifestAsync();
             var running = App.RunningInstances.Count(kv => !kv.Value.HasExited);
             NotificationBar.Message = instances.Count > 0
-                ? $"{instances.Count} instance(s){(running > 0 ? $", {running} running" : "")}. Latest: {_manifest.Latest.Release}"
+                ? $"{instances.Count} instance(s){(running > 0 ? $", {running} running" : "")}. Latest MC: {_manifest.Latest.Release}"
                 : "Create an instance in the Instances tab.";
         }
         catch (Exception ex)
@@ -96,14 +96,27 @@ public sealed partial class HomePage : Page
         }
     }
 
-    private void UpdateModCount()
+    private void UpdateInstanceInfo()
     {
         var inst = GetSelectedInstance();
-        if (inst != null)
+        if (inst == null)
         {
-            var modsDir = Path.Combine(_im.GetGameDir(inst.Id), "mods");
-            ModCountText.Text = Directory.Exists(modsDir) ? $"{Directory.GetFiles(modsDir, "*.jar").Length} active" : "0";
+            InstanceInfo.Text = "";
+            ModCountText.Text = "0";
+            return;
         }
+
+        var modsDir = Path.Combine(_im.GetGameDir(inst.Id), "mods");
+        var modCount = Directory.Exists(modsDir) ? Directory.GetFiles(modsDir, "*.jar").Length : 0;
+        ModCountText.Text = $"{modCount} active";
+
+        var parts = new List<string> { inst.McVersion };
+        if (inst.Loader != LoaderType.None)
+            parts.Add($"{inst.Loader} {inst.LoaderVersion}");
+        parts.Add($"{inst.MinMemoryMb}-{inst.MaxMemoryMb} MB");
+        if (inst.LastPlayed.HasValue)
+            parts.Add($"Last played {inst.LastPlayed.Value:MMM dd}");
+        InstanceInfo.Text = string.Join("  ·  ", parts);
     }
 
     private GameInstance? GetSelectedInstance()
@@ -121,10 +134,34 @@ public sealed partial class HomePage : Page
             S.SelectedInstanceId = id;
             S.Save();
             UpdatePlayButton();
-            UpdateModCount();
+            UpdateInstanceInfo();
         }
     }
 
+    // --- Navigation cards ---
+    private void Card_Mods_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e) =>
+        NavigateTo("Mods");
+    private void Card_Account_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e) =>
+        NavigateTo("Account");
+    private void Card_Instances_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e) =>
+        NavigateTo("Instances");
+
+    private void NavigateTo(string tag)
+    {
+        if (this.Frame?.Parent is NavigationView nav)
+        {
+            foreach (var item in nav.MenuItems.Concat(nav.FooterMenuItems))
+            {
+                if (item is NavigationViewItem nvi && nvi.Tag?.ToString() == tag)
+                {
+                    nav.SelectedItem = nvi;
+                    break;
+                }
+            }
+        }
+    }
+
+    // --- Play / Kill ---
     private void UpdatePlayButton()
     {
         var inst = GetSelectedInstance();
@@ -140,15 +177,15 @@ public sealed partial class HomePage : Page
             Orientation = Orientation.Horizontal, Spacing = 12,
             Children =
             {
-                new FontIcon { Glyph = running ? "\uE71A" : "\uE768", FontSize = 22, Foreground = new SolidColorBrush(running ? Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B) : Microsoft.UI.Colors.White) },
+                new FontIcon { Glyph = running ? "\uE71A" : "\uE768", FontSize = 22,
+                    Foreground = new SolidColorBrush(running ? Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B) : Microsoft.UI.Colors.White) },
                 new TextBlock { Text = label, FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }
             }
         };
 
-        if (running)
-            PlayButton.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x33, 0xFF, 0x00, 0x00));
-        else
-            PlayButton.Background = (SolidColorBrush)Application.Current.Resources["AccentBrush"];
+        PlayButton.Background = running
+            ? new SolidColorBrush(Windows.UI.Color.FromArgb(0x33, 0xFF, 0x00, 0x00))
+            : (Brush)Application.Current.Resources["AccentBrush"];
     }
 
     private async void PlayButton_Click(object sender, RoutedEventArgs e)
@@ -158,9 +195,9 @@ public sealed partial class HomePage : Page
 
         if (IsInstanceRunning(instance.Id))
         {
-            if (App.RunningInstances.TryGetValue(instance.Id, out var proc))
+            if (App.RunningInstances.TryGetValue(instance.Id, out var p))
             {
-                try { proc.Kill(); } catch { }
+                try { p.Kill(); } catch { }
                 App.RunningInstances.TryRemove(instance.Id, out _);
             }
             UpdatePlayButton();
@@ -170,7 +207,6 @@ public sealed partial class HomePage : Page
 
         S.SelectedInstanceId = instance.Id;
         S.Save();
-
         PlayButton.IsEnabled = false;
         ProgressPanel.Visibility = Visibility.Visible;
 
@@ -182,7 +218,6 @@ public sealed partial class HomePage : Page
 
             ProgressText.Text = "Loading version...";
             DownloadProgress.IsIndeterminate = true;
-
             _manifest ??= await _vm.GetManifestAsync();
 
             var vanillaEntry = _manifest.Versions.FirstOrDefault(v => v.Id == instance.McVersion);
@@ -193,8 +228,7 @@ public sealed partial class HomePage : Page
 
             var javaComponent = meta.JavaVersion?.Component ?? "java-runtime-delta";
             var javaPath = !string.IsNullOrEmpty(instance.JavaPath) && File.Exists(instance.JavaPath)
-                ? instance.JavaPath
-                : JavaFinder.FindJava(javaComponent);
+                ? instance.JavaPath : JavaFinder.FindJava(javaComponent);
 
             if (javaPath == null)
             {
@@ -243,6 +277,7 @@ public sealed partial class HomePage : Page
             UpdatePlayButton();
 
             LogText.Text = "";
+            _logAutoScroll = true;
             proc.OutputDataReceived += (_, args) => { if (args.Data != null) AppendLog(args.Data); };
             proc.ErrorDataReceived += (_, args) => { if (args.Data != null) AppendLog($"[ERR] {args.Data}"); };
             proc.BeginOutputReadLine();
@@ -282,16 +317,28 @@ public sealed partial class HomePage : Page
         }
     }
 
+    // --- Log panel ---
     private void ToggleLog_Click(object sender, RoutedEventArgs e)
     {
         var expanding = LogExpanded.Visibility == Visibility.Collapsed;
         LogExpanded.Visibility = expanding ? Visibility.Visible : Visibility.Collapsed;
         LogBarCollapsed.Visibility = expanding ? Visibility.Collapsed : Visibility.Visible;
         if (expanding)
+        {
             AnimationHelper.SlideIn(LogExpanded, 0);
+            _logAutoScroll = true;
+            ScrollLogToBottom();
+        }
     }
 
     private void ClearLog_Click(object sender, RoutedEventArgs e) => LogText.Text = "";
+
+    private void LogScroll_ViewChanged(object sender, ScrollViewerViewChangedEventArgs e)
+    {
+        if (e.IsIntermediate) return;
+        var sv = LogScroll;
+        _logAutoScroll = sv.VerticalOffset >= sv.ScrollableHeight - 20;
+    }
 
     private void AppendLog(string line)
     {
@@ -300,8 +347,17 @@ public sealed partial class HomePage : Page
             if (LogText.Text.Length > 10000)
                 LogText.Text = LogText.Text[5000..];
             LogText.Text += line + "\n";
-            LogBarStatus.Text = line.Length > 60 ? line[..60] + "..." : line;
+            LogBarStatus.Text = line.Length > 80 ? line[..80] + "..." : line;
+
+            if (_logAutoScroll)
+                ScrollLogToBottom();
         });
+    }
+
+    private void ScrollLogToBottom()
+    {
+        LogScroll.UpdateLayout();
+        LogScroll.ChangeView(null, LogScroll.ScrollableHeight, null, true);
     }
 
     private void ShowNotification(InfoBarSeverity severity, string message)

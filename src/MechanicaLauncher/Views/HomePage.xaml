@@ -8,160 +8,139 @@
 
     <Grid RowDefinitions="*,Auto">
 
-        <!-- Main content -->
         <Grid Padding="{StaticResource PagePadding}" RowDefinitions="Auto,*,Auto">
 
-            <InfoBar
-                x:Name="NotificationBar"
-                Title="Mechanica"
-                Message="Ready."
-                Severity="Success"
-                IsOpen="True"
-                IsClosable="True"
-                MinHeight="40"
-                Margin="0,0,0,16" />
+            <!-- Info -->
+            <InfoBar x:Name="NotificationBar" Title="Mechanica" Message="Ready."
+                     Severity="Success" IsOpen="True" IsClosable="True"
+                     MinHeight="40" Margin="0,0,0,16" />
 
-            <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="32">
+            <!-- Hero -->
+            <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="28">
 
                 <StackPanel HorizontalAlignment="Center" Spacing="2">
-                    <TextBlock
-                        Text="MECHANICA"
-                        FontSize="48"
-                        FontWeight="Bold"
-                        HorizontalAlignment="Center"
-                        CharacterSpacing="300"
-                        Opacity="0.08" />
-                    <TextBlock
-                        x:Name="SplashText"
-                        Text="L A U N C H E R"
-                        FontSize="11"
-                        HorizontalAlignment="Center"
-                        CharacterSpacing="100"
-                        FontStyle="Italic"
-                        Foreground="{StaticResource AccentLightBrush}"
-                        Opacity="0.6" />
+                    <TextBlock Text="MECHANICA" FontSize="48" FontWeight="Bold"
+                               HorizontalAlignment="Center" CharacterSpacing="300" Opacity="0.08" />
+                    <TextBlock x:Name="SplashText" Text="L A U N C H E R" FontSize="11"
+                               HorizontalAlignment="Center" CharacterSpacing="100" FontStyle="Italic"
+                               Foreground="{StaticResource AccentLightBrush}" Opacity="0.6" />
                 </StackPanel>
 
+                <!-- Instance selector -->
                 <Border Style="{StaticResource CardPanel}" HorizontalAlignment="Center"
                         MinWidth="340" MaxWidth="440" MinHeight="52">
-                    <ComboBox
-                        x:Name="ProfileSelector"
-                        HorizontalAlignment="Stretch"
-                        PlaceholderText="Select instance..."
-                        FontSize="14"
-                        MinHeight="36"
-                        BorderThickness="0"
-                        Background="Transparent"
-                        SelectionChanged="ProfileSelector_Changed" />
+                    <ComboBox x:Name="ProfileSelector" HorizontalAlignment="Stretch"
+                              PlaceholderText="Select instance..." FontSize="14" MinHeight="36"
+                              BorderThickness="0" Background="Transparent"
+                              SelectionChanged="ProfileSelector_Changed" />
                 </Border>
 
-                <Button
-                    x:Name="PlayButton"
-                    Style="{StaticResource PlayButton}"
-                    Click="PlayButton_Click">
+                <!-- Instance info line -->
+                <TextBlock x:Name="InstanceInfo" Text="" FontSize="12"
+                           Foreground="{StaticResource DimBrush}" HorizontalAlignment="Center" />
+
+                <!-- Play -->
+                <Button x:Name="PlayButton" Style="{StaticResource PlayButton}" Click="PlayButton_Click">
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <FontIcon Glyph="&#xE768;" FontSize="22" Foreground="White" />
                         <TextBlock Text="P L A Y" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
 
+                <!-- Progress -->
                 <StackPanel x:Name="ProgressPanel" Visibility="Collapsed" Spacing="6"
                             HorizontalAlignment="Center" MinWidth="420" MaxWidth="500" MinHeight="40">
-                    <ProgressBar
-                        x:Name="DownloadProgress"
-                        Maximum="100" Value="0"
-                        IsIndeterminate="False"
-                        Height="5"
-                        CornerRadius="3" />
-                    <TextBlock
-                        x:Name="ProgressText"
-                        Text="Ready"
-                        HorizontalAlignment="Center"
-                        Foreground="{StaticResource DimBrush}"
-                        FontSize="12"
-                        Height="18" />
+                    <ProgressBar x:Name="DownloadProgress" Maximum="100" Value="0"
+                                 IsIndeterminate="False" Height="5" CornerRadius="3" />
+                    <TextBlock x:Name="ProgressText" Text="Ready" HorizontalAlignment="Center"
+                               Foreground="{StaticResource DimBrush}" FontSize="12" Height="18" />
                 </StackPanel>
             </StackPanel>
 
-            <Grid Grid.Row="2" ColumnDefinitions="*,12,*,12,*" MinHeight="80" Margin="0,20,0,0">
-                <Border x:Name="Card0" Grid.Column="0" Style="{StaticResource CardPanelWide}" MinHeight="72">
-                    <Grid ColumnDefinitions="Auto,*" MinHeight="40">
+            <!-- Quick nav cards -->
+            <Grid Grid.Row="2" ColumnDefinitions="*,10,*,10,*" MinHeight="72" Margin="0,16,0,0">
+
+                <Border x:Name="Card0" Grid.Column="0" Style="{StaticResource CardPanelWide}" MinHeight="68"
+                        Tapped="Card_Mods_Tapped" ToolTipService.ToolTip="Go to Mods">
+                    <Grid ColumnDefinitions="Auto,*,Auto" MinHeight="40">
                         <Border Background="#1A4CAF50" CornerRadius="10" Width="40" Height="40"
-                                VerticalAlignment="Center" Margin="0,0,14,0">
+                                VerticalAlignment="Center" Margin="0,0,12,0">
                             <FontIcon Glyph="&#xEA86;" FontSize="18" Foreground="{StaticResource AccentBrush}"
                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                             <TextBlock Text="MODS" FontSize="10" CharacterSpacing="120" Foreground="{StaticResource DimBrush}" />
-                            <TextBlock x:Name="ModCountText" Text="0" FontSize="17" FontWeight="Bold" />
+                            <TextBlock x:Name="ModCountText" Text="0" FontSize="16" FontWeight="Bold" />
                         </StackPanel>
+                        <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="12" Foreground="{StaticResource DimBrush}"
+                                  VerticalAlignment="Center" />
                     </Grid>
                 </Border>
 
-                <Border x:Name="Card1" Grid.Column="2" Style="{StaticResource CardPanelWide}" MinHeight="72">
-                    <Grid ColumnDefinitions="Auto,*" MinHeight="40">
+                <Border x:Name="Card1" Grid.Column="2" Style="{StaticResource CardPanelWide}" MinHeight="68"
+                        Tapped="Card_Account_Tapped" ToolTipService.ToolTip="Go to Account">
+                    <Grid ColumnDefinitions="Auto,*,Auto" MinHeight="40">
                         <Border Background="#1A2196F3" CornerRadius="10" Width="40" Height="40"
-                                VerticalAlignment="Center" Margin="0,0,14,0">
+                                VerticalAlignment="Center" Margin="0,0,12,0">
                             <FontIcon Glyph="&#xE77B;" FontSize="18" Foreground="#2196F3"
                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                             <TextBlock Text="ACCOUNT" FontSize="10" CharacterSpacing="120" Foreground="{StaticResource DimBrush}" />
-                            <TextBlock x:Name="AccountText" Text="Offline" FontSize="17" FontWeight="Bold" />
+                            <TextBlock x:Name="AccountText" Text="Offline" FontSize="16" FontWeight="Bold" />
                         </StackPanel>
+                        <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="12" Foreground="{StaticResource DimBrush}"
+                                  VerticalAlignment="Center" />
                     </Grid>
                 </Border>
 
-                <Border x:Name="Card2" Grid.Column="4" Style="{StaticResource CardPanelWide}" MinHeight="72">
-                    <Grid ColumnDefinitions="Auto,*" MinHeight="40">
+                <Border x:Name="Card2" Grid.Column="4" Style="{StaticResource CardPanelWide}" MinHeight="68"
+                        Tapped="Card_Instances_Tapped" ToolTipService.ToolTip="Go to Instances">
+                    <Grid ColumnDefinitions="Auto,*,Auto" MinHeight="40">
                         <Border Background="#1AFF9800" CornerRadius="10" Width="40" Height="40"
-                                VerticalAlignment="Center" Margin="0,0,14,0">
-                            <FontIcon Glyph="&#xE7F8;" FontSize="18" Foreground="#FF9800"
+                                VerticalAlignment="Center" Margin="0,0,12,0">
+                            <FontIcon Glyph="&#xE74C;" FontSize="18" Foreground="#FF9800"
                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                            <TextBlock Text="JAVA" FontSize="10" CharacterSpacing="120" Foreground="{StaticResource DimBrush}" />
-                            <TextBlock x:Name="JavaVersionText" Text="..." FontSize="17" FontWeight="Bold" />
+                            <TextBlock Text="INSTANCES" FontSize="10" CharacterSpacing="120" Foreground="{StaticResource DimBrush}" />
+                            <TextBlock x:Name="InstanceCountText" Text="0" FontSize="16" FontWeight="Bold" />
                         </StackPanel>
+                        <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="12" Foreground="{StaticResource DimBrush}"
+                                  VerticalAlignment="Center" />
                     </Grid>
                 </Border>
             </Grid>
         </Grid>
 
-        <!-- Bottom log bar -->
+        <!-- Log bar -->
         <Grid Grid.Row="1" Background="#0DFFFFFF">
-            <!-- Collapsed: thin clickable bar -->
             <Border x:Name="LogBarCollapsed" Height="28" Tapped="ToggleLog_Click">
                 <Grid Padding="16,0" ColumnDefinitions="Auto,*,Auto">
-                    <FontIcon Glyph="&#xE756;" FontSize="11" Foreground="{StaticResource DimBrush}"
-                              VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="1" x:Name="LogBarStatus" Text="Game Output"
-                               FontSize="11" Foreground="{StaticResource DimBrush}"
-                               Margin="8,0,0,0" VerticalAlignment="Center" />
-                    <FontIcon Grid.Column="2" x:Name="LogChevron" Glyph="&#xE70E;" FontSize="10"
-                              Foreground="{StaticResource DimBrush}" VerticalAlignment="Center" />
+                    <FontIcon Glyph="&#xE756;" FontSize="11" Foreground="{StaticResource DimBrush}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" x:Name="LogBarStatus" Text="Game Output" FontSize="11"
+                               Foreground="{StaticResource DimBrush}" Margin="8,0,0,0" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
+                    <FontIcon Grid.Column="2" Glyph="&#xE70E;" FontSize="10" Foreground="{StaticResource DimBrush}" VerticalAlignment="Center" />
                 </Grid>
             </Border>
 
-            <!-- Expanded: log content -->
-            <Grid x:Name="LogExpanded" Visibility="Collapsed" RowDefinitions="Auto,*" MaxHeight="200">
+            <Grid x:Name="LogExpanded" Visibility="Collapsed" RowDefinitions="Auto,*" MaxHeight="220">
                 <Border Height="28" Tapped="ToggleLog_Click" Background="#0DFFFFFF">
                     <Grid Padding="16,0" ColumnDefinitions="Auto,*,Auto,Auto">
-                        <FontIcon Glyph="&#xE756;" FontSize="11" Foreground="{StaticResource DimBrush}"
-                                  VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="1" Text="Game Output"
-                                   FontSize="11" Foreground="{StaticResource SubtleBrush}"
-                                   FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center" />
+                        <FontIcon Glyph="&#xE756;" FontSize="11" Foreground="{StaticResource DimBrush}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1" Text="Game Output" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{StaticResource SubtleBrush}" Margin="8,0,0,0" VerticalAlignment="Center" />
                         <Button Grid.Column="2" Click="ClearLog_Click" Padding="4" MinWidth="24" MinHeight="24"
-                                CornerRadius="4" Background="Transparent"
-                                ToolTipService.ToolTip="Clear">
+                                CornerRadius="4" Background="Transparent" ToolTipService.ToolTip="Clear">
                             <FontIcon Glyph="&#xE74D;" FontSize="10" />
                         </Button>
                         <FontIcon Grid.Column="3" Glyph="&#xE70D;" FontSize="10"
                                   Foreground="{StaticResource DimBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
                     </Grid>
                 </Border>
-                <ScrollViewer Grid.Row="1" x:Name="LogScroll" Padding="16,4,16,8">
+                <ScrollViewer Grid.Row="1" x:Name="LogScroll" Padding="16,4,16,8"
+                              ViewChanged="LogScroll_ViewChanged">
                     <TextBlock x:Name="LogText" Text="" FontSize="11"
                                FontFamily="Cascadia Mono,Consolas,monospace"
                                Foreground="{StaticResource SubtleBrush}"
