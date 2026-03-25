@@ -64,8 +64,7 @@
                 x:Name="PlayButton"
                 Style="{StaticResource PlayButton}"
                 Click="PlayButton_Click"
-                PointerEntered="PlayButton_PointerEntered"
-                PointerExited="PlayButton_PointerExited">
+>
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <FontIcon Glyph="&#xE768;" FontSize="22" Foreground="White" />
                     <TextBlock Text="P L A Y" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />

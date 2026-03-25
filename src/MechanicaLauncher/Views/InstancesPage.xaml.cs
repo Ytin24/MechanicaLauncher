@@ -48,7 +48,7 @@ public sealed partial class InstancesPage : Page
             var card = CreateCard(inst);
             InstancesList.Children.Add(card);
             AnimationHelper.SlideIn(card, delay);
-            AnimationHelper.AddHover(card);
+            AnimationHelper.AddCardHover(card);
             delay += 50;
         }
     }

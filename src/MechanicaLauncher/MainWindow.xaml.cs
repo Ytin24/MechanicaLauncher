@@ -18,8 +18,25 @@ public sealed partial class MainWindow : Window
         var hwnd = WindowNative.GetWindowHandle(this);
         var windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
         var appWindow = AppWindow.GetFromWindowId(windowId);
-        appWindow.Resize(new Windows.Graphics.SizeInt32(1100, 700));
+        appWindow.Resize(new Windows.Graphics.SizeInt32(1100, 720));
         appWindow.Title = "Mechanica Launcher";
+
+        var presenter = appWindow.Presenter as OverlappedPresenter;
+        if (presenter != null)
+        {
+            presenter.IsMinimizable = true;
+            presenter.IsMaximizable = true;
+            presenter.IsResizable = true;
+        }
+
+        this.SizeChanged += (_, _) =>
+        {
+            var size = appWindow.Size;
+            if (size.Width < 800 || size.Height < 500)
+                appWindow.Resize(new Windows.Graphics.SizeInt32(
+                    Math.Max(size.Width, 800),
+                    Math.Max(size.Height, 500)));
+        };
 
         if (Content is FrameworkElement root)
         {
