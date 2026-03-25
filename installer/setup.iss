@@ -11,7 +11,6 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-SetupIconFile=..\src\MechanicaLauncher\Assets\StoreLogo.png
 UninstallDisplayIcon={app}\MechanicaLauncher.exe
 WizardStyle=modern
 DisableProgramGroupPage=yes
