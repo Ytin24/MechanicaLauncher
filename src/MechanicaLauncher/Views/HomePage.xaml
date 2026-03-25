@@ -37,11 +37,14 @@
                     CharacterSpacing="300"
                     Opacity="0.08" />
                 <TextBlock
+                    x:Name="SplashText"
                     Text="L A U N C H E R"
                     FontSize="11"
                     HorizontalAlignment="Center"
-                    CharacterSpacing="400"
-                    Foreground="{StaticResource DimBrush}" />
+                    CharacterSpacing="100"
+                    FontStyle="Italic"
+                    Foreground="{StaticResource AccentLightBrush}"
+                    Opacity="0.6" />
             </StackPanel>
 
             <!-- Instance selector -->

@@ -38,6 +38,8 @@ public sealed partial class HomePage : Page
     {
         _loading = true;
 
+        SplashText.Text = SettingsPage.GetRandomSplash();
+
         var allJava = JavaFinder.FindAllJava();
         JavaVersionText.Text = allJava.Count > 0 ? $"Java {allJava.Max(j => j.MajorVersion)}" : "Not found";
         AccountText.Text = S.Username;

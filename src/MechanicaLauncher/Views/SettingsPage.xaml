@@ -38,10 +38,35 @@
                 </StackPanel>
             </Border>
 
-            <Border Style="{StaticResource CardPanelWide}" Padding="20" MinHeight="60">
+            <!-- About (tap 7 times for easter egg) -->
+            <Border Style="{StaticResource CardPanelWide}" Padding="20" MinHeight="60"
+                    Tapped="About_Tapped">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="4">
                     <TextBlock Text="Mechanica Launcher" FontWeight="SemiBold" FontSize="15" HorizontalAlignment="Center" Height="22" />
-                    <TextBlock Text="v2.0.0  ·  WinUI 3  ·  .NET 9  ·  Instances" Foreground="{StaticResource DimBrush}" FontSize="12" HorizontalAlignment="Center" Height="18" />
+                    <TextBlock x:Name="VersionLabel" Text="v2.0.0  ·  WinUI 3  ·  .NET 9" Foreground="{StaticResource DimBrush}" FontSize="12" HorizontalAlignment="Center" Height="18" />
+                </StackPanel>
+            </Border>
+
+            <!-- Easter egg section (hidden) -->
+            <Border x:Name="EasterEggPanel" Style="{StaticResource CardPanelWide}" Padding="24" MinHeight="200"
+                    Visibility="Collapsed">
+                <StackPanel Spacing="16" HorizontalAlignment="Stretch">
+                    <StackPanel Orientation="Horizontal" Spacing="10" Height="28">
+                        <TextBlock Text="🐱" FontSize="20" />
+                        <TextBlock Text="Secret Menu" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <TextBlock x:Name="CatFact" TextWrapping="Wrap" FontSize="13"
+                               Foreground="{StaticResource SubtleBrush}" />
+
+                    <TextBlock x:Name="McFunFact" TextWrapping="Wrap" FontSize="13"
+                               Foreground="{StaticResource SubtleBrush}" />
+
+                    <Button Content="🎲 Another fact" Click="RandomFact_Click"
+                            Style="{StaticResource SmallButton}" HorizontalAlignment="Left" />
+
+                    <TextBlock Text="You found the secret! meow~" FontSize="11"
+                               Foreground="{StaticResource DimBrush}" FontStyle="Italic" />
                 </StackPanel>
             </Border>
         </StackPanel>
