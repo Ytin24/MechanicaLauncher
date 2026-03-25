@@ -14,8 +14,9 @@ public sealed class ModInstaller
     {
         Directory.CreateDirectory(modsDir);
 
-        var file = version.Files.FirstOrDefault(f => f.Primary) ?? version.Files.FirstOrDefault();
-        if (file == null) throw new Exception("No files in mod version");
+        var file = version.Files.FirstOrDefault(f => f.Primary && f.Filename.EndsWith(".jar"))
+                ?? version.Files.FirstOrDefault(f => f.Filename.EndsWith(".jar"));
+        if (file == null) throw new Exception("No .jar file found — this might be a modpack (.mrpack), not a mod.");
 
         var dest = Path.Combine(modsDir, file.Filename);
         if (!File.Exists(dest))
