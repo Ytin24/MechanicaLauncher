@@ -70,12 +70,12 @@ public sealed partial class HomePage : Page
         UpdatePlayButton();
         UpdateModCount();
 
-        // Animate status cards
-        int delay = 100;
-        foreach (var child in ((Grid)((Grid)Content).Children[2]).Children)
-        {
-            if (child is Border b) { AnimationHelper.SlideIn(b, delay); delay += 60; }
-        }
+        AnimationHelper.SlideIn(Card0, 80);
+        AnimationHelper.SlideIn(Card1, 140);
+        AnimationHelper.SlideIn(Card2, 200);
+        AnimationHelper.AddHover(Card0);
+        AnimationHelper.AddHover(Card1);
+        AnimationHelper.AddHover(Card2);
 
         try
         {
@@ -271,6 +271,27 @@ public sealed partial class HomePage : Page
             ProgressPanel.Visibility = Visibility.Collapsed;
             DownloadProgress.Value = 0;
         }
+    }
+
+    private void PlayButton_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        var visual = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(PlayButton);
+        var compositor = visual.Compositor;
+        visual.CenterPoint = new System.Numerics.Vector3((float)PlayButton.ActualWidth / 2, (float)PlayButton.ActualHeight / 2, 0);
+        var anim = compositor.CreateVector3KeyFrameAnimation();
+        anim.InsertKeyFrame(1f, new System.Numerics.Vector3(1.05f, 1.05f, 1f));
+        anim.Duration = TimeSpan.FromMilliseconds(150);
+        visual.StartAnimation("Scale", anim);
+    }
+
+    private void PlayButton_PointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        var visual = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(PlayButton);
+        var compositor = visual.Compositor;
+        var anim = compositor.CreateVector3KeyFrameAnimation();
+        anim.InsertKeyFrame(1f, new System.Numerics.Vector3(1f, 1f, 1f));
+        anim.Duration = TimeSpan.FromMilliseconds(150);
+        visual.StartAnimation("Scale", anim);
     }
 
     private void ShowNotification(InfoBarSeverity severity, string message)

@@ -127,8 +127,8 @@ public sealed partial class ModsPage : Page
             grid.Children.Add(delBtn);
             card.Child = grid;
             InstalledModsPanel.Children.Add(card);
-
             AnimationHelper.SlideIn(card, delay);
+            AnimationHelper.AddHover(card);
             delay += 30;
         }
     }
@@ -241,8 +241,8 @@ public sealed partial class ModsPage : Page
                 grid.Children.Add(installBtn);
                 card.Child = grid;
                 SearchResultsPanel.Children.Add(card);
-
                 AnimationHelper.SlideIn(card, delay);
+                AnimationHelper.AddHover(card);
                 delay += 40;
             }
 

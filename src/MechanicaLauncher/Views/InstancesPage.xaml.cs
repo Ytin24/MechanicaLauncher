@@ -48,6 +48,7 @@ public sealed partial class InstancesPage : Page
             var card = CreateCard(inst);
             InstancesList.Children.Add(card);
             AnimationHelper.SlideIn(card, delay);
+            AnimationHelper.AddHover(card);
             delay += 50;
         }
     }
@@ -72,18 +73,19 @@ public sealed partial class InstancesPage : Page
             }
         };
 
-        var iconBorder = new Border
-        {
-            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0x2D, 0x2D, 0x2D)),
-            CornerRadius = new CornerRadius(8),
-            Width = 48, Height = 48,
-            VerticalAlignment = VerticalAlignment.Center
-        };
         var iconColor = inst.Loader switch
         {
             LoaderType.Fabric => Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xAF, 0x50),
+            LoaderType.Quilt => Windows.UI.Color.FromArgb(0xFF, 0xAB, 0x47, 0xBC),
             LoaderType.Forge => Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x98, 0x00),
-            _ => Windows.UI.Color.FromArgb(0xFF, 0x88, 0x88, 0x88),
+            _ => Windows.UI.Color.FromArgb(0xFF, 0x78, 0x90, 0x9C),
+        };
+        var iconBorder = new Border
+        {
+            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x1A, iconColor.R, iconColor.G, iconColor.B)),
+            CornerRadius = new CornerRadius(10),
+            Width = 48, Height = 48,
+            VerticalAlignment = VerticalAlignment.Center
         };
         iconBorder.Child = new FontIcon
         {

@@ -9,33 +9,45 @@
     <Grid Padding="{StaticResource PagePadding}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" MinHeight="40" />
-            <RowDefinition Height="*" MinHeight="200" />
-            <RowDefinition Height="Auto" MinHeight="72" />
+            <RowDefinition Height="*" MinHeight="220" />
+            <RowDefinition Height="Auto" MinHeight="80" />
         </Grid.RowDefinitions>
 
+        <!-- Notification -->
         <InfoBar
             x:Name="NotificationBar"
-            Title="Mechanica Launcher"
-            Message="Ready to play."
+            Title="Mechanica"
+            Message="Ready."
             Severity="Success"
             IsOpen="True"
             IsClosable="True"
             MinHeight="40"
-            Margin="0,0,0,12" />
+            Margin="0,0,0,16" />
 
-        <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="28">
+        <!-- Hero -->
+        <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="32">
 
-            <TextBlock
-                Text="MECHANICA"
-                FontSize="42"
-                FontWeight="Bold"
-                HorizontalAlignment="Center"
-                CharacterSpacing="200"
-                Opacity="0.15"
-                Height="52" />
+            <!-- Brand -->
+            <StackPanel HorizontalAlignment="Center" Spacing="2">
+                <TextBlock
+                    Text="MECHANICA"
+                    FontSize="48"
+                    FontWeight="Bold"
+                    HorizontalAlignment="Center"
+                    CharacterSpacing="300"
+                    Opacity="0.08" />
+                <TextBlock
+                    Text="L A U N C H E R"
+                    FontSize="11"
+                    HorizontalAlignment="Center"
+                    CharacterSpacing="400"
+                    Foreground="{StaticResource DimBrush}" />
+            </StackPanel>
 
+            <!-- Instance selector -->
             <Border Style="{StaticResource CardPanel}" HorizontalAlignment="Center"
-                    MinWidth="320" MaxWidth="420" MinHeight="52">
+                    MinWidth="340" MaxWidth="440" MinHeight="52"
+                    BorderBrush="{StaticResource FaintBrush}" BorderThickness="1">
                 <ComboBox
                     x:Name="ProfileSelector"
                     HorizontalAlignment="Stretch"
@@ -44,78 +56,85 @@
                     MinHeight="36"
                     BorderThickness="0"
                     Background="Transparent"
-                    SelectionChanged="ProfileSelector_Changed">
-                    <ComboBoxItem Content="1.21.11  ·  Fabric 0.18.4" IsSelected="True" />
-                    <ComboBoxItem Content="1.21.11  ·  Vanilla" />
-                    <ComboBoxItem Content="1.20.4  ·  Fabric 0.15.11" />
-                </ComboBox>
+                    SelectionChanged="ProfileSelector_Changed" />
             </Border>
 
+            <!-- Play -->
             <Button
                 x:Name="PlayButton"
                 Style="{StaticResource PlayButton}"
-                Click="PlayButton_Click">
+                Click="PlayButton_Click"
+                PointerEntered="PlayButton_PointerEntered"
+                PointerExited="PlayButton_PointerExited">
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <FontIcon Glyph="&#xE768;" FontSize="22" Foreground="White" />
-                    <TextBlock Text="P L A Y" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <TextBlock Text="P L A Y" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
                 </StackPanel>
             </Button>
 
+            <!-- Progress -->
             <StackPanel x:Name="ProgressPanel" Visibility="Collapsed" Spacing="6"
-                        HorizontalAlignment="Center" MinWidth="400" MaxWidth="500" MinHeight="40">
+                        HorizontalAlignment="Center" MinWidth="420" MaxWidth="500" MinHeight="40">
                 <ProgressBar
                     x:Name="DownloadProgress"
                     Maximum="100" Value="0"
                     IsIndeterminate="False"
-                    Height="6"
+                    Height="5"
                     CornerRadius="3" />
                 <TextBlock
                     x:Name="ProgressText"
                     Text="Ready"
                     HorizontalAlignment="Center"
-                    Foreground="{StaticResource SubtleBrush}"
+                    Foreground="{StaticResource DimBrush}"
                     FontSize="12"
                     Height="18" />
             </StackPanel>
         </StackPanel>
 
-        <Grid Grid.Row="2" ColumnDefinitions="*,12,*,12,*" MinHeight="72" Margin="0,16,0,0">
+        <!-- Status Cards -->
+        <Grid x:Name="StatusCardsGrid" Grid.Row="2" ColumnDefinitions="*,12,*,12,*" MinHeight="80" Margin="0,20,0,0">
 
-            <Border Grid.Column="0" Style="{StaticResource CardPanelWide}" MinHeight="68">
+            <Border x:Name="Card0" Grid.Column="0" Style="{StaticResource CardPanelWide}" MinHeight="72">
                 <Grid ColumnDefinitions="Auto,*" MinHeight="40">
-                    <FontIcon Glyph="&#xEA86;" FontSize="20" Foreground="{StaticResource AccentBrush}"
-                              VerticalAlignment="Center" Margin="0,0,14,0" Width="20" Height="20" />
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <TextBlock Text="MODS" FontSize="10" CharacterSpacing="60"
-                                   Foreground="{StaticResource SubtleBrush}" Height="14" />
-                        <TextBlock x:Name="ModCountText" Text="0 active" FontSize="16"
-                                   FontWeight="SemiBold" Height="22" />
+                    <Border Background="#1A4CAF50" CornerRadius="10" Width="40" Height="40"
+                            VerticalAlignment="Center" Margin="0,0,14,0">
+                        <FontIcon Glyph="&#xEA86;" FontSize="18" Foreground="{StaticResource AccentBrush}"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="MODS" FontSize="10" CharacterSpacing="120"
+                                   Foreground="{StaticResource DimBrush}" />
+                        <TextBlock x:Name="ModCountText" Text="0" FontSize="17" FontWeight="Bold" />
                     </StackPanel>
                 </Grid>
             </Border>
 
-            <Border Grid.Column="2" Style="{StaticResource CardPanelWide}" MinHeight="68">
+            <Border x:Name="Card1" Grid.Column="2" Style="{StaticResource CardPanelWide}" MinHeight="72">
                 <Grid ColumnDefinitions="Auto,*" MinHeight="40">
-                    <FontIcon Glyph="&#xE77B;" FontSize="20" Foreground="{StaticResource AccentBrush}"
-                              VerticalAlignment="Center" Margin="0,0,14,0" Width="20" Height="20" />
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <TextBlock Text="ACCOUNT" FontSize="10" CharacterSpacing="60"
-                                   Foreground="{StaticResource SubtleBrush}" Height="14" />
-                        <TextBlock x:Name="AccountText" Text="Offline" FontSize="16"
-                                   FontWeight="SemiBold" Height="22" />
+                    <Border Background="#1A2196F3" CornerRadius="10" Width="40" Height="40"
+                            VerticalAlignment="Center" Margin="0,0,14,0">
+                        <FontIcon Glyph="&#xE77B;" FontSize="18" Foreground="#2196F3"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="ACCOUNT" FontSize="10" CharacterSpacing="120"
+                                   Foreground="{StaticResource DimBrush}" />
+                        <TextBlock x:Name="AccountText" Text="Offline" FontSize="17" FontWeight="Bold" />
                     </StackPanel>
                 </Grid>
             </Border>
 
-            <Border Grid.Column="4" Style="{StaticResource CardPanelWide}" MinHeight="68">
+            <Border x:Name="Card2" Grid.Column="4" Style="{StaticResource CardPanelWide}" MinHeight="72">
                 <Grid ColumnDefinitions="Auto,*" MinHeight="40">
-                    <FontIcon Glyph="&#xE7F8;" FontSize="20" Foreground="{StaticResource AccentBrush}"
-                              VerticalAlignment="Center" Margin="0,0,14,0" Width="20" Height="20" />
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <TextBlock Text="JAVA" FontSize="10" CharacterSpacing="60"
-                                   Foreground="{StaticResource SubtleBrush}" Height="14" />
-                        <TextBlock x:Name="JavaVersionText" Text="Detecting..." FontSize="16"
-                                   FontWeight="SemiBold" Height="22" />
+                    <Border Background="#1AFF9800" CornerRadius="10" Width="40" Height="40"
+                            VerticalAlignment="Center" Margin="0,0,14,0">
+                        <FontIcon Glyph="&#xE7F8;" FontSize="18" Foreground="#FF9800"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="JAVA" FontSize="10" CharacterSpacing="120"
+                                   Foreground="{StaticResource DimBrush}" />
+                        <TextBlock x:Name="JavaVersionText" Text="..." FontSize="17" FontWeight="Bold" />
                     </StackPanel>
                 </Grid>
             </Border>

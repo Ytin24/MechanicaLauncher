@@ -10,43 +10,64 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
 
-            <Color x:Key="AccentGreen">#4CAF50</Color>
-            <Color x:Key="AccentGreenHover">#66BB6A</Color>
-            <Color x:Key="AccentGreenPress">#388E3C</Color>
-            <Color x:Key="SubtleText">#99FFFFFF</Color>
-            <Color x:Key="DimText">#66FFFFFF</Color>
-            <Color x:Key="CardBg">#1AFFFFFF</Color>
-            <Color x:Key="CardBgHover">#26FFFFFF</Color>
+            <!-- Palette -->
+            <Color x:Key="Accent">#4CAF50</Color>
+            <Color x:Key="AccentLight">#81C784</Color>
+            <Color x:Key="AccentDark">#2E7D32</Color>
+            <Color x:Key="Teal">#26A69A</Color>
+            <Color x:Key="Kill">#EF5350</Color>
+            <Color x:Key="KillDark">#C62828</Color>
+            <Color x:Key="Text100">#FFFFFFFF</Color>
+            <Color x:Key="Text70">#B3FFFFFF</Color>
+            <Color x:Key="Text40">#66FFFFFF</Color>
+            <Color x:Key="Text20">#33FFFFFF</Color>
+            <Color x:Key="Surface1">#0DFFFFFF</Color>
+            <Color x:Key="Surface2">#1AFFFFFF</Color>
+            <Color x:Key="Surface3">#26FFFFFF</Color>
+            <Color x:Key="Surface4">#33FFFFFF</Color>
 
-            <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentGreen}" />
-            <SolidColorBrush x:Key="AccentHoverBrush" Color="{StaticResource AccentGreenHover}" />
-            <SolidColorBrush x:Key="SubtleBrush" Color="{StaticResource SubtleText}" />
-            <SolidColorBrush x:Key="DimBrush" Color="{StaticResource DimText}" />
-            <SolidColorBrush x:Key="CardBrush" Color="{StaticResource CardBg}" />
+            <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource Accent}" />
+            <SolidColorBrush x:Key="AccentLightBrush" Color="{StaticResource AccentLight}" />
+            <SolidColorBrush x:Key="SubtleBrush" Color="{StaticResource Text70}" />
+            <SolidColorBrush x:Key="DimBrush" Color="{StaticResource Text40}" />
+            <SolidColorBrush x:Key="FaintBrush" Color="{StaticResource Text20}" />
+            <SolidColorBrush x:Key="CardBrush" Color="{StaticResource Surface2}" />
+            <SolidColorBrush x:Key="CardHoverBrush" Color="{StaticResource Surface3}" />
 
-            <CornerRadius x:Key="SmallRadius">6</CornerRadius>
-            <CornerRadius x:Key="MediumRadius">10</CornerRadius>
-            <CornerRadius x:Key="LargeRadius">16</CornerRadius>
-            <Thickness x:Key="PagePadding">36,28,36,28</Thickness>
+            <CornerRadius x:Key="R6">6</CornerRadius>
+            <CornerRadius x:Key="R10">10</CornerRadius>
+            <CornerRadius x:Key="R14">14</CornerRadius>
+            <Thickness x:Key="PagePadding">40,32,40,32</Thickness>
 
+            <!-- PLAY button -->
             <Style x:Key="PlayButton" TargetType="Button">
-                <Setter Property="Background" Value="{StaticResource AccentBrush}" />
                 <Setter Property="Foreground" Value="White" />
-                <Setter Property="FontSize" Value="20" />
+                <Setter Property="FontSize" Value="18" />
                 <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="CornerRadius" Value="{StaticResource MediumRadius}" />
-                <Setter Property="Padding" Value="56,16" />
-                <Setter Property="MinWidth" Value="220" />
+                <Setter Property="CornerRadius" Value="{StaticResource R14}" />
+                <Setter Property="Padding" Value="48,16" />
+                <Setter Property="MinWidth" Value="240" />
                 <Setter Property="MinHeight" Value="56" />
                 <Setter Property="HorizontalAlignment" Value="Center" />
                 <Setter Property="HorizontalContentAlignment" Value="Center" />
+                <Setter Property="Background">
+                    <Setter.Value>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                            <GradientStop Color="{StaticResource Accent}" Offset="0" />
+                            <GradientStop Color="{StaticResource Teal}" Offset="1" />
+                        </LinearGradientBrush>
+                    </Setter.Value>
+                </Setter>
             </Style>
 
+            <!-- Card -->
             <Style x:Key="CardPanel" TargetType="Border">
                 <Setter Property="Background" Value="{StaticResource CardBrush}" />
-                <Setter Property="CornerRadius" Value="{StaticResource MediumRadius}" />
+                <Setter Property="CornerRadius" Value="{StaticResource R10}" />
                 <Setter Property="Padding" Value="20,16" />
                 <Setter Property="MinHeight" Value="48" />
+                <Setter Property="BorderBrush" Value="{StaticResource FaintBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
             </Style>
 
             <Style x:Key="CardPanelWide" TargetType="Border" BasedOn="{StaticResource CardPanel}">
@@ -54,22 +75,25 @@
                 <Setter Property="HorizontalAlignment" Value="Stretch" />
             </Style>
 
+            <!-- Headers -->
             <Style x:Key="PageHeader" TargetType="TextBlock">
                 <Setter Property="FontSize" Value="28" />
-                <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="Margin" Value="0,0,0,20" />
+                <Setter Property="FontWeight" Value="Bold" />
+                <Setter Property="Margin" Value="0,0,0,24" />
                 <Setter Property="Height" Value="40" />
+                <Setter Property="CharacterSpacing" Value="20" />
             </Style>
 
             <Style x:Key="SectionHeader" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="14" />
-                <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="Foreground" Value="{StaticResource SubtleBrush}" />
+                <Setter Property="FontSize" Value="11" />
+                <Setter Property="FontWeight" Value="Bold" />
+                <Setter Property="Foreground" Value="{StaticResource DimBrush}" />
                 <Setter Property="Margin" Value="0,8,0,10" />
-                <Setter Property="CharacterSpacing" Value="60" />
-                <Setter Property="Height" Value="20" />
+                <Setter Property="CharacterSpacing" Value="120" />
+                <Setter Property="Height" Value="16" />
             </Style>
 
+            <!-- Badge -->
             <Style x:Key="Badge" TargetType="Border">
                 <Setter Property="CornerRadius" Value="4" />
                 <Setter Property="Padding" Value="8,3" />
@@ -78,25 +102,31 @@
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
 
+            <!-- Buttons -->
             <Style x:Key="SmallButton" TargetType="Button">
                 <Setter Property="FontSize" Value="13" />
-                <Setter Property="Padding" Value="16,6" />
+                <Setter Property="Padding" Value="16,7" />
                 <Setter Property="MinWidth" Value="72" />
-                <Setter Property="MinHeight" Value="32" />
-                <Setter Property="CornerRadius" Value="{StaticResource SmallRadius}" />
+                <Setter Property="MinHeight" Value="34" />
+                <Setter Property="CornerRadius" Value="{StaticResource R6}" />
             </Style>
 
             <Style x:Key="AccentSmallButton" TargetType="Button" BasedOn="{StaticResource SmallButton}">
-                <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+                <Setter Property="Background">
+                    <Setter.Value>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="{StaticResource Accent}" Offset="0" />
+                            <GradientStop Color="{StaticResource Teal}" Offset="1" />
+                        </LinearGradientBrush>
+                    </Setter.Value>
+                </Setter>
                 <Setter Property="Foreground" Value="White" />
             </Style>
 
             <Style x:Key="IconBox" TargetType="Border">
-                <Setter Property="Background" Value="#2D2D2D" />
-                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="CornerRadius" Value="{StaticResource R10}" />
                 <Setter Property="Width" Value="48" />
                 <Setter Property="Height" Value="48" />
-                <Setter Property="Padding" Value="0" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>
