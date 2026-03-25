@@ -20,6 +20,9 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
+      - name: Install workloads
+        run: dotnet workload install microsoft-net-sdk-windowsdesktop
+
       - name: Restore
         run: dotnet restore -p:Platform=x64
 
@@ -33,9 +36,15 @@ jobs:
             -p:Platform=x64 `
             -p:SelfContained=true `
             -p:WindowsAppSDKSelfContained=true `
+            -p:WindowsPackageType=None `
             -p:PublishTrimmed=false `
             -r win-x64 `
             --output ./publish
+
+      - name: Download WindowsAppRuntime
+        run: |
+          $url = "https://aka.ms/windowsappsdk/1.7/latest/windowsappruntimeinstall-x64.exe"
+          Invoke-WebRequest -Uri $url -OutFile ./publish/WindowsAppRuntimeInstall.exe
 
       - name: Build Installer
         run: |

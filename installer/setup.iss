@@ -27,4 +27,5 @@ Name: "{autodesktop}\Mechanica Launcher"; Filename: "{app}\MechanicaLauncher.exe
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"
 
 [Run]
+Filename: "{app}\WindowsAppRuntimeInstall.exe"; Parameters: "--quiet"; StatusMsg: "Installing Windows App Runtime..."; Flags: waituntilterminated skipifnotexists
 Filename: "{app}\MechanicaLauncher.exe"; Description: "Launch Mechanica Launcher"; Flags: nowait postinstall skipifsilent
