@@ -126,23 +126,43 @@ public sealed partial class HomePage : Page
         var inst = GetSelectedInstance();
         var running = inst != null && IsInstanceRunning(inst.Id);
 
-        PlayButton.IsEnabled = !running;
+        PlayButton.IsEnabled = true;
+        var label = running ? "KILL" : "P L A Y";
+        if (inst != null && !running)
+            label = $"PLAY  ·  {inst.Name}";
+
         PlayButton.Content = new StackPanel
         {
             Orientation = Orientation.Horizontal, Spacing = 12,
             Children =
             {
-                new FontIcon { Glyph = running ? "\uE769" : "\uE768", FontSize = 22, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White) },
-                new TextBlock { Text = running ? "RUNNING" : "P L A Y", FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }
+                new FontIcon { Glyph = running ? "\uE71A" : "\uE768", FontSize = 22, Foreground = new SolidColorBrush(running ? Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B) : Microsoft.UI.Colors.White) },
+                new TextBlock { Text = label, FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }
             }
         };
+
+        if (running)
+            PlayButton.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x33, 0xFF, 0x00, 0x00));
+        else
+            PlayButton.Background = (SolidColorBrush)Application.Current.Resources["AccentBrush"];
     }
 
     private async void PlayButton_Click(object sender, RoutedEventArgs e)
     {
         var instance = GetSelectedInstance();
         if (instance == null) { ShowNotification(InfoBarSeverity.Warning, "Select an instance."); return; }
-        if (IsInstanceRunning(instance.Id)) { ShowNotification(InfoBarSeverity.Warning, "Already running."); return; }
+
+        if (IsInstanceRunning(instance.Id))
+        {
+            if (App.RunningInstances.TryGetValue(instance.Id, out var proc))
+            {
+                try { proc.Kill(); } catch { }
+                App.RunningInstances.TryRemove(instance.Id, out _);
+            }
+            UpdatePlayButton();
+            ShowNotification(InfoBarSeverity.Informational, $"{instance.Name} killed.");
+            return;
+        }
 
         S.SelectedInstanceId = instance.Id;
         S.Save();
@@ -235,6 +255,9 @@ public sealed partial class HomePage : Page
 
             ProgressText.Text = "Game launched!";
             DownloadProgress.Value = 100;
+
+            if (S.CloseOnLaunch)
+                App.MainWindow.Close();
         }
         catch (Exception ex)
         {

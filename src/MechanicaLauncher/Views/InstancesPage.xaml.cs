@@ -298,10 +298,9 @@ public sealed partial class InstancesPage : Page
         var nameBox = new TextBox { PlaceholderText = "Instance name", MinHeight = 36 };
         var versionBox = new ComboBox { PlaceholderText = "Loading...", MinWidth = 280, MinHeight = 36, IsEnabled = false };
         var loaderBox = new ComboBox { MinWidth = 280, MinHeight = 36 };
-        loaderBox.Items.Add(new ComboBoxItem { Content = "None", Tag = "None" });
+        loaderBox.Items.Add(new ComboBoxItem { Content = "None (Vanilla)", Tag = "None" });
         loaderBox.Items.Add(new ComboBoxItem { Content = "Fabric", Tag = "Fabric" });
         loaderBox.Items.Add(new ComboBoxItem { Content = "Quilt", Tag = "Quilt" });
-        loaderBox.Items.Add(new ComboBoxItem { Content = "Forge", Tag = "Forge" });
         loaderBox.SelectedIndex = 0;
 
         var content = new StackPanel
@@ -330,7 +329,7 @@ public sealed partial class InstancesPage : Page
                 var vm = new VersionManager(_im.SharedDir);
                 var manifest = await vm.GetManifestAsync();
                 var versions = manifest.Versions
-                    .Where(v => v.Type == "release")
+                    .Where(v => v.Type == "release" || (App.Settings.ShowSnapshots && v.Type == "snapshot"))
                     .ToList();
 
                 DispatcherQueue.TryEnqueue(() =>

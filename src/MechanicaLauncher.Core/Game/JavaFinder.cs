@@ -31,6 +31,8 @@ public static class JavaFinder
 
         var mcRuntimePaths = new[]
         {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "MechanicaLauncher", "shared", "runtime"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Packages", "Microsoft.4297127D64EC6_8wekyb3d8bbwe", "LocalCache", "Local", "runtime"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
