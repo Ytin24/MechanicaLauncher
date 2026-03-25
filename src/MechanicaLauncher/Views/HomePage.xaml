@@ -9,8 +9,9 @@
     <Grid Padding="{StaticResource PagePadding}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" MinHeight="40" />
-            <RowDefinition Height="*" MinHeight="220" />
+            <RowDefinition Height="*" MinHeight="150" />
             <RowDefinition Height="Auto" MinHeight="80" />
+            <RowDefinition x:Name="LogRow" Height="0" />
         </Grid.RowDefinitions>
 
         <!-- Notification -->
@@ -93,6 +94,14 @@
             </StackPanel>
         </StackPanel>
 
+        <!-- Cat peeking from corner -->
+        <Border x:Name="PeekCat" Grid.Row="2" Width="50" Height="50"
+                CornerRadius="25" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                Margin="0,0,4,-10" Opacity="0"
+                ToolTipService.ToolTip="meow~" Tapped="Cat_Tapped">
+            <Image x:Name="CatImage" Source="https://cataas.com/cat?width=100&amp;height=100" Stretch="UniformToFill" />
+        </Border>
+
         <!-- Status Cards -->
         <Grid x:Name="StatusCardsGrid" Grid.Row="2" ColumnDefinitions="*,12,*,12,*" MinHeight="80" Margin="0,20,0,0">
 
@@ -141,5 +150,35 @@
                 </Grid>
             </Border>
         </Grid>
+
+        <!-- Log Panel (toggle) -->
+        <Grid Grid.Row="3" x:Name="LogPanel" Visibility="Collapsed" Margin="0,12,0,0">
+            <Border Style="{StaticResource CardPanelWide}" Padding="12" MinHeight="140" MaxHeight="200">
+                <Grid RowDefinitions="Auto,*">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Text="GAME OUTPUT" FontSize="10" CharacterSpacing="120"
+                                   Foreground="{StaticResource DimBrush}" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Click="ToggleLog_Click"
+                                Padding="4" MinWidth="28" MinHeight="28" CornerRadius="6"
+                                ToolTipService.ToolTip="Close logs">
+                            <FontIcon Glyph="&#xE70D;" FontSize="10" />
+                        </Button>
+                    </Grid>
+                    <ScrollViewer Grid.Row="1" Margin="0,6,0,0">
+                        <TextBlock x:Name="LogText" Text="" FontSize="11" FontFamily="Cascadia Mono,Consolas,monospace"
+                                   Foreground="{StaticResource SubtleBrush}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Log toggle button (bottom-right, small) -->
+        <Button x:Name="LogToggleBtn" Grid.Row="2" Click="ToggleLog_Click"
+                HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                Margin="0,0,0,-4" Padding="6" MinWidth="30" MinHeight="30"
+                CornerRadius="6" Opacity="0.5"
+                ToolTipService.ToolTip="Show game logs">
+            <FontIcon Glyph="&#xE756;" FontSize="12" />
+        </Button>
     </Grid>
 </Page>

@@ -81,6 +81,8 @@ public sealed partial class HomePage : Page
         AnimationHelper.AddButtonSpring(PlayButton);
         AnimationHelper.StartBreathing(PlayButton);
 
+        _ = ShowCatAsync();
+
         try
         {
             _manifest = await _vm.GetManifestAsync();
@@ -242,10 +244,15 @@ public sealed partial class HomePage : Page
             _im.SaveInstance(instance);
             UpdatePlayButton();
 
+            LogText.Text = "";
+            proc.OutputDataReceived += (_, args) => { if (args.Data != null) AppendLog(args.Data); };
+            proc.ErrorDataReceived += (_, args) => { if (args.Data != null) AppendLog($"[ERR] {args.Data}"); };
+            proc.BeginOutputReadLine();
+            proc.BeginErrorReadLine();
+
             var instId = instance.Id;
             _ = Task.Run(async () =>
             {
-                var stderr = await proc.StandardError.ReadToEndAsync();
                 await proc.WaitForExitAsync();
                 var exit = proc.ExitCode;
                 App.RunningInstances.TryRemove(instId, out _);
@@ -253,7 +260,7 @@ public sealed partial class HomePage : Page
                 {
                     UpdatePlayButton();
                     ShowNotification(exit != 0 ? InfoBarSeverity.Error : InfoBarSeverity.Success,
-                        exit != 0 ? $"Crashed (exit {exit}): {stderr[..Math.Min(300, stderr.Length)]}" : "Game closed.");
+                        exit != 0 ? $"Crashed (exit {exit})" : "Game closed.");
                 });
             });
 
@@ -275,6 +282,48 @@ public sealed partial class HomePage : Page
             ProgressPanel.Visibility = Visibility.Collapsed;
             DownloadProgress.Value = 0;
         }
+    }
+
+    private int _catSeed = Random.Shared.Next(10000);
+
+    private async Task ShowCatAsync()
+    {
+        await Task.Delay(5000);
+        CatImage.Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(
+            new Uri($"https://cataas.com/cat?width=100&height=100&r={_catSeed}"));
+        AnimationHelper.SlideIn(PeekCat, 0);
+    }
+
+    private void Cat_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
+    {
+        _catSeed = Random.Shared.Next(10000);
+        CatImage.Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(
+            new Uri($"https://cataas.com/cat?width=100&height=100&r={_catSeed}"));
+    }
+
+    private void ToggleLog_Click(object sender, RoutedEventArgs e)
+    {
+        if (LogPanel.Visibility == Visibility.Visible)
+        {
+            LogPanel.Visibility = Visibility.Collapsed;
+            LogRow.Height = new GridLength(0);
+        }
+        else
+        {
+            LogPanel.Visibility = Visibility.Visible;
+            LogRow.Height = GridLength.Auto;
+            AnimationHelper.SlideIn(LogPanel, 0);
+        }
+    }
+
+    private void AppendLog(string line)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (LogText.Text.Length > 10000)
+                LogText.Text = LogText.Text[5000..];
+            LogText.Text += line + "\n";
+        });
     }
 
     private void ShowNotification(InfoBarSeverity severity, string message)
