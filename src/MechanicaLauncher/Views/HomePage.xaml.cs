@@ -99,6 +99,22 @@ public sealed partial class HomePage : Page
             NotificationBar.Severity = InfoBarSeverity.Warning;
             NotificationBar.Message = $"Offline — {ex.Message}";
         }
+
+        _ = CheckUpdatesAsync();
+    }
+
+    private async Task CheckUpdatesAsync()
+    {
+        try
+        {
+            var update = await Core.Updates.UpdateChecker.CheckAsync();
+            if (update.IsAvailable)
+            {
+                ShowNotification(InfoBarSeverity.Informational,
+                    $"Update available: v{update.LatestVersion} (current: v{update.CurrentVersion})");
+            }
+        }
+        catch { }
     }
 
     private void UpdateInstanceInfo()
