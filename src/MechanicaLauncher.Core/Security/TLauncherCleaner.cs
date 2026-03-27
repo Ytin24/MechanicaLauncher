@@ -21,6 +21,8 @@ public static class TLauncherCleaner
         DeleteFile(Path.Combine(appData, ".minecraft", "libraries", "minecraft.ico"), "TLauncher icon");
         DeleteDir(Path.Combine(appData, ".tlauncher", "starter", "jre_default"), "TLauncher bundled Java");
 
+        VerifyMinecraftJava(Path.Combine(appData, ".minecraft", "runtime"));
+
         CleanMinecraftDir(Path.Combine(appData, ".minecraft"));
 
         DeleteDir(@"C:\Program Files\tLauncher", "TLauncher Program Files");
@@ -148,6 +150,29 @@ public static class TLauncherCleaner
         var remaining = Directory.GetFiles(mcDir).Length + Directory.GetDirectories(mcDir).Length;
         if (remaining == 0)
             DeleteDir(mcDir, ".minecraft (empty)");
+    }
+
+    private static void VerifyMinecraftJava(string runtimeDir)
+    {
+        if (!Directory.Exists(runtimeDir)) return;
+        StatusChanged?.Invoke("Verifying Java runtimes...");
+
+        foreach (var componentDir in Directory.GetDirectories(runtimeDir))
+        {
+            var component = Path.GetFileName(componentDir);
+            var result = JavaVerifier.VerifyAsync(runtimeDir, component,
+                s => StatusChanged?.Invoke(s)).GetAwaiter().GetResult();
+
+            if (!result.IsVerified && result.FailedFiles > 0)
+            {
+                StatusChanged?.Invoke($"Java {component}: {result.FailedFiles} modified files — deleting...");
+                DeleteDir(componentDir, $"Compromised Java ({component})");
+            }
+            else if (result.IsVerified)
+            {
+                StatusChanged?.Invoke($"Java {component}: OK ({result.VerifiedFiles} files verified)");
+            }
+        }
     }
 
     private static void CleanRegistry()
