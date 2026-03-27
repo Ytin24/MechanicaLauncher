@@ -241,7 +241,7 @@ public sealed partial class HomePage : Page
                 ProgressText.Text = $"Downloading Java ({javaComponent})...";
                 javaPath = await JavaFinder.DownloadJavaAsync(javaComponent, _im.SharedDir,
                     status => DispatcherQueue.TryEnqueue(() => ProgressText.Text = status));
-                if (javaPath == null) { ShowNotification(InfoBarSeverity.Error, "Java not found."); return; }
+                if (javaPath == null) { await ShowRepairDialogAsync(instance.Id, -1); return; }
             }
 
             var vanillaJar = Path.Combine(gameDir, "versions", instance.McVersion, $"{instance.McVersion}.jar");
@@ -298,8 +298,10 @@ public sealed partial class HomePage : Page
                 DispatcherQueue.TryEnqueue(() =>
                 {
                     UpdatePlayButton();
-                    ShowNotification(exit != 0 ? InfoBarSeverity.Error : InfoBarSeverity.Success,
-                        exit != 0 ? App.L("home.crashed", exit) : App.L("home.game_closed"));
+                    if (exit != 0)
+                        _ = ShowRepairDialogAsync(instId, exit);
+                    else
+                        ShowNotification(InfoBarSeverity.Success, App.L("home.game_closed"));
                 });
             });
 
@@ -364,6 +366,127 @@ public sealed partial class HomePage : Page
     {
         LogScroll.UpdateLayout();
         LogScroll.ChangeView(null, LogScroll.ScrollableHeight, null, true);
+    }
+
+    private async Task ShowRepairDialogAsync(string instanceId, int exitCode)
+    {
+        var inst = _im.GetInstance(instanceId);
+        if (inst == null) return;
+
+        var gameDir = _im.GetGameDir(instanceId);
+
+        var panel = new StackPanel { Spacing = 8 };
+
+        if (exitCode >= 0)
+            panel.Children.Add(new TextBlock
+            {
+                Text = App.L("home.crashed", exitCode),
+                TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B))
+            });
+        else
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Java not found",
+                TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B))
+            });
+
+        var javaBtn = new Button { Content = "Reinstall Java", HorizontalAlignment = HorizontalAlignment.Stretch, MinHeight = 36 };
+        var assetsBtn = new Button { Content = "Reinstall assets & libraries", HorizontalAlignment = HorizontalAlignment.Stretch, MinHeight = 36 };
+        var modsBtn = new Button { Content = "Disable all mods", HorizontalAlignment = HorizontalAlignment.Stretch, MinHeight = 36 };
+        var logBtn = new Button { Content = "Open crash log", HorizontalAlignment = HorizontalAlignment.Stretch, MinHeight = 36 };
+        var folderBtn = new Button { Content = "Open instance folder", HorizontalAlignment = HorizontalAlignment.Stretch, MinHeight = 36 };
+
+        panel.Children.Add(javaBtn);
+        panel.Children.Add(assetsBtn);
+        panel.Children.Add(modsBtn);
+        panel.Children.Add(logBtn);
+        panel.Children.Add(folderBtn);
+
+        var dialog = new ContentDialog
+        {
+            Title = "Repair Instance",
+            Content = panel,
+            CloseButtonText = "Close",
+            XamlRoot = this.XamlRoot
+        };
+
+        javaBtn.Click += async (_, _) =>
+        {
+            javaBtn.IsEnabled = false;
+            javaBtn.Content = "Downloading...";
+            var component = "java-runtime-delta";
+            try
+            {
+                if (_manifest != null)
+                {
+                    var entry = _manifest.Versions.FirstOrDefault(v => v.Id == inst.McVersion);
+                    if (entry != null)
+                    {
+                        var meta = await _vm.GetVersionMetaAsync(entry);
+                        component = meta.JavaVersion?.Component ?? component;
+                    }
+                }
+
+                var sharedRuntime = Path.Combine(_im.SharedDir, "runtime", component);
+                if (Directory.Exists(sharedRuntime))
+                    try { Directory.Delete(sharedRuntime, true); } catch { }
+
+                await JavaFinder.DownloadJavaAsync(component, _im.SharedDir, null);
+                javaBtn.Content = "Done!";
+            }
+            catch { javaBtn.Content = "Failed"; }
+        };
+
+        assetsBtn.Click += async (_, _) =>
+        {
+            assetsBtn.IsEnabled = false;
+            assetsBtn.Content = "Reinstalling...";
+            try
+            {
+                var versionDir = Path.Combine(gameDir, "versions", inst.McVersion);
+                if (Directory.Exists(versionDir))
+                    try { Directory.Delete(versionDir, true); } catch { }
+
+                assetsBtn.Content = "Done! Press Play again";
+            }
+            catch { assetsBtn.Content = "Failed"; }
+        };
+
+        modsBtn.Click += (_, _) =>
+        {
+            var modsDir = Path.Combine(gameDir, "mods");
+            if (Directory.Exists(modsDir))
+            {
+                int count = 0;
+                foreach (var jar in Directory.GetFiles(modsDir, "*.jar"))
+                {
+                    try { File.Move(jar, jar + ".disabled"); count++; } catch { }
+                }
+                modsBtn.Content = $"Disabled {count} mods";
+            }
+            else modsBtn.Content = "No mods found";
+        };
+
+        logBtn.Click += (_, _) =>
+        {
+            var crashDir = Path.Combine(gameDir, "crash-reports");
+            var logFile = Path.Combine(gameDir, "logs", "latest.log");
+            if (Directory.Exists(crashDir))
+            {
+                var latest = Directory.GetFiles(crashDir, "*.txt").OrderByDescending(File.GetLastWriteTime).FirstOrDefault();
+                if (latest != null) { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = latest, UseShellExecute = true }); return; }
+            }
+            if (File.Exists(logFile))
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = logFile, UseShellExecute = true });
+        };
+
+        folderBtn.Click += (_, _) =>
+        {
+            if (Directory.Exists(gameDir))
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = gameDir, UseShellExecute = true });
+        };
+
+        await dialog.ShowAsync();
     }
 
     private void ShowNotification(InfoBarSeverity severity, string message)
