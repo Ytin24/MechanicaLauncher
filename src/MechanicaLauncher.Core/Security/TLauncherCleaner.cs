@@ -19,7 +19,7 @@ public static class TLauncherCleaner
         DeleteFile(Path.Combine(appData, ".minecraft", "TLauncher.exe"), "TLauncher executable");
         DeleteFile(Path.Combine(appData, ".minecraft", "libraries", "tlicon.ico"), "TLauncher icon");
         DeleteFile(Path.Combine(appData, ".minecraft", "libraries", "minecraft.ico"), "TLauncher icon");
-        DeleteDir(Path.Combine(appData, ".minecraft", "runtime"), "TLauncher Java");
+        DeleteDir(Path.Combine(appData, ".tlauncher", "starter", "jre_default"), "TLauncher bundled Java");
 
         CleanMinecraftDir(Path.Combine(appData, ".minecraft"));
 
