@@ -21,6 +21,8 @@ public sealed partial class InstancesPage : Page
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+        PageTitle.Text = App.L("inst.title");
+        NewInstanceText.Text = App.L("inst.new");
         LoadInstances();
     }
 
@@ -33,7 +35,7 @@ public sealed partial class InstancesPage : Page
         {
             InstancesList.Children.Add(new TextBlock
             {
-                Text = "No instances yet. Create one to get started!",
+                Text = App.L("inst.no_instances"),
                 Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 FontSize = 14,
@@ -145,7 +147,7 @@ public sealed partial class InstancesPage : Page
 
         var selectBtn = new Button
         {
-            Content = S.SelectedInstanceId == inst.Id ? "Selected" : "Select",
+            Content = S.SelectedInstanceId == inst.Id ? App.L("inst.selected") : App.L("inst.select"),
             FontSize = 13, Padding = new Thickness(16, 6, 16, 6),
             MinWidth = 72, MinHeight = 32, CornerRadius = new CornerRadius(6),
             Tag = inst.Id
@@ -203,10 +205,10 @@ public sealed partial class InstancesPage : Page
         {
             var dialog = new ContentDialog
             {
-                Title = "Delete Instance",
-                Content = "This will delete all mods, saves, and configs for this instance.",
-                PrimaryButtonText = "Delete",
-                CloseButtonText = "Cancel",
+                Title = App.L("inst.delete"),
+                Content = App.L("inst.delete_confirm"),
+                PrimaryButtonText = App.L("gen.delete"),
+                CloseButtonText = App.L("inst.cancel"),
                 XamlRoot = this.XamlRoot
             };
             if (await dialog.ShowAsync() == ContentDialogResult.Primary)
@@ -219,7 +221,7 @@ public sealed partial class InstancesPage : Page
                 {
                     await new ContentDialog
                     {
-                        Title = "Error",
+                        Title = App.L("gen.error"),
                         Content = $"Could not delete: {ex.Message}",
                         CloseButtonText = "OK",
                         XamlRoot = this.XamlRoot
@@ -259,7 +261,7 @@ public sealed partial class InstancesPage : Page
             Spacing = 10, MinWidth = 360,
             Children =
             {
-                new TextBlock { Text = "Name" }, nameBox,
+                new TextBlock { Text = App.L("inst.name") }, nameBox,
                 new TextBlock { Text = $"Version: {inst.McVersion}  ·  {inst.Loader}{(inst.LoaderVersion != null ? $" {inst.LoaderVersion}" : "")}", Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF)), FontSize = 13 },
                 minMemLabel, minMemSlider,
                 maxMemLabel, maxMemSlider,
@@ -275,10 +277,10 @@ public sealed partial class InstancesPage : Page
 
         var dialog = new ContentDialog
         {
-            Title = "Edit Instance",
+            Title = App.L("inst.edit"),
             Content = new ScrollViewer { Content = content, MaxHeight = 500 },
-            PrimaryButtonText = "Save",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = App.L("inst.save"),
+            CloseButtonText = App.L("inst.cancel"),
             XamlRoot = this.XamlRoot
         };
 
@@ -300,7 +302,7 @@ public sealed partial class InstancesPage : Page
         var nameBox = new TextBox { PlaceholderText = "Instance name", MinHeight = 36 };
         var versionBox = new ComboBox { PlaceholderText = "Loading...", MinWidth = 280, MinHeight = 36, IsEnabled = false };
         var loaderBox = new ComboBox { MinWidth = 280, MinHeight = 36 };
-        loaderBox.Items.Add(new ComboBoxItem { Content = "None (Vanilla)", Tag = "None" });
+        loaderBox.Items.Add(new ComboBoxItem { Content = App.L("inst.none"), Tag = "None" });
         loaderBox.Items.Add(new ComboBoxItem { Content = "Fabric", Tag = "Fabric" });
         loaderBox.Items.Add(new ComboBoxItem { Content = "Quilt", Tag = "Quilt" });
         loaderBox.SelectedIndex = 0;
@@ -309,18 +311,18 @@ public sealed partial class InstancesPage : Page
         {
             Spacing = 12, MinWidth = 320,
             Children = {
-                new TextBlock { Text = "Name" }, nameBox,
-                new TextBlock { Text = "Minecraft Version" }, versionBox,
-                new TextBlock { Text = "Mod Loader" }, loaderBox
+                new TextBlock { Text = App.L("inst.name") }, nameBox,
+                new TextBlock { Text = App.L("inst.mc_version") }, versionBox,
+                new TextBlock { Text = App.L("inst.loader") }, loaderBox
             }
         };
 
         var dialog = new ContentDialog
         {
-            Title = "New Instance",
+            Title = App.L("inst.new"),
             Content = content,
-            PrimaryButtonText = "Create",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = App.L("inst.create"),
+            CloseButtonText = App.L("inst.cancel"),
             XamlRoot = this.XamlRoot
         };
 

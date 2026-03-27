@@ -33,6 +33,9 @@ public sealed partial class ModsPage : Page
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+        PageTitle.Text = App.L("mods.title");
+        InstalledLabel.Text = App.L("mods.installed");
+        ModSearchBox.PlaceholderText = App.L("mods.search");
         LoadInstance();
     }
 
@@ -43,9 +46,9 @@ public sealed partial class ModsPage : Page
 
         if (_instance == null)
         {
-            InstanceLabel.Text = "No instance selected";
+            InstanceLabel.Text = App.L("mods.no_instance");
             ModCountLabel.Text = "0";
-            InstalledModsPanel.Children.Add(MakeText("Select an instance on the Home page first."));
+            InstalledModsPanel.Children.Add(MakeText(App.L("mods.no_instance")));
             return;
         }
 
@@ -56,7 +59,7 @@ public sealed partial class ModsPage : Page
 
         if (mods.Count == 0)
         {
-            InstalledModsPanel.Children.Add(MakeText("No mods installed yet."));
+            InstalledModsPanel.Children.Add(MakeText(App.L("mods.no_mods")));
             return;
         }
 
@@ -178,7 +181,7 @@ public sealed partial class ModsPage : Page
 
             SearchResultsPanel.Children.RemoveAt(SearchResultsPanel.Children.Count - 1); // remove spinner
             _searchOffset += result.Hits.Count;
-            ResultsInfo.Text = $"{result.TotalHits} results";
+            ResultsInfo.Text = App.L("mods.results", result.TotalHits);
 
             int delay = 0;
             foreach (var project in result.Hits)
@@ -232,7 +235,7 @@ public sealed partial class ModsPage : Page
                     Style = (Style)Application.Current.Resources["AccentSmallButton"],
                     VerticalAlignment = VerticalAlignment.Center,
                     Tag = project.ProjectId, MinWidth = 76, MinHeight = 32,
-                    Content = "Install"
+                    Content = App.L("mods.install")
                 };
                 installBtn.Click += InstallMod_Click;
                 Grid.SetColumn(installBtn, 1);
@@ -248,7 +251,7 @@ public sealed partial class ModsPage : Page
 
             if (result.Hits.Count == 0 && _searchOffset == 0)
             {
-                SearchResultsPanel.Children.Add(MakeText("No results found."));
+                SearchResultsPanel.Children.Add(MakeText(App.L("mods.no_results")));
                 ResultsInfo.Text = "0 results";
             }
 
@@ -256,7 +259,7 @@ public sealed partial class ModsPage : Page
             {
                 var loadMore = new Button
                 {
-                    Content = $"Load More ({result.TotalHits - _searchOffset} remaining)",
+                    Content = App.L("mods.load_more", result.TotalHits - _searchOffset),
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                     HorizontalContentAlignment = HorizontalAlignment.Center,
                     MinHeight = 40, CornerRadius = new CornerRadius(8),

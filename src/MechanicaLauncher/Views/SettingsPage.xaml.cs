@@ -87,16 +87,20 @@ public sealed partial class SettingsPage : Page
 
     private void ApplyLocale()
     {
-        PageTitle.Text = App.L("set.title");
-        AppearanceLabel.Text = App.L("set.appearance");
-        LauncherLabel.Text = App.L("set.launcher");
-        ThemeSelector.Header = App.L("set.theme");
-        ThemeDark.Content = App.L("set.dark");
-        ThemeLight.Content = App.L("set.light");
-        ThemeSystem.Content = App.L("set.system");
-        CloseOnLaunchToggle.Header = App.L("set.close_on_launch");
-        ShowSnapshotsToggle.Header = App.L("set.show_snapshots");
-        LangSelector.Header = App.L("set.language");
+        try
+        {
+            PageTitle.Text = App.L("set.title");
+            AppearanceLabel.Text = App.L("set.appearance");
+            LauncherLabel.Text = App.L("set.launcher");
+            ThemeSelector.Header = App.L("set.theme");
+            ThemeDark.Content = App.L("set.dark");
+            ThemeLight.Content = App.L("set.light");
+            ThemeSystem.Content = App.L("set.system");
+            CloseOnLaunchToggle.Header = App.L("set.close_on_launch");
+            ShowSnapshotsToggle.Header = App.L("set.show_snapshots");
+            LangSelector.Header = App.L("set.language");
+        }
+        catch { }
     }
 
     private void Theme_Changed(object sender, SelectionChangedEventArgs e)

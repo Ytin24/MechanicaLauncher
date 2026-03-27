@@ -11,7 +11,7 @@
         <!-- Header -->
         <Grid Grid.ColumnSpan="3" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
             <StackPanel Spacing="4">
-                <TextBlock Text="Mods" Style="{StaticResource PageHeader}" Margin="0" />
+                <TextBlock x:Name="PageTitle" Style="{StaticResource PageHeader}" Margin="0" />
                 <TextBlock x:Name="InstanceLabel" Text="No instance selected"
                            Foreground="{StaticResource DimBrush}" FontSize="12" Height="18" />
             </StackPanel>
@@ -30,7 +30,7 @@
         <!-- Left: Installed Mods -->
         <Grid Grid.Row="1" Grid.Column="0" RowDefinitions="Auto,*" MinHeight="300">
             <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,8">
-                <TextBlock Text="INSTALLED" Style="{StaticResource SectionHeader}" Margin="0" />
+                <TextBlock x:Name="InstalledLabel" Style="{StaticResource SectionHeader}" Margin="0" />
                 <TextBlock x:Name="ModCountLabel" Grid.Column="1" Text="0" FontSize="12"
                            Foreground="{StaticResource DimBrush}" VerticalAlignment="Center" />
             </Grid>
