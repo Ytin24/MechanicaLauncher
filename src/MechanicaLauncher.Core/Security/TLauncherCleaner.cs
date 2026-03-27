@@ -47,7 +47,40 @@ public static class TLauncherCleaner
         CleanRegistry();
         CleanPrefetch();
 
+        ForceDeleteRemaining();
         StatusChanged?.Invoke("Cleanup complete!");
+    }
+
+    private static void ForceDeleteRemaining()
+    {
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var paths = new[]
+        {
+            Path.Combine(appData, ".tlauncher"),
+            @"C:\Program Files\tLauncher",
+            @"C:\Program Files (x86)\tLauncher"
+        };
+
+        foreach (var path in paths)
+        {
+            if (!Directory.Exists(path) && !File.Exists(path)) continue;
+            StatusChanged?.Invoke($"Force removing {Path.GetFileName(path)}...");
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = $"/c rd /s /q \"{path}\"",
+                    UseShellExecute = true,
+                    Verb = "runas",
+                    WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+                    CreateNoWindow = true
+                };
+                var proc = System.Diagnostics.Process.Start(psi);
+                proc?.WaitForExit(10000);
+            }
+            catch { }
+        }
     }
 
     private static void KillProcesses()
@@ -165,19 +198,18 @@ public static class TLauncherCleaner
     {
         if (!Directory.Exists(path)) return;
         StatusChanged?.Invoke($"Removing {label}...");
-        try { Directory.Delete(path, true); }
-        catch
+        try
         {
-            try
+            foreach (var file in Directory.GetFiles(path, "*", SearchOption.AllDirectories))
             {
-                foreach (var file in Directory.GetFiles(path, "*", SearchOption.AllDirectories))
-                    try { File.SetAttributes(file, FileAttributes.Normal); File.Delete(file); } catch { }
-                foreach (var dir in Directory.GetDirectories(path, "*", SearchOption.AllDirectories).Reverse())
-                    try { Directory.Delete(dir); } catch { }
-                try { Directory.Delete(path); } catch { }
+                try { File.SetAttributes(file, FileAttributes.Normal); File.Delete(file); }
+                catch { StatusChanged?.Invoke($"Skipped: {Path.GetFileName(file)}"); }
             }
-            catch { }
+            foreach (var dir in Directory.GetDirectories(path, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length))
+                try { Directory.Delete(dir); } catch { }
+            try { Directory.Delete(path); } catch { }
         }
+        catch { }
     }
 
     private static void DeleteFile(string path, string label)

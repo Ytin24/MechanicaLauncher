@@ -80,6 +80,7 @@ public sealed partial class InstancesPage : Page
             LoaderType.Fabric => Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xAF, 0x50),
             LoaderType.Quilt => Windows.UI.Color.FromArgb(0xFF, 0xAB, 0x47, 0xBC),
             LoaderType.Forge => Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x98, 0x00),
+            LoaderType.NeoForge => Windows.UI.Color.FromArgb(0xFF, 0xE6, 0x5C, 0x00),
             _ => Windows.UI.Color.FromArgb(0xFF, 0x78, 0x90, 0x9C),
         };
         var iconBorder = new Border
@@ -305,6 +306,8 @@ public sealed partial class InstancesPage : Page
         loaderBox.Items.Add(new ComboBoxItem { Content = App.L("inst.none"), Tag = "None" });
         loaderBox.Items.Add(new ComboBoxItem { Content = "Fabric", Tag = "Fabric" });
         loaderBox.Items.Add(new ComboBoxItem { Content = "Quilt", Tag = "Quilt" });
+        loaderBox.Items.Add(new ComboBoxItem { Content = "Forge", Tag = "Forge" });
+        loaderBox.Items.Add(new ComboBoxItem { Content = "NeoForge", Tag = "NeoForge" });
         loaderBox.SelectedIndex = 0;
 
         var content = new StackPanel
@@ -362,6 +365,7 @@ public sealed partial class InstancesPage : Page
             "Fabric" => LoaderType.Fabric,
             "Quilt" => LoaderType.Quilt,
             "Forge" => LoaderType.Forge,
+            "NeoForge" => LoaderType.NeoForge,
             _ => LoaderType.None
         };
         string? loaderVersion = null;

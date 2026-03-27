@@ -168,8 +168,10 @@ public sealed partial class ModsPage : Page
 
         try
         {
-            var loader = _instance.Loader != LoaderType.None ? _instance.Loader.ToString().ToLowerInvariant() : null;
             var type = (TypeFilter.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "mod";
+            var loader = (type == "mod" || type == "modpack")
+                ? (_instance.Loader != LoaderType.None ? _instance.Loader.ToString().ToLowerInvariant() : null)
+                : null;
             var sort = (SortFilter.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "relevance";
             var category = (CategoryFilter.SelectedItem as ComboBoxItem)?.Tag?.ToString();
             if (string.IsNullOrEmpty(category)) category = null;

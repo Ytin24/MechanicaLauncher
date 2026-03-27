@@ -15,28 +15,33 @@ public sealed class TLauncherMigrator
         _im = im;
     }
 
-    public async Task<GameInstance?> MigrateAsync(string minecraftDir)
+    public async Task<List<GameInstance>> MigrateAsync(string minecraftDir)
     {
-        if (!Directory.Exists(minecraftDir)) return null;
+        var instances = new List<GameInstance>();
+        if (!Directory.Exists(minecraftDir)) return instances;
 
-        var mcVersion = DetectVersion(minecraftDir);
-        var loader = DetectLoader(minecraftDir, mcVersion);
-        var loaderVersion = loader != LoaderType.None ? DetectLoaderVersion(minecraftDir, mcVersion, loader) : null;
+        var versions = DetectAllVersions(minecraftDir);
+        if (versions.Count == 0)
+            versions.Add(("1.21.1", LoaderType.None, null));
 
-        StatusChanged?.Invoke($"Creating instance: {mcVersion} {loader}...");
-        var instance = _im.CreateInstance($"Migrated ({mcVersion})", mcVersion, loader, loaderVersion);
-        var gameDir = _im.GetGameDir(instance.Id);
+        foreach (var (mcVersion, loader, loaderVersion) in versions)
+        {
+            StatusChanged?.Invoke($"Creating instance: {mcVersion} {loader}...");
+            var instance = _im.CreateInstance($"Migrated ({mcVersion})", mcVersion, loader, loaderVersion);
+            var gameDir = _im.GetGameDir(instance.Id);
 
-        CopyDir(Path.Combine(minecraftDir, "saves"), Path.Combine(gameDir, "saves"), "worlds");
-        CopyDir(Path.Combine(minecraftDir, "resourcepacks"), Path.Combine(gameDir, "resourcepacks"), "resource packs");
-        CopyDir(Path.Combine(minecraftDir, "shaderpacks"), Path.Combine(gameDir, "shaderpacks"), "shaders");
-        CopyDir(Path.Combine(minecraftDir, "config"), Path.Combine(gameDir, "config"), "configs");
-        CopyDir(Path.Combine(minecraftDir, "screenshots"), Path.Combine(gameDir, "screenshots"), "screenshots");
+            CopyDir(Path.Combine(minecraftDir, "saves"), Path.Combine(gameDir, "saves"), "worlds");
+            CopyDir(Path.Combine(minecraftDir, "resourcepacks"), Path.Combine(gameDir, "resourcepacks"), "resource packs");
+            CopyDir(Path.Combine(minecraftDir, "shaderpacks"), Path.Combine(gameDir, "shaderpacks"), "shaders");
+            CopyDir(Path.Combine(minecraftDir, "config"), Path.Combine(gameDir, "config"), "configs");
+            CopyDir(Path.Combine(minecraftDir, "screenshots"), Path.Combine(gameDir, "screenshots"), "screenshots");
 
-        await MigrateModsAsync(minecraftDir, gameDir, mcVersion, loader);
+            await MigrateModsAsync(minecraftDir, gameDir, mcVersion, loader);
+            instances.Add(instance);
+        }
 
         StatusChanged?.Invoke("Migration complete!");
-        return instance;
+        return instances;
     }
 
     private async Task MigrateModsAsync(string srcDir, string destDir, string mcVersion, LoaderType loader)
@@ -99,6 +104,58 @@ public sealed class TLauncherMigrator
         if (parts.Length > 0)
             return parts[0].Replace(".", " ").Trim();
         return name;
+    }
+
+    private static List<(string version, LoaderType loader, string? loaderVersion)> DetectAllVersions(string mcDir)
+    {
+        var result = new List<(string, LoaderType, string?)>();
+        var versionsDir = Path.Combine(mcDir, "versions");
+        if (!Directory.Exists(versionsDir)) return result;
+
+        var seen = new HashSet<string>();
+
+        foreach (var dir in Directory.GetDirectories(versionsDir))
+        {
+            var name = Path.GetFileName(dir);
+            if (name == null) continue;
+
+            if (name.Contains("fabric-loader-"))
+            {
+                var parts = name.Replace("fabric-loader-", "").Split('-');
+                if (parts.Length >= 2)
+                {
+                    var loaderVer = parts[0];
+                    var mcVer = string.Join("-", parts.Skip(1));
+                    var key = $"{mcVer}-fabric";
+                    if (seen.Add(key))
+                        result.Add((mcVer, LoaderType.Fabric, loaderVer));
+                }
+            }
+            else if (name.Contains("-forge-"))
+            {
+                var parts = name.Split("-forge-");
+                if (parts.Length == 2 && seen.Add($"{parts[0]}-forge"))
+                    result.Add((parts[0], LoaderType.Forge, parts[1]));
+            }
+            else if (name.Contains("quilt-loader-"))
+            {
+                var parts = name.Replace("quilt-loader-", "").Split('-');
+                if (parts.Length >= 2)
+                {
+                    var loaderVer = parts[0];
+                    var mcVer = string.Join("-", parts.Skip(1));
+                    if (seen.Add($"{mcVer}-quilt"))
+                        result.Add((mcVer, LoaderType.Quilt, loaderVer));
+                }
+            }
+            else if (!name.Contains("optifine", StringComparison.OrdinalIgnoreCase))
+            {
+                if (seen.Add(name))
+                    result.Add((name, LoaderType.None, null));
+            }
+        }
+
+        return result;
     }
 
     private static string DetectVersion(string mcDir)
