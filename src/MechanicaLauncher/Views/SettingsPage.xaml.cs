@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using MechanicaLauncher.Core.Localization;
 
 namespace MechanicaLauncher.Views;
 
@@ -29,15 +30,34 @@ public sealed partial class SettingsPage : Page
     {
         base.OnNavigatedTo(e);
         _loading = true;
-        ThemeSelector.SelectedIndex = S.Theme switch
-        {
-            "Dark" => 0,
-            "Light" => 1,
-            _ => 2
-        };
+
+        ApplyLocale();
+
+        ThemeSelector.SelectedIndex = S.Theme switch { "Dark" => 0, "Light" => 1, _ => 2 };
         CloseOnLaunchToggle.IsOn = S.CloseOnLaunch;
         ShowSnapshotsToggle.IsOn = S.ShowSnapshots;
+
+        for (int i = 0; i < LangSelector.Items.Count; i++)
+        {
+            if ((LangSelector.Items[i] as ComboBoxItem)?.Tag?.ToString() == Locale.CurrentLanguage)
+            { LangSelector.SelectedIndex = i; break; }
+        }
+
         _loading = false;
+    }
+
+    private void ApplyLocale()
+    {
+        PageTitle.Text = App.L("set.title");
+        AppearanceLabel.Text = App.L("set.appearance");
+        LauncherLabel.Text = App.L("set.launcher");
+        ThemeSelector.Header = App.L("set.theme");
+        ThemeDark.Content = App.L("set.dark");
+        ThemeLight.Content = App.L("set.light");
+        ThemeSystem.Content = App.L("set.system");
+        CloseOnLaunchToggle.Header = App.L("set.close_on_launch");
+        ShowSnapshotsToggle.Header = App.L("set.show_snapshots");
+        LangSelector.Header = App.L("set.language");
     }
 
     private void Theme_Changed(object sender, SelectionChangedEventArgs e)
@@ -51,11 +71,21 @@ public sealed partial class SettingsPage : Page
         {
             root.RequestedTheme = theme switch
             {
-                "Light" => ElementTheme.Light,
-                "Dark" => ElementTheme.Dark,
+                "Light" or "Светлая" => ElementTheme.Light,
+                "Dark" or "Тёмная" => ElementTheme.Dark,
                 _ => ElementTheme.Default
             };
         }
+    }
+
+    private void Lang_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || LangSelector?.SelectedItem is not ComboBoxItem item) return;
+        var lang = item.Tag?.ToString() ?? "en";
+        S.Language = lang;
+        S.Save();
+        Locale.Init(lang);
+        ApplyLocale();
     }
 
     private void CloseOnLaunch_Toggled(object sender, RoutedEventArgs e)

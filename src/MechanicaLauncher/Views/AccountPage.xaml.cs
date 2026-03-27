@@ -17,8 +17,22 @@ public sealed partial class AccountPage : Page
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+        ApplyLocale();
         NicknameBox.Text = S.Username;
         SyncUi();
+    }
+
+    private void ApplyLocale()
+    {
+        PageTitle.Text = App.L("acc.title");
+        MsTitle.Text = App.L("acc.ms_account");
+        MsDesc.Text = App.L("acc.ms_desc");
+        MsSignInText.Text = App.L("acc.ms_signin");
+        OfflineTitle.Text = App.L("acc.offline");
+        OfflineDesc.Text = App.L("acc.offline_desc");
+        NicknameBox.PlaceholderText = App.L("acc.nickname");
+        SaveBtn.Content = App.L("acc.save");
+        SignOutBtn.Content = App.L("acc.signout");
     }
 
     private void SyncUi()

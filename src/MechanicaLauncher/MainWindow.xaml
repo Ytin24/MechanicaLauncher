@@ -49,5 +49,61 @@
 
             <Frame x:Name="ContentFrame" />
         </NavigationView>
+
+        <!-- TLauncher Lockscreen Overlay -->
+        <Grid x:Name="TLauncherOverlay" Visibility="Collapsed" Background="#DD000000">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                        MaxWidth="520" Spacing="24">
+
+                <!-- Animated title -->
+                <TextBlock x:Name="TLTitle" Text=""
+                           FontSize="32" FontWeight="Bold"
+                           HorizontalAlignment="Center"
+                           CharacterSpacing="100"
+                           RenderTransformOrigin="0.5,0.5">
+                    <TextBlock.RenderTransform>
+                        <RotateTransform x:Name="TLTitleRotation" Angle="0" />
+                    </TextBlock.RenderTransform>
+                </TextBlock>
+
+                <!-- Warning icon -->
+                <FontIcon Glyph="&#xE7BA;" FontSize="48" Foreground="#FF4444"
+                          HorizontalAlignment="Center" />
+
+                <!-- Description -->
+                <TextBlock x:Name="TLDesc" TextWrapping="Wrap" FontSize="14" LineHeight="22"
+                           Foreground="#CCCCCC" TextAlignment="Center" />
+
+                <!-- Threat count -->
+                <TextBlock x:Name="TLThreatCount" Text="Найдено: 0 угроз"
+                           FontSize="16" FontWeight="SemiBold"
+                           Foreground="#FF6B6B" HorizontalAlignment="Center" />
+
+                <!-- Timer -->
+                <TextBlock x:Name="TLTimer" Text="Кнопки разблокируются через 20 сек..."
+                           FontSize="12" Foreground="#888888"
+                           HorizontalAlignment="Center" />
+
+                <!-- Progress (hidden until cleanup) -->
+                <StackPanel x:Name="TLProgress" Visibility="Collapsed" Spacing="6">
+                    <ProgressBar x:Name="TLProgressBar" IsIndeterminate="True" Height="4" CornerRadius="2" />
+                    <TextBlock x:Name="TLProgressText" Text="" FontSize="12"
+                               Foreground="#AAAAAA" HorizontalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Buttons -->
+                <StackPanel Orientation="Horizontal" Spacing="16" HorizontalAlignment="Center">
+                    <Button x:Name="TLAcceptBtn" Click="TLAccept_Click"
+                            IsEnabled="False" MinWidth="200" MinHeight="44"
+                            CornerRadius="8" Background="#4CAF50" Foreground="White"
+                            FontSize="14" FontWeight="SemiBold"
+                            />
+                    <Button x:Name="TLDeclineBtn" Click="TLDecline_Click"
+                            IsEnabled="False" MinWidth="140" MinHeight="44"
+                            CornerRadius="8" FontSize="14"
+                            />
+                </StackPanel>
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>

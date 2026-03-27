@@ -40,6 +40,11 @@ public sealed partial class HomePage : Page
         _loading = true;
         SplashText.Text = SettingsPage.GetRandomSplash();
 
+        ModsLabel.Text = App.L("home.mods");
+        AccountLabel.Text = App.L("home.account");
+        InstancesLabel.Text = App.L("home.instances");
+        ProfileSelector.PlaceholderText = App.L("home.select_instance");
+
         var allJava = JavaFinder.FindAllJava();
         AccountText.Text = S.Username;
 
@@ -168,9 +173,9 @@ public sealed partial class HomePage : Page
         var running = inst != null && IsInstanceRunning(inst.Id);
 
         PlayButton.IsEnabled = true;
-        var label = running ? "KILL" : "P L A Y";
+        var label = running ? App.L("home.kill") : App.L("home.play");
         if (inst != null && !running)
-            label = $"PLAY  ·  {inst.Name}";
+            label = App.L("home.play_with", inst.Name);
 
         PlayButton.Content = new StackPanel
         {
@@ -293,7 +298,7 @@ public sealed partial class HomePage : Page
                 {
                     UpdatePlayButton();
                     ShowNotification(exit != 0 ? InfoBarSeverity.Error : InfoBarSeverity.Success,
-                        exit != 0 ? $"Crashed (exit {exit})" : "Game closed.");
+                        exit != 0 ? App.L("home.crashed", exit) : App.L("home.game_closed"));
                 });
             });
 

@@ -29,6 +29,9 @@ public sealed class LauncherSettings
     [JsonPropertyName("theme")]
     public string Theme { get; set; } = "Dark";
 
+    [JsonPropertyName("language")]
+    public string? Language { get; set; }
+
     private static string SettingsPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "MechanicaLauncher", "settings.json");

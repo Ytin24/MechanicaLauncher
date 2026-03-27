@@ -8,19 +8,25 @@
 
     <ScrollViewer Padding="{StaticResource PagePadding}">
         <StackPanel Spacing="16" Width="560" HorizontalAlignment="Center">
-            <TextBlock Text="Settings" Style="{StaticResource PageHeader}" HorizontalAlignment="Center" />
+            <TextBlock x:Name="PageTitle" Style="{StaticResource PageHeader}" HorizontalAlignment="Center" />
 
             <Border Style="{StaticResource CardPanelWide}" Padding="24" MinHeight="100">
                 <StackPanel Spacing="16" HorizontalAlignment="Stretch">
                     <StackPanel Orientation="Horizontal" Spacing="10" Height="28">
                         <FontIcon Glyph="&#xE771;" FontSize="18" Foreground="{StaticResource AccentBrush}" />
-                        <TextBlock Text="Appearance" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center" />
+                        <TextBlock x:Name="AppearanceLabel" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center" />
                     </StackPanel>
-                    <ComboBox Header="Theme" x:Name="ThemeSelector" SelectionChanged="Theme_Changed"
+                    <ComboBox x:Name="ThemeSelector" SelectionChanged="Theme_Changed"
                               MinWidth="200" MinHeight="36" SelectedIndex="0">
-                        <ComboBoxItem Content="Dark" />
-                        <ComboBoxItem Content="Light" />
-                        <ComboBoxItem Content="System" />
+                        <ComboBoxItem x:Name="ThemeDark" />
+                        <ComboBoxItem x:Name="ThemeLight" />
+                        <ComboBoxItem x:Name="ThemeSystem" />
+                    </ComboBox>
+
+                    <ComboBox x:Name="LangSelector" SelectionChanged="Lang_Changed"
+                              MinWidth="200" MinHeight="36" SelectedIndex="0">
+                        <ComboBoxItem Content="English" Tag="en" />
+                        <ComboBoxItem Content="Русский" Tag="ru" />
                     </ComboBox>
                 </StackPanel>
             </Border>
@@ -29,12 +35,10 @@
                 <StackPanel Spacing="16" HorizontalAlignment="Stretch">
                     <StackPanel Orientation="Horizontal" Spacing="10" Height="28">
                         <FontIcon Glyph="&#xE7FC;" FontSize="18" Foreground="{StaticResource AccentBrush}" />
-                        <TextBlock Text="Launcher" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center" />
+                        <TextBlock x:Name="LauncherLabel" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center" />
                     </StackPanel>
-                    <ToggleSwitch x:Name="CloseOnLaunchToggle" Header="Close launcher when game starts"
-                                  MinHeight="44" Toggled="CloseOnLaunch_Toggled" />
-                    <ToggleSwitch x:Name="ShowSnapshotsToggle" Header="Show snapshot versions in instance creation"
-                                  MinHeight="44" Toggled="ShowSnapshots_Toggled" />
+                    <ToggleSwitch x:Name="CloseOnLaunchToggle" MinHeight="44" Toggled="CloseOnLaunch_Toggled" />
+                    <ToggleSwitch x:Name="ShowSnapshotsToggle" MinHeight="44" Toggled="ShowSnapshots_Toggled" />
                 </StackPanel>
             </Border>
 
