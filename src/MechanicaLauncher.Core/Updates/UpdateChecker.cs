@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Reflection;
 using System.Text.Json.Serialization;
 
 namespace MechanicaLauncher.Core.Updates;
@@ -15,7 +16,6 @@ public sealed class UpdateInfo
 public static class UpdateChecker
 {
     private static readonly HttpClient Http = new();
-    private const string CurrentVersion = "2.1.1";
     private const string RepoApi = "https://api.github.com/repos/Ytin24/MechanicaLauncher/releases/latest";
 
     static UpdateChecker()
@@ -23,9 +23,17 @@ public static class UpdateChecker
         Http.DefaultRequestHeaders.Add("User-Agent", "MechanicaLauncher");
     }
 
+    public static string GetCurrentVersion()
+    {
+        var asm = Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
+        var ver = asm.GetName().Version;
+        return ver != null ? $"{ver.Major}.{ver.Minor}.{ver.Build}" : "0.0.0";
+    }
+
     public static async Task<UpdateInfo> CheckAsync()
     {
-        var result = new UpdateInfo { CurrentVersion = CurrentVersion };
+        var current = GetCurrentVersion();
+        var result = new UpdateInfo { CurrentVersion = current };
 
         try
         {
@@ -38,9 +46,9 @@ public static class UpdateChecker
 
             var asset = release.Assets?.FirstOrDefault(a =>
                 a.Name?.Contains("setup", StringComparison.OrdinalIgnoreCase) == true);
-            result.DownloadUrl = asset?.DownloadUrl;
+            result.DownloadUrl = asset?.DownloadUrl ?? release.HtmlUrl;
 
-            if (IsNewer(latest, CurrentVersion))
+            if (IsNewer(latest, current))
                 result.IsAvailable = true;
         }
         catch { }

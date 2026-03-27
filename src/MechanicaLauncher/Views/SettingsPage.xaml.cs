@@ -2,6 +2,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using MechanicaLauncher.Core.Localization;
+using MechanicaLauncher.Core.Updates;
 
 namespace MechanicaLauncher.Views;
 
@@ -9,6 +10,7 @@ public sealed partial class SettingsPage : Page
 {
     private static Core.Profiles.LauncherSettings S => App.Settings;
     private bool _loading;
+    private UpdateInfo? _updateInfo;
 
     private static readonly string[] Splashes =
     [
@@ -44,6 +46,43 @@ public sealed partial class SettingsPage : Page
         }
 
         _loading = false;
+
+        _ = CheckUpdatesAsync();
+    }
+
+    private async Task CheckUpdatesAsync()
+    {
+        VersionText.Text = $"v{UpdateChecker.GetCurrentVersion()}  ·  WinUI 3  ·  .NET 9";
+        UpdateStatus.Text = App.L("set.checking_updates");
+
+        for (int i = 0; i < 20 && App.LatestUpdate == null; i++)
+            await Task.Delay(500);
+
+        _updateInfo = App.LatestUpdate;
+        if (_updateInfo == null)
+        {
+            UpdateStatus.Text = App.L("set.update_check_failed");
+            return;
+        }
+
+        if (_updateInfo.IsAvailable)
+        {
+            UpdateStatus.Text = App.L("set.update_available", _updateInfo.LatestVersion);
+            UpdateBtn.Content = App.L("set.download_update");
+            UpdateBtn.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            UpdateStatus.Text = App.L("set.up_to_date");
+        }
+    }
+
+    private void Update_Click(object sender, RoutedEventArgs e)
+    {
+        if (_updateInfo?.ReleaseUrl != null)
+        {
+            _ = Windows.System.Launcher.LaunchUriAsync(new Uri(_updateInfo.ReleaseUrl));
+        }
     }
 
     private void ApplyLocale()

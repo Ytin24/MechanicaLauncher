@@ -42,10 +42,16 @@
                 </StackPanel>
             </Border>
 
-            <Border Style="{StaticResource CardPanelWide}" Padding="20" MinHeight="60">
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="4">
-                    <TextBlock Text="Mechanica Launcher" FontWeight="SemiBold" FontSize="15" HorizontalAlignment="Center" Height="22" />
-                    <TextBlock Text="v2.0.0  ·  WinUI 3  ·  .NET 9" Foreground="{StaticResource DimBrush}" FontSize="12" HorizontalAlignment="Center" Height="18" />
+            <Border Style="{StaticResource CardPanelWide}" Padding="24" MinHeight="100">
+                <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="10" Height="28">
+                        <FontIcon Glyph="&#xE946;" FontSize="18" Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Text="Mechanica Launcher" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <TextBlock x:Name="VersionText" Foreground="{StaticResource DimBrush}" FontSize="13" />
+                    <TextBlock x:Name="UpdateStatus" Foreground="{StaticResource SubtleBrush}" FontSize="12" />
+                    <Button x:Name="UpdateBtn" Style="{StaticResource AccentSmallButton}"
+                            Visibility="Collapsed" Click="Update_Click" MinHeight="36" />
                 </StackPanel>
             </Border>
         </StackPanel>

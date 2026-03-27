@@ -12,6 +12,7 @@ public partial class App : Application
     public static ConcurrentDictionary<string, Process> RunningInstances { get; } = new();
     public static string L(string key) => Locale.Get(key);
     public static string L(string key, object arg) => string.Format(Locale.Get(key), arg);
+    public static Core.Updates.UpdateInfo? LatestUpdate { get; set; }
 
     public App()
     {
@@ -23,5 +24,12 @@ public partial class App : Application
     {
         MainWindow = new MainWindow();
         MainWindow.Activate();
+        _ = CheckUpdatesAsync();
+    }
+
+    private static async Task CheckUpdatesAsync()
+    {
+        try { LatestUpdate = await Core.Updates.UpdateChecker.CheckAsync(); }
+        catch { }
     }
 }

@@ -108,6 +108,11 @@ public static class Locale
         ["set.close_on_launch"] = "Close launcher when game starts",
         ["set.show_snapshots"] = "Show snapshot versions in instance creation",
         ["set.language"] = "Language",
+        ["set.checking_updates"] = "Checking for updates...",
+        ["set.update_available"] = "Update available: v{0}",
+        ["set.download_update"] = "Download Update",
+        ["set.up_to_date"] = "You're up to date!",
+        ["set.update_check_failed"] = "Could not check for updates",
 
         // TLauncher
         ["tl.title"] = "TLAUNCHER DETECTED",
@@ -205,6 +210,11 @@ public static class Locale
         ["set.close_on_launch"] = "Закрывать лаунчер при запуске игры",
         ["set.show_snapshots"] = "Показывать снапшоты при создании инстанса",
         ["set.language"] = "Язык",
+        ["set.checking_updates"] = "Проверяю обновления...",
+        ["set.update_available"] = "Доступно обновление: v{0}",
+        ["set.download_update"] = "Скачать обновление",
+        ["set.up_to_date"] = "У тебя последняя версия!",
+        ["set.update_check_failed"] = "Не удалось проверить обновления",
 
         // TLauncher
         ["tl.title"] = "ОБНАРУЖЕН TLAUNCHER",
