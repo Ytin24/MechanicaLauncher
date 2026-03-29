@@ -100,6 +100,26 @@ public sealed partial class HomePage : Page
             NotificationBar.Message = $"Offline — {ex.Message}";
         }
 
+        _ = ShowUpdateNotificationAsync();
+    }
+
+    private async Task ShowUpdateNotificationAsync()
+    {
+        for (int i = 0; i < 10 && App.LatestUpdate == null; i++)
+            await Task.Delay(500);
+
+        if (App.LatestUpdate is { IsAvailable: true } update)
+        {
+            NotificationBar.Title = "Mechanica";
+            NotificationBar.Message = $"Update v{update.LatestVersion} available!";
+            NotificationBar.Severity = InfoBarSeverity.Informational;
+            NotificationBar.IsOpen = true;
+            NotificationBar.ActionButton = new HyperlinkButton
+            {
+                Content = App.L("set.download_update"),
+                NavigateUri = new Uri(update.ReleaseUrl ?? "https://github.com/Ytin24/MechanicaLauncher/releases")
+            };
+        }
     }
 
     private void UpdateInstanceInfo()
