@@ -21,6 +21,16 @@ jobs:
           dotnet-version: '10.0.x'
           dotnet-quality: 'ga'
 
+      - name: Set version
+        id: version
+        run: |
+          if ($env:GITHUB_REF -match 'refs/tags/v(.+)') {
+            $ver = $matches[1]
+          } else {
+            $ver = "0.0.0"
+          }
+          echo "VERSION=$ver" >> $env:GITHUB_OUTPUT
+
       - name: Restore
         run: dotnet restore -p:Platform=x64
 
@@ -29,6 +39,7 @@ jobs:
           dotnet publish src/MechanicaLauncher/MechanicaLauncher.csproj `
             -c Release `
             -p:Platform=x64 `
+            -p:Version=${{ steps.version.outputs.VERSION }} `
             -p:SelfContained=true `
             -p:WindowsAppSDKSelfContained=true `
             -p:WindowsPackageType=None `
