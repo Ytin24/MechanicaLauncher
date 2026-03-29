@@ -194,6 +194,17 @@ public sealed partial class HomePage : Page
             : (Brush)Application.Current.Resources["AccentBrush"];
     }
 
+    private string? _pendingServer;
+    private int? _pendingPort;
+
+    public void LaunchWithServer(string instanceId, string server, int port)
+    {
+        _pendingServer = server;
+        _pendingPort = port;
+        _ = LoadAsync();
+        PlayButton_Click(this, new RoutedEventArgs());
+    }
+
     private async void PlayButton_Click(object sender, RoutedEventArgs e)
     {
         var instance = GetSelectedInstance();
@@ -275,7 +286,11 @@ public sealed partial class HomePage : Page
                 minMem: instance.MinMemoryMb, maxMem: instance.MaxMemoryMb,
                 extraJvmArgs: instance.JvmArgs,
                 windowWidth: instance.WindowWidth, windowHeight: instance.WindowHeight,
-                vanillaVersionId: isModded ? instance.McVersion : null);
+                vanillaVersionId: isModded ? instance.McVersion : null,
+                server: _pendingServer, port: _pendingPort);
+
+            _pendingServer = null;
+            _pendingPort = null;
 
             App.RunningInstances[instance.Id] = proc;
             instance.LastPlayed = DateTime.UtcNow;

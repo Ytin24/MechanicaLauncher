@@ -66,6 +66,71 @@ public sealed partial class MainWindow : Window
         else
         {
             ContentFrame.Navigate(typeof(HomePage));
+            if (App.PendingConnect != null)
+                _ = HandlePendingConnectAsync();
+        }
+    }
+
+    public void HandlePendingConnect() => _ = HandlePendingConnectAsync();
+
+    private async Task HandlePendingConnectAsync()
+    {
+        var connect = App.PendingConnect;
+        if (connect == null) return;
+        App.PendingConnect = null;
+
+        var im = new InstanceManager();
+        var instances = im.GetAllInstances();
+        var match = instances.FirstOrDefault(i => i.McVersion == connect.Version);
+
+        // Check if MC already running
+        var runningId = App.RunningInstances.Keys.FirstOrDefault();
+        if (runningId != null)
+        {
+            var dialog = new ContentDialog
+            {
+                Title = $"Подключиться к {connect.Server}?",
+                Content = $"Minecraft уже запущен. Переподключиться на {connect.Server}:{connect.Port}?",
+                PrimaryButtonText = "Переподключиться",
+                CloseButtonText = "Отмена",
+                XamlRoot = Content.XamlRoot
+            };
+
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+            if (App.RunningInstances.TryGetValue(runningId, out var proc))
+            {
+                try { proc.Kill(); } catch { }
+                App.RunningInstances.TryRemove(runningId, out _);
+            }
+            await Task.Delay(1000);
+        }
+
+        if (match == null)
+        {
+            var dialog = new ContentDialog
+            {
+                Title = $"Подключение к {connect.Server}",
+                Content = $"Для подключения нужен Minecraft {connect.Version}.\nУ вас нет подходящего инстанса.",
+                PrimaryButtonText = $"Создать Vanilla {connect.Version}",
+                CloseButtonText = "Отмена",
+                XamlRoot = Content.XamlRoot
+            };
+
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+            match = im.CreateInstance($"Server ({connect.Version})", connect.Version);
+        }
+
+        App.Settings.SelectedInstanceId = match.Id;
+        App.Settings.Save();
+
+        // Navigate to home and trigger play with server
+        ContentFrame.Navigate(typeof(HomePage));
+
+        if (ContentFrame.Content is HomePage home)
+        {
+            home.LaunchWithServer(match.Id, connect.Server, connect.Port);
         }
     }
 
