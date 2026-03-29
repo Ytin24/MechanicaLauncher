@@ -321,12 +321,14 @@ public sealed partial class HomePage : Page
                 var exit = proc.ExitCode;
                 App.RunningInstances.TryRemove(instId, out _);
                 App.Discord.OnGameExit();
+                if (App.IsHidden && !App.HasRunningInstances())
+                    App.ShowWindow();
                 DispatcherQueue.TryEnqueue(() =>
                 {
                     UpdatePlayButton();
-                    if (_isReconnecting)
+                    if (App.IsReconnecting)
                     {
-                        _isReconnecting = false;
+                        App.IsReconnecting = false;
                     }
                     else if (exit != 0)
                     {
@@ -343,7 +345,8 @@ public sealed partial class HomePage : Page
             DownloadProgress.Value = 100;
 
             if (S.CloseOnLaunch)
-                App.MainWindow.Close();
+                App.HideWindow();
+
         }
         catch (Exception ex)
         {

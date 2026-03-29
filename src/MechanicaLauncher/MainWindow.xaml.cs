@@ -19,6 +19,15 @@ public sealed partial class MainWindow : Window
 
     public MainWindow()
     {
+        this.Closed += (_, args) =>
+        {
+            if (App.HasRunningInstances())
+            {
+                args.Handled = true;
+                App.HideWindow();
+            }
+        };
+
         this.InitializeComponent();
         this.SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
         this.ExtendsContentIntoTitleBar = true;
@@ -98,9 +107,10 @@ public sealed partial class MainWindow : Window
 
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
 
+            App.IsReconnecting = true;
             if (App.RunningInstances.TryGetValue(runningId, out var proc))
             {
-                try { proc.Kill(); } catch { }
+                try { proc.Kill(); proc.WaitForExit(3000); } catch { }
                 App.RunningInstances.TryRemove(runningId, out _);
             }
             await Task.Delay(1000);
