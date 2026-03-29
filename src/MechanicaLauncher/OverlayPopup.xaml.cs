@@ -29,17 +29,11 @@ public sealed partial class OverlayPopup : Window
             presenter.SetBorderAndTitleBar(false, false);
         }
 
-        // Position bottom-right
-        var area = DisplayArea.GetFromWindowId(windowId, DisplayAreaFallback.Primary);
-        if (area != null)
-        {
-            var workArea = area.WorkArea;
-            appWindow.Move(new Windows.Graphics.PointInt32(
-                workArea.X + workArea.Width - 380,
-                workArea.Y + workArea.Height - 180));
-        }
+        // Position over MC window or bottom-right of screen
+        PositionOverMC(appWindow, windowId);
 
         _ = AutoCloseAsync();
+        _ = KeepOnTopAsync();
     }
 
     public static void Show(ConnectRequest request)
@@ -81,6 +75,51 @@ public sealed partial class OverlayPopup : Window
     {
         this.Close();
         _current = null;
+    }
+
+    private void PositionOverMC(AppWindow appWindow, Microsoft.UI.WindowId windowId)
+    {
+        // Try to find MC window position
+        foreach (var kv in App.RunningInstances)
+        {
+            try
+            {
+                var proc = kv.Value;
+                if (proc.HasExited || proc.MainWindowHandle == IntPtr.Zero) continue;
+
+                var mcId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(proc.MainWindowHandle);
+                var mcApp = AppWindow.GetFromWindowId(mcId);
+                if (mcApp != null)
+                {
+                    var mcPos = mcApp.Position;
+                    var mcSize = mcApp.Size;
+                    appWindow.Move(new Windows.Graphics.PointInt32(
+                        mcPos.X + mcSize.Width - 380,
+                        mcPos.Y + mcSize.Height - 180));
+                    return;
+                }
+            }
+            catch { }
+        }
+
+        // Fallback: bottom-right of screen
+        var area = DisplayArea.GetFromWindowId(windowId, DisplayAreaFallback.Primary);
+        if (area != null)
+        {
+            var workArea = area.WorkArea;
+            appWindow.Move(new Windows.Graphics.PointInt32(
+                workArea.X + workArea.Width - 380,
+                workArea.Y + workArea.Height - 180));
+        }
+    }
+
+    private async Task KeepOnTopAsync()
+    {
+        for (int i = 0; i < 30; i++)
+        {
+            await Task.Delay(500);
+            try { this.Activate(); } catch { return; }
+        }
     }
 
     private async Task AutoCloseAsync()

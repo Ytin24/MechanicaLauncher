@@ -92,28 +92,11 @@ public sealed partial class MainWindow : Window
         var instances = im.GetAllInstances();
         var match = instances.FirstOrDefault(i => i.McVersion == connect.Version);
 
-        // Check if MC already running
-        var runningId = App.RunningInstances.Keys.FirstOrDefault();
-        if (runningId != null)
+        // If MC running — use overlay popup instead
+        if (App.HasRunningInstances())
         {
-            var dialog = new ContentDialog
-            {
-                Title = $"Подключиться к {connect.Server}?",
-                Content = $"Minecraft уже запущен. Переподключиться на {connect.Server}:{connect.Port}?",
-                PrimaryButtonText = "Переподключиться",
-                CloseButtonText = "Отмена",
-                XamlRoot = Content.XamlRoot
-            };
-
-            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-
-            App.IsReconnecting = true;
-            if (App.RunningInstances.TryGetValue(runningId, out var proc))
-            {
-                try { proc.Kill(); proc.WaitForExit(3000); } catch { }
-                App.RunningInstances.TryRemove(runningId, out _);
-            }
-            await Task.Delay(1000);
+            OverlayPopup.Show(connect);
+            return;
         }
 
         if (match == null)

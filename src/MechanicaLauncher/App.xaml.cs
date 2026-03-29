@@ -129,7 +129,7 @@ public partial class App : Application
                         int.TryParse(parts[1], out var p) ? p : 25565,
                         parts[2]);
 
-                    if (IsHidden && HasRunningInstances())
+                    if (HasRunningInstances())
                     {
                         MainWindow.DispatcherQueue.TryEnqueue(() =>
                             OverlayPopup.Show(request));
