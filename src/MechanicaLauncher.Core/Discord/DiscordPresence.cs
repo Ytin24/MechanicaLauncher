@@ -9,12 +9,10 @@ public sealed class DiscordPresence : IDisposable
 {
     private const string AppId = "1487742480236544060";
     private DiscordRpcClient? _client;
-    private McState _state = new(McStateType.Launcher);
+    private readonly McStateMachine _sm = new();
     private string _mcVersion = "";
     private string _loaderName = "";
     private int _modCount;
-    private string? _dimension;
-    private string? _lastAchievement;
 
     public void Init()
     {
@@ -37,44 +35,25 @@ public sealed class DiscordPresence : IDisposable
 
     public void ProcessLogLine(string line)
     {
-        var newState = McLogParser.ParseLine(line);
-        if (newState == null) return;
-
-        if (newState.Dimension != null)
-        {
-            _dimension = newState.Dimension;
-        }
-        if (newState.Achievement != null)
-        {
-            _lastAchievement = newState.Achievement;
-        }
-        if (newState.Gamemode != null && _state.Type == McStateType.SinglePlayer)
-        {
-            _state = _state with { Gamemode = newState.Gamemode };
-        }
-        else if (newState.Dimension == null && newState.Achievement == null)
-        {
-            _state = newState;
-        }
-
-        UpdatePresence();
+        if (_sm.ProcessLine(line))
+            UpdatePresence();
     }
 
     public void SetLauncherPresence()
     {
-        _state = new McState(McStateType.Launcher);
+        _sm.Reset();
         UpdatePresence();
     }
 
     public void SetMenuPresence()
     {
-        _state = new McState(McStateType.Menu);
+        _sm.Reset();
         UpdatePresence();
     }
 
     public void OnGameExit()
     {
-        _state = new McState(McStateType.Launcher);
+        _sm.Reset();
         UpdatePresence();
     }
 
@@ -90,10 +69,11 @@ public sealed class DiscordPresence : IDisposable
             };
 
             var settings = LauncherSettings.Load();
+            var state = _sm.State;
             var stateInfo = $"{_mcVersion} · {_loaderName}";
             if (_modCount > 0 && settings.DiscordShowMods) stateInfo += $" · {_modCount} mods";
 
-            switch (_state.Type)
+            switch (state.Type)
             {
                 case McStateType.Launcher:
                     presence.Details = "In launcher";
@@ -107,17 +87,17 @@ public sealed class DiscordPresence : IDisposable
 
                 case McStateType.SinglePlayer:
                     var spDetails = "Singleplayer";
-                    if (_state.Gamemode != null) spDetails += $" · {_state.Gamemode}";
-                    if (_dimension != null && settings.DiscordShowDimension) spDetails += $" · {_dimension}";
+                    if (state.Gamemode != null) spDetails += $" · {state.Gamemode}";
+                    if (state.Dimension != null && settings.DiscordShowDimension) spDetails += $" · {state.Dimension}";
                     presence.Details = spDetails;
-                    presence.State = (_lastAchievement != null && settings.DiscordShowAchievements)
-                        ? $"🏆 {_lastAchievement}"
+                    presence.State = (state.Achievement != null && settings.DiscordShowAchievements)
+                        ? $"🏆 {state.Achievement}"
                         : stateInfo;
                     break;
 
                 case McStateType.MultiPlayer:
                     presence.Details = settings.DiscordShowServer
-                        ? $"Playing on {_state.Server}"
+                        ? $"Playing on {state.Server}"
                         : "Multiplayer";
                     presence.State = stateInfo;
                     presence.Buttons =
@@ -125,7 +105,7 @@ public sealed class DiscordPresence : IDisposable
                         new Button
                         {
                             Label = "Join Server",
-                            Url = $"mechanica://connect?server={_state.Server}&port={_state.Port ?? 25565}&version={_mcVersion}"
+                            Url = $"mechanica://connect?server={state.Server}&port={state.Port}&version={_mcVersion}"
                         },
                         new Button
                         {
@@ -136,7 +116,7 @@ public sealed class DiscordPresence : IDisposable
                     break;
             }
 
-            if (_state.Type != McStateType.MultiPlayer)
+            if (state.Type != McStateType.MultiPlayer)
             {
                 presence.Buttons =
                 [

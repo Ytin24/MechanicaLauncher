@@ -2,66 +2,122 @@ using System.Text.RegularExpressions;
 
 namespace MechanicaLauncher.Core.Discord;
 
-public record McState(McStateType Type, string? Server = null, int? Port = null, string? World = null, string? Gamemode = null, string? Dimension = null, string? Achievement = null);
+public record McState(McStateType Type, string? Server = null, int? Port = null, string? Gamemode = null, string? Dimension = null, string? Achievement = null);
 
-public enum McStateType { Launcher, Menu, SinglePlayer, MultiPlayer, Disconnected }
+public enum McStateType { Launcher, Menu, SinglePlayer, MultiPlayer }
 
-public static partial class McLogParser
+public sealed partial class McStateMachine
 {
-    public static McState? ParseLine(string line)
-    {
-        if (string.IsNullOrEmpty(line)) return null;
+    private McStateType _current = McStateType.Launcher;
+    private string? _server;
+    private int _port = 25565;
+    private string? _gamemode;
+    private string? _dimension;
+    private string? _achievement;
+    private bool _inWorld;
 
+    public McState State => new(_current, _server, _port, _gamemode, _dimension, _achievement);
+
+    public bool ProcessLine(string line)
+    {
+        if (string.IsNullOrEmpty(line)) return false;
+
+        // Server connect — always transitions to MultiPlayer
         var connectMatch = ConnectRegex().Match(line);
         if (connectMatch.Success)
         {
-            var server = connectMatch.Groups[1].Value;
-            var port = int.TryParse(connectMatch.Groups[2].Value, out var p) ? p : 25565;
-            return new McState(McStateType.MultiPlayer, server, port);
+            _server = connectMatch.Groups[1].Value;
+            _port = int.TryParse(connectMatch.Groups[2].Value, out var p) ? p : 25565;
+            _current = McStateType.MultiPlayer;
+            _inWorld = true;
+            return true;
         }
 
-        if (line.Contains("joined the game") || line.Contains("Joining world") ||
-            line.Contains("Loading world") || line.Contains("Preparing start region"))
-            return new McState(McStateType.SinglePlayer);
+        // Entered world (singleplayer)
+        if (line.Contains("joined the game") || line.Contains("Preparing start region"))
+        {
+            _current = McStateType.SinglePlayer;
+            _inWorld = true;
+            _server = null;
+            return true;
+        }
 
-        if (line.Contains("Stopping!") || line.Contains("lost connection") ||
-            line.Contains("Disconnecting") || line.Contains("Saving and pausing"))
-            return new McState(McStateType.Menu);
+        // Disconnected from server — back to menu
+        if (line.Contains("lost connection") || line.Contains("Disconnecting from server"))
+        {
+            _current = McStateType.Menu;
+            _inWorld = false;
+            _server = null;
+            return true;
+        }
 
-        if (line.Contains("Setting user:") || line.Contains("Narrator library"))
-            return new McState(McStateType.Menu);
+        // Actually quit world (not ESC pause)
+        if (line.Contains("Stopping server") || line.Contains("ThreadedAnvilChunkStorage: All dimensions are saved"))
+        {
+            _current = McStateType.Menu;
+            _inWorld = false;
+            return true;
+        }
 
-        if (line.Contains("Preparing start region for dimension minecraft:overworld") ||
-            line.Contains("Loaded dimension minecraft:overworld") ||
-            (line.Contains("minecraft:overworld") && line.Contains("Saving chunks")))
-            return new McState(McStateType.SinglePlayer, Dimension: "Overworld");
+        // MC window loaded — menu (only if not already in world)
+        if (!_inWorld && (line.Contains("Setting user:") || line.Contains("Narrator library")))
+        {
+            _current = McStateType.Menu;
+            return true;
+        }
 
-        if (line.Contains("minecraft:the_nether") && !line.Contains("Saving chunks"))
-            return new McState(McStateType.SinglePlayer, Dimension: "Nether");
+        // Dimension changes (only update dimension, don't change state)
+        if (_inWorld)
+        {
+            if (line.Contains("minecraft:overworld") && line.Contains("Preparing"))
+            { _dimension = "Overworld"; return true; }
+            if (line.Contains("minecraft:the_nether") && line.Contains("Preparing"))
+            { _dimension = "Nether"; return true; }
+            if (line.Contains("minecraft:the_end") && line.Contains("Preparing"))
+            { _dimension = "The End"; return true; }
 
-        if (line.Contains("minecraft:the_end") && !line.Contains("Saving chunks"))
-            return new McState(McStateType.SinglePlayer, Dimension: "The End");
+            // Dimension from ServerLevel lines (entering portals)
+            if (line.Contains("ServerLevel[") && line.Contains("minecraft:overworld"))
+            { _dimension = "Overworld"; return true; }
+            if (line.Contains("ServerLevel[") && line.Contains("minecraft:the_nether"))
+            { _dimension = "Nether"; return true; }
+            if (line.Contains("ServerLevel[") && line.Contains("minecraft:the_end"))
+            { _dimension = "The End"; return true; }
+        }
 
+        // Gamemode change
+        if (line.Contains("[CHAT]") && line.Contains("Set own game mode to", StringComparison.OrdinalIgnoreCase))
+        {
+            if (line.Contains("Creative", StringComparison.OrdinalIgnoreCase)) _gamemode = "Creative";
+            else if (line.Contains("Survival", StringComparison.OrdinalIgnoreCase)) _gamemode = "Survival";
+            else if (line.Contains("Adventure", StringComparison.OrdinalIgnoreCase)) _gamemode = "Adventure";
+            else if (line.Contains("Spectator", StringComparison.OrdinalIgnoreCase)) _gamemode = "Spectator";
+            return true;
+        }
+
+        // Achievement
         if (line.Contains("[CHAT]"))
         {
-            if (line.Contains("Set own game mode to", StringComparison.OrdinalIgnoreCase))
-            {
-                if (line.Contains("Creative", StringComparison.OrdinalIgnoreCase))
-                    return new McState(McStateType.SinglePlayer, Gamemode: "Creative");
-                if (line.Contains("Survival", StringComparison.OrdinalIgnoreCase))
-                    return new McState(McStateType.SinglePlayer, Gamemode: "Survival");
-                if (line.Contains("Adventure", StringComparison.OrdinalIgnoreCase))
-                    return new McState(McStateType.SinglePlayer, Gamemode: "Adventure");
-                if (line.Contains("Spectator", StringComparison.OrdinalIgnoreCase))
-                    return new McState(McStateType.SinglePlayer, Gamemode: "Spectator");
-            }
-
             var advMatch = AdvancementRegex().Match(line);
             if (advMatch.Success)
-                return new McState(McStateType.SinglePlayer, Achievement: advMatch.Groups[1].Value);
+            {
+                _achievement = advMatch.Groups[1].Value;
+                return true;
+            }
         }
 
-        return null;
+        return false;
+    }
+
+    public void Reset()
+    {
+        _current = McStateType.Launcher;
+        _server = null;
+        _port = 25565;
+        _gamemode = null;
+        _dimension = null;
+        _achievement = null;
+        _inWorld = false;
     }
 
     [GeneratedRegex(@"Connecting to (.+?),\s*(\d+)")]
