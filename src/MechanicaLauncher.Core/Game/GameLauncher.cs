@@ -20,7 +20,8 @@ public sealed class GameLauncher
                           int minMem = 2048, int maxMem = 4096,
                           string? extraJvmArgs = null,
                           int windowWidth = 1920, int windowHeight = 1080,
-                          string? vanillaVersionId = null)
+                          string? vanillaVersionId = null,
+                          string? server = null, int? port = null)
     {
         var clientVersionId = vanillaVersionId ?? meta.InheritsFrom ?? meta.Id;
         var versionDir = Path.Combine(_instanceGameDir, "versions", clientVersionId);
@@ -100,6 +101,14 @@ public sealed class GameLauncher
                 "--accessToken", accessToken,
                 "--userType", accessToken == "0" ? "legacy" : "msa",
                 "--versionType", "release"]);
+        }
+
+        if (!string.IsNullOrEmpty(server))
+        {
+            args.Add("--server");
+            args.Add(server);
+            args.Add("--port");
+            args.Add((port ?? 25565).ToString());
         }
 
         var psi = new ProcessStartInfo

@@ -282,9 +282,13 @@ public sealed partial class HomePage : Page
             _im.SaveInstance(instance);
             UpdatePlayButton();
 
+            var modsDir2 = Path.Combine(gameDir, "mods");
+            var mc = Directory.Exists(modsDir2) ? Directory.GetFiles(modsDir2, "*.jar").Length : 0;
+            App.Discord.SetInstance(instance, mc);
+
             LogText.Text = "";
             _logAutoScroll = true;
-            proc.OutputDataReceived += (_, args) => { if (args.Data != null) AppendLog(args.Data); };
+            proc.OutputDataReceived += (_, args) => { if (args.Data != null) { AppendLog(args.Data); App.Discord.ProcessLogLine(args.Data); } };
             proc.ErrorDataReceived += (_, args) => { if (args.Data != null) AppendLog($"[ERR] {args.Data}"); };
             proc.BeginOutputReadLine();
             proc.BeginErrorReadLine();
@@ -295,6 +299,7 @@ public sealed partial class HomePage : Page
                 await proc.WaitForExitAsync();
                 var exit = proc.ExitCode;
                 App.RunningInstances.TryRemove(instId, out _);
+                App.Discord.OnGameExit();
                 DispatcherQueue.TryEnqueue(() =>
                 {
                     UpdatePlayButton();

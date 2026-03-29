@@ -390,6 +390,26 @@ public sealed partial class InstancesPage : Page
             }
             catch { }
         }
+        else if (loader == LoaderType.Forge)
+        {
+            try
+            {
+                var fi = new ForgeInstaller(_im.SharedDir, "");
+                var versions = await fi.GetVersionsAsync(mcVersion);
+                loaderVersion = versions.FirstOrDefault();
+            }
+            catch { }
+        }
+        else if (loader == LoaderType.NeoForge)
+        {
+            try
+            {
+                var ni = new NeoForgeInstaller(_im.SharedDir, "");
+                var versions = await ni.GetVersionsAsync(mcVersion);
+                loaderVersion = versions.FirstOrDefault();
+            }
+            catch { }
+        }
 
         var instance = _im.CreateInstance(name, mcVersion, loader, loaderVersion);
         var gameDir = _im.GetGameDir(instance.Id);
@@ -400,6 +420,10 @@ public sealed partial class InstancesPage : Page
                 await new FabricInstaller(_im.SharedDir, gameDir).InstallAsync(mcVersion, loaderVersion);
             else if (loader == LoaderType.Quilt && loaderVersion != null)
                 await new QuiltInstaller(_im.SharedDir, gameDir).InstallAsync(mcVersion, loaderVersion);
+            else if (loader == LoaderType.Forge && loaderVersion != null)
+                await new ForgeInstaller(_im.SharedDir, gameDir).InstallAsync(mcVersion, loaderVersion);
+            else if (loader == LoaderType.NeoForge && loaderVersion != null)
+                await new NeoForgeInstaller(_im.SharedDir, gameDir).InstallAsync(mcVersion, loaderVersion);
         }
         catch { }
 
