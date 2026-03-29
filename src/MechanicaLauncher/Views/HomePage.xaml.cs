@@ -196,12 +196,18 @@ public sealed partial class HomePage : Page
 
     private string? _pendingServer;
     private int? _pendingPort;
+    private bool _isReconnecting;
 
-    public void LaunchWithServer(string instanceId, string server, int port)
+    public async void LaunchWithServer(string instanceId, string server, int port)
     {
         _pendingServer = server;
         _pendingPort = port;
-        _ = LoadAsync();
+        _isReconnecting = true;
+
+        // Wait for LoadAsync to populate dropdown
+        await LoadAsync();
+        await Task.Delay(200);
+
         PlayButton_Click(this, new RoutedEventArgs());
     }
 
@@ -318,10 +324,18 @@ public sealed partial class HomePage : Page
                 DispatcherQueue.TryEnqueue(() =>
                 {
                     UpdatePlayButton();
-                    if (exit != 0)
+                    if (_isReconnecting)
+                    {
+                        _isReconnecting = false;
+                    }
+                    else if (exit != 0)
+                    {
                         _ = ShowRepairDialogAsync(instId, exit);
+                    }
                     else
+                    {
                         ShowNotification(InfoBarSeverity.Success, App.L("home.game_closed"));
+                    }
                 });
             });
 
