@@ -1,6 +1,7 @@
 using DiscordRPC;
 using DiscordRPC.Logging;
 using MechanicaLauncher.Core.Instances;
+using MechanicaLauncher.Core.Profiles;
 
 namespace MechanicaLauncher.Core.Discord;
 
@@ -12,6 +13,8 @@ public sealed class DiscordPresence : IDisposable
     private string _mcVersion = "";
     private string _loaderName = "";
     private int _modCount;
+    private string? _dimension;
+    private string? _lastAchievement;
 
     public void Init()
     {
@@ -37,11 +40,19 @@ public sealed class DiscordPresence : IDisposable
         var newState = McLogParser.ParseLine(line);
         if (newState == null) return;
 
+        if (newState.Dimension != null)
+        {
+            _dimension = newState.Dimension;
+        }
+        if (newState.Achievement != null)
+        {
+            _lastAchievement = newState.Achievement;
+        }
         if (newState.Gamemode != null && _state.Type == McStateType.SinglePlayer)
         {
             _state = _state with { Gamemode = newState.Gamemode };
         }
-        else
+        else if (newState.Dimension == null && newState.Achievement == null)
         {
             _state = newState;
         }
@@ -78,8 +89,9 @@ public sealed class DiscordPresence : IDisposable
                 Assets = new Assets { LargeImageKey = "mechanica", LargeImageText = "Mechanica Launcher" }
             };
 
+            var settings = LauncherSettings.Load();
             var stateInfo = $"{_mcVersion} · {_loaderName}";
-            if (_modCount > 0) stateInfo += $" · {_modCount} mods";
+            if (_modCount > 0 && settings.DiscordShowMods) stateInfo += $" · {_modCount} mods";
 
             switch (_state.Type)
             {
@@ -94,14 +106,19 @@ public sealed class DiscordPresence : IDisposable
                     break;
 
                 case McStateType.SinglePlayer:
-                    presence.Details = _state.Gamemode != null
-                        ? $"Singleplayer · {_state.Gamemode}"
-                        : "Singleplayer";
-                    presence.State = stateInfo;
+                    var spDetails = "Singleplayer";
+                    if (_state.Gamemode != null) spDetails += $" · {_state.Gamemode}";
+                    if (_dimension != null && settings.DiscordShowDimension) spDetails += $" · {_dimension}";
+                    presence.Details = spDetails;
+                    presence.State = (_lastAchievement != null && settings.DiscordShowAchievements)
+                        ? $"🏆 {_lastAchievement}"
+                        : stateInfo;
                     break;
 
                 case McStateType.MultiPlayer:
-                    presence.Details = $"Playing on {_state.Server}";
+                    presence.Details = settings.DiscordShowServer
+                        ? $"Playing on {_state.Server}"
+                        : "Multiplayer";
                     presence.State = stateInfo;
                     presence.Buttons =
                     [

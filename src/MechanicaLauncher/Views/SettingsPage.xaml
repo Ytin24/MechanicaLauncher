@@ -43,6 +43,20 @@
             </Border>
 
             <Border Style="{StaticResource CardPanelWide}" Padding="24" MinHeight="100">
+                <StackPanel Spacing="16" HorizontalAlignment="Stretch">
+                    <StackPanel Orientation="Horizontal" Spacing="10" Height="28">
+                        <FontIcon Glyph="&#xE8BD;" FontSize="18" Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Text="Discord" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <ToggleSwitch x:Name="DiscordRpcToggle" Header="Discord Rich Presence" MinHeight="44" Toggled="DiscordRpc_Toggled" />
+                    <ToggleSwitch x:Name="DiscordServerToggle" MinHeight="44" Toggled="DiscordSetting_Toggled" />
+                    <ToggleSwitch x:Name="DiscordDimensionToggle" MinHeight="44" Toggled="DiscordSetting_Toggled" />
+                    <ToggleSwitch x:Name="DiscordAchievementToggle" MinHeight="44" Toggled="DiscordSetting_Toggled" />
+                    <ToggleSwitch x:Name="DiscordModsToggle" MinHeight="44" Toggled="DiscordSetting_Toggled" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardPanelWide}" Padding="24" MinHeight="100">
                 <StackPanel Spacing="12">
                     <StackPanel Orientation="Horizontal" Spacing="10" Height="28">
                         <FontIcon Glyph="&#xE946;" FontSize="18" Foreground="{StaticResource AccentBrush}" />

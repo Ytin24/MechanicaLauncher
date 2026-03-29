@@ -28,7 +28,7 @@ public partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs e)
     {
         ProtocolHandler.Register();
-        Discord.Init();
+        if (Settings.DiscordRpc) Discord.Init();
 
         var args = Environment.GetCommandLineArgs();
         PendingConnect = ProtocolHandler.ParseArgs(args);

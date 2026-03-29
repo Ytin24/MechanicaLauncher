@@ -32,6 +32,21 @@ public sealed class LauncherSettings
     [JsonPropertyName("language")]
     public string? Language { get; set; }
 
+    [JsonPropertyName("discordRpc")]
+    public bool DiscordRpc { get; set; } = true;
+
+    [JsonPropertyName("discordShowServer")]
+    public bool DiscordShowServer { get; set; } = true;
+
+    [JsonPropertyName("discordShowDimension")]
+    public bool DiscordShowDimension { get; set; } = true;
+
+    [JsonPropertyName("discordShowAchievements")]
+    public bool DiscordShowAchievements { get; set; } = true;
+
+    [JsonPropertyName("discordShowMods")]
+    public bool DiscordShowMods { get; set; } = true;
+
     private static string SettingsPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "MechanicaLauncher", "settings.json");

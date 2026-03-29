@@ -61,7 +61,7 @@ public sealed class GameLauncher
             ["${classpath_separator}"] = Path.PathSeparator.ToString(),
         };
 
-        var args = new List<string> { $"-Xms{minMem}M", $"-Xmx{maxMem}M" };
+        var args = new List<string> { $"-Xms{minMem}M", $"-Xmx{maxMem}M", "-Dminecraft.api.env.disableDiscord=true" };
 
         if (meta.Arguments?.Jvm != null)
         {

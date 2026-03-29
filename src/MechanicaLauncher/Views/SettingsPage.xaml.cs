@@ -38,6 +38,15 @@ public sealed partial class SettingsPage : Page
         ThemeSelector.SelectedIndex = S.Theme switch { "Dark" => 0, "Light" => 1, _ => 2 };
         CloseOnLaunchToggle.IsOn = S.CloseOnLaunch;
         ShowSnapshotsToggle.IsOn = S.ShowSnapshots;
+        DiscordRpcToggle.IsOn = S.DiscordRpc;
+        DiscordServerToggle.IsOn = S.DiscordShowServer;
+        DiscordDimensionToggle.IsOn = S.DiscordShowDimension;
+        DiscordAchievementToggle.IsOn = S.DiscordShowAchievements;
+        DiscordModsToggle.IsOn = S.DiscordShowMods;
+        DiscordServerToggle.Header = "Show server name";
+        DiscordDimensionToggle.Header = "Show dimension (Overworld/Nether/End)";
+        DiscordAchievementToggle.Header = "Show achievements";
+        DiscordModsToggle.Header = "Show mod count";
 
         for (int i = 0; i < LangSelector.Items.Count; i++)
         {
@@ -142,6 +151,25 @@ public sealed partial class SettingsPage : Page
     {
         if (_loading) return;
         S.ShowSnapshots = ShowSnapshotsToggle.IsOn;
+        S.Save();
+    }
+
+    private void DiscordRpc_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        S.DiscordRpc = DiscordRpcToggle.IsOn;
+        S.Save();
+        if (S.DiscordRpc) App.Discord.Init();
+        else App.Discord.Dispose();
+    }
+
+    private void DiscordSetting_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        S.DiscordShowServer = DiscordServerToggle.IsOn;
+        S.DiscordShowDimension = DiscordDimensionToggle.IsOn;
+        S.DiscordShowAchievements = DiscordAchievementToggle.IsOn;
+        S.DiscordShowMods = DiscordModsToggle.IsOn;
         S.Save();
     }
 
