@@ -67,21 +67,14 @@ public sealed partial class McStateMachine
         }
 
         // Dimension changes (only update dimension, don't change state)
-        if (_inWorld)
+        // IGNORE "Saving chunks" lines — they mention all dimensions at once on ESC/quit
+        if (_inWorld && !line.Contains("Saving chunks") && !line.Contains("Saving worlds"))
         {
-            if (line.Contains("minecraft:overworld") && line.Contains("Preparing"))
+            if (line.Contains("minecraft:overworld") && (line.Contains("Preparing") || line.Contains("Loaded dimension")))
             { _dimension = "Overworld"; return true; }
-            if (line.Contains("minecraft:the_nether") && line.Contains("Preparing"))
+            if (line.Contains("minecraft:the_nether") && (line.Contains("Preparing") || line.Contains("Loaded dimension")))
             { _dimension = "Nether"; return true; }
-            if (line.Contains("minecraft:the_end") && line.Contains("Preparing"))
-            { _dimension = "The End"; return true; }
-
-            // Dimension from ServerLevel lines (entering portals)
-            if (line.Contains("ServerLevel[") && line.Contains("minecraft:overworld"))
-            { _dimension = "Overworld"; return true; }
-            if (line.Contains("ServerLevel[") && line.Contains("minecraft:the_nether"))
-            { _dimension = "Nether"; return true; }
-            if (line.Contains("ServerLevel[") && line.Contains("minecraft:the_end"))
+            if (line.Contains("minecraft:the_end") && (line.Contains("Preparing") || line.Contains("Loaded dimension")))
             { _dimension = "The End"; return true; }
         }
 
