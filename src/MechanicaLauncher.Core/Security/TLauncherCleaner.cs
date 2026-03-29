@@ -129,27 +129,18 @@ public static class TLauncherCleaner
 
         StatusChanged?.Invoke("Cleaning .minecraft from TLauncher traces...");
 
-        DeleteDir(Path.Combine(mcDir, "versions"), "TLauncher versions");
-        DeleteDir(Path.Combine(mcDir, "libraries"), "TLauncher libraries");
-        DeleteDir(Path.Combine(mcDir, "assets"), "TLauncher assets");
-        DeleteDir(Path.Combine(mcDir, "logs"), "TLauncher logs");
-
+        // ONLY remove TLauncher-specific files, NOT game data
+        // versions/, libraries/, assets/, runtime/ are Mojang files — leave them
         foreach (var file in Directory.GetFiles(mcDir, "*.exe"))
             DeleteFile(file, Path.GetFileName(file));
         foreach (var file in Directory.GetFiles(mcDir, "*.ico"))
             DeleteFile(file, Path.GetFileName(file));
-        foreach (var file in Directory.GetFiles(mcDir, "*.log"))
-            DeleteFile(file, Path.GetFileName(file));
         foreach (var file in Directory.GetFiles(mcDir, "*.json"))
         {
             var name = Path.GetFileName(file).ToLowerInvariant();
-            if (name.Contains("tlauncher") || name == "usercache.json")
+            if (name.Contains("tlauncher"))
                 DeleteFile(file, name);
         }
-
-        var remaining = Directory.GetFiles(mcDir).Length + Directory.GetDirectories(mcDir).Length;
-        if (remaining == 0)
-            DeleteDir(mcDir, ".minecraft (empty)");
     }
 
     private static void VerifyMinecraftJava(string runtimeDir)
