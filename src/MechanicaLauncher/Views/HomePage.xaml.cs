@@ -38,7 +38,22 @@ public sealed partial class HomePage : Page
     private async Task LoadAsync()
     {
         _loading = true;
-        SplashText.Text = SettingsPage.GetRandomSplash();
+
+        // Event mode branding
+        if (App.IsEventMode && App.EventConfig?.Branding != null)
+        {
+            var b = App.EventConfig.Branding;
+            if (b.SplashTexts?.Count > 0)
+                SplashText.Text = b.SplashTexts[Random.Shared.Next(b.SplashTexts.Count)];
+            else if (b.Subtitle != null)
+                SplashText.Text = b.Subtitle;
+            else
+                SplashText.Text = SettingsPage.GetRandomSplash();
+        }
+        else
+        {
+            SplashText.Text = SettingsPage.GetRandomSplash();
+        }
 
         ModsLabel.Text = App.L("home.mods");
         AccountLabel.Text = App.L("home.account");
@@ -196,7 +211,12 @@ public sealed partial class HomePage : Page
         PlayButton.IsEnabled = true;
         var label = running ? App.L("home.kill") : App.L("home.play");
         if (inst != null && !running)
-            label = App.L("home.play_with", inst.Name);
+        {
+            if (App.IsEventMode && App.EventConfig?.Ui?.PlayButtonText != null)
+                label = App.EventConfig.Ui.PlayButtonText;
+            else
+                label = App.L("home.play_with", inst.Name);
+        }
 
         PlayButton.Content = new StackPanel
         {
@@ -302,6 +322,19 @@ public sealed partial class HomePage : Page
                 await Task.Run(() => dl.DownloadVersionAsync(new VersionMeta { Id = versionId, Libraries = meta.Libraries, Downloads = [] }));
             }
 
+            // Event integrity check
+            if (App.IsEventMode && App.EventConfig?.Integrity is { CheckBeforeLaunch: true })
+            {
+                ProgressText.Text = "Checking integrity...";
+                var result = await Core.Config.IntegrityChecker.VerifyAsync(App.EventConfig, gameDir);
+                if (!result.IsValid)
+                {
+                    var msg = string.Join("\n", result.Violations.Take(5));
+                    ShowNotification(InfoBarSeverity.Error, $"Integrity check failed:\n{msg}");
+                    if (App.EventConfig.Integrity.BlockOnFailure) return;
+                }
+            }
+
             ProgressText.Text = "Launching...";
             DownloadProgress.IsIndeterminate = false;
             DownloadProgress.Value = 95;
@@ -313,7 +346,8 @@ public sealed partial class HomePage : Page
                 extraJvmArgs: instance.JvmArgs,
                 windowWidth: instance.WindowWidth, windowHeight: instance.WindowHeight,
                 vanillaVersionId: isModded ? instance.McVersion : null,
-                server: _pendingServer, port: _pendingPort);
+                server: _pendingServer ?? (App.EventConfig?.Server?.AutoConnect == true ? App.EventConfig.Server.Host : null),
+                port: _pendingPort ?? (App.EventConfig?.Server?.AutoConnect == true ? App.EventConfig.Server.Port : null));
 
             _pendingServer = null;
             _pendingPort = null;

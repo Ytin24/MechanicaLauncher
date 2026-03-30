@@ -56,6 +56,19 @@
                 </StackPanel>
             </Border>
 
+            <!-- Event Mode -->
+            <Border x:Name="EventCard" Style="{StaticResource CardPanelWide}" Padding="24" MinHeight="100" Visibility="Collapsed">
+                <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="10" Height="28">
+                        <FontIcon Glyph="&#xE7C1;" FontSize="18" Foreground="#FF9800" />
+                        <TextBlock Text="Event Mode" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <TextBlock x:Name="EventInfoText" Foreground="{StaticResource SubtleBrush}" FontSize="13" TextWrapping="Wrap" />
+                    <Button x:Name="EventExitBtn" Content="Exit Event Mode" Click="ExitEvent_Click"
+                            Style="{StaticResource SmallButton}" Foreground="#FF6B6B" />
+                </StackPanel>
+            </Border>
+
             <Border Style="{StaticResource CardPanelWide}" Padding="24" MinHeight="100">
                 <StackPanel Spacing="12">
                     <StackPanel Orientation="Horizontal" Spacing="10" Height="28">

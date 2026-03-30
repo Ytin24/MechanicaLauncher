@@ -54,6 +54,13 @@ public sealed partial class SettingsPage : Page
             { LangSelector.SelectedIndex = i; break; }
         }
 
+        // Event mode
+        if (App.IsEventMode)
+        {
+            EventCard.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
+            EventInfoText.Text = $"{App.EventConfig?.Name ?? "Unknown"}\n{App.Settings.ActiveEventUrl}";
+        }
+
         _loading = false;
 
         _ = CheckUpdatesAsync();
@@ -171,6 +178,14 @@ public sealed partial class SettingsPage : Page
         S.DiscordShowAchievements = DiscordAchievementToggle.IsOn;
         S.DiscordShowMods = DiscordModsToggle.IsOn;
         S.Save();
+    }
+
+    private void ExitEvent_Click(object sender, RoutedEventArgs e)
+    {
+        App.ClearEvent();
+        EventCard.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
+        if (App.MainWindow is MainWindow mw)
+            mw.ApplyEventNavigation();
     }
 
     public static string GetRandomSplash() => Splashes[Random.Shared.Next(Splashes.Length)];

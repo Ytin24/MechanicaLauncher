@@ -36,6 +36,14 @@ public sealed partial class ModsPage : Page
         PageTitle.Text = App.L("mods.title");
         InstalledLabel.Text = App.L("mods.installed");
         ModSearchBox.PlaceholderText = App.L("mods.search");
+
+        var eu = App.EventConfig?.Ui;
+        if (eu != null)
+        {
+            ModSearchBox.Visibility = eu.AllowModInstall ? Visibility.Visible : Visibility.Collapsed;
+            OpenFolderBtn.Visibility = eu.AllowModInstall ? Visibility.Visible : Visibility.Collapsed;
+        }
+
         LoadInstance();
     }
 

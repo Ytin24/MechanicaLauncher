@@ -20,6 +20,10 @@ public partial class App : Application
     public static DiscordPresence Discord { get; } = new();
     public static Core.Updates.UpdateInfo? LatestUpdate { get; set; }
     public static ConnectRequest? PendingConnect { get; set; }
+    public static Core.Protocol.EventRequest? PendingEvent { get; set; }
+    public static Core.Config.EventConfigManager EventManager { get; } = new();
+    public static Core.Config.EventConfig? EventConfig => EventManager.Active;
+    public static bool IsEventMode => EventManager.IsEventMode;
     public static bool IsReconnecting { get; set; }
     public static bool IsHidden { get; private set; }
 
@@ -52,7 +56,14 @@ public partial class App : Application
         if (Settings.DiscordRpc) Discord.Init();
 
         var cmdArgs = Environment.GetCommandLineArgs();
-        PendingConnect = ProtocolHandler.ParseArgs(cmdArgs);
+        PendingConnect = ProtocolHandler.ParseConnect(cmdArgs);
+        PendingEvent = ProtocolHandler.ParseEvent(cmdArgs);
+
+        // Restore cached event config
+        if (PendingEvent == null && !string.IsNullOrEmpty(Settings.ActiveEventUrl))
+        {
+            _ = LoadEventAsync(Settings.ActiveEventUrl);
+        }
 
         MainWindow = new MainWindow();
         MainWindow.Activate();
@@ -85,6 +96,70 @@ public partial class App : Application
 
     public static bool HasRunningInstances() =>
         RunningInstances.Any(kv => !kv.Value.HasExited);
+
+    public static async Task LoadEventAsync(string url)
+    {
+        try
+        {
+            await EventManager.LoadFromUrlAsync(url);
+            Settings.ActiveEventUrl = url;
+            Settings.Save();
+            ApplyEventBranding();
+        }
+        catch { }
+    }
+
+    public static void ClearEvent()
+    {
+        EventManager.Clear();
+        Settings.ActiveEventUrl = null;
+        Settings.Save();
+        ResetBranding();
+    }
+
+    public static void ApplyEventBranding()
+    {
+        var branding = EventConfig?.Branding;
+        if (branding == null) return;
+
+        try
+        {
+            if (!string.IsNullOrEmpty(branding.AccentColor))
+            {
+                var color = ParseColor(branding.AccentColor);
+                Current.Resources["AccentBrush"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(color);
+            }
+            if (!string.IsNullOrEmpty(branding.AccentColorHover))
+            {
+                var color = ParseColor(branding.AccentColorHover);
+                Current.Resources["AccentHoverBrush"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(color);
+            }
+        }
+        catch { }
+    }
+
+    public static void ResetBranding()
+    {
+        try
+        {
+            Current.Resources["AccentBrush"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xAF, 0x50));
+            Current.Resources["AccentHoverBrush"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                Windows.UI.Color.FromArgb(0xFF, 0x81, 0xC7, 0x84));
+        }
+        catch { }
+    }
+
+    private static Windows.UI.Color ParseColor(string hex)
+    {
+        hex = hex.TrimStart('#');
+        if (hex.Length == 6)
+            return Windows.UI.Color.FromArgb(0xFF,
+                byte.Parse(hex[..2], System.Globalization.NumberStyles.HexNumber),
+                byte.Parse(hex[2..4], System.Globalization.NumberStyles.HexNumber),
+                byte.Parse(hex[4..6], System.Globalization.NumberStyles.HexNumber));
+        return Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xAF, 0x50);
+    }
 
     private static AppWindow? GetAppWindow()
     {

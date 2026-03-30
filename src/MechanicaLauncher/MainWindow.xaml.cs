@@ -74,13 +74,103 @@ public sealed partial class MainWindow : Window
         }
         else
         {
+            ApplyEventNavigation();
             ContentFrame.Navigate(typeof(HomePage));
-            if (App.PendingConnect != null)
+            if (App.PendingEvent != null)
+                _ = HandlePendingEventAsync();
+            else if (App.PendingConnect != null)
                 _ = HandlePendingConnectAsync();
         }
     }
 
     public void HandlePendingConnect() => _ = HandlePendingConnectAsync();
+
+    public void ApplyEventNavigation()
+    {
+        var ui = App.EventConfig?.Ui;
+        if (ui == null) return;
+
+        foreach (var item in NavView.MenuItems.OfType<NavigationViewItem>())
+        {
+            var tag = item.Tag?.ToString();
+            item.Visibility = tag switch
+            {
+                "Instances" => ui.ShowInstances ? Visibility.Visible : Visibility.Collapsed,
+                "Mods" => ui.ShowMods ? Visibility.Visible : Visibility.Collapsed,
+                _ => Visibility.Visible
+            };
+        }
+
+        foreach (var item in NavView.FooterMenuItems.OfType<NavigationViewItem>())
+        {
+            var tag = item.Tag?.ToString();
+            item.Visibility = tag switch
+            {
+                "Account" => ui.ShowAccount ? Visibility.Visible : Visibility.Collapsed,
+                "Settings" => ui.ShowSettings ? Visibility.Visible : Visibility.Collapsed,
+                _ => Visibility.Visible
+            };
+        }
+
+        if (App.EventConfig?.Branding?.Title != null)
+        {
+            var appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(
+                Microsoft.UI.Win32Interop.GetWindowIdFromWindow(
+                    WinRT.Interop.WindowNative.GetWindowHandle(this)));
+            appWindow.Title = App.EventConfig.Branding.Title;
+        }
+    }
+
+    private async Task HandlePendingEventAsync()
+    {
+        var eventReq = App.PendingEvent;
+        if (eventReq == null) return;
+        App.PendingEvent = null;
+
+        try
+        {
+            await App.LoadEventAsync(eventReq.ConfigUrl);
+            ApplyEventNavigation();
+
+            // Create instance for event if needed
+            var config = App.EventConfig;
+            if (config?.Minecraft != null)
+            {
+                var im = new InstanceManager();
+                var existing = im.GetAllInstances()
+                    .FirstOrDefault(i => i.McVersion == config.Minecraft.Version);
+
+                if (existing == null)
+                {
+                    var loader = config.Minecraft.Loader?.ToLowerInvariant() switch
+                    {
+                        "fabric" => Core.Instances.LoaderType.Fabric,
+                        "quilt" => Core.Instances.LoaderType.Quilt,
+                        "forge" => Core.Instances.LoaderType.Forge,
+                        "neoforge" => Core.Instances.LoaderType.NeoForge,
+                        _ => Core.Instances.LoaderType.None
+                    };
+                    existing = im.CreateInstance(
+                        config.Name, config.Minecraft.Version,
+                        loader, config.Minecraft.LoaderVersion);
+                }
+
+                App.Settings.SelectedInstanceId = existing.Id;
+                App.Settings.Save();
+
+                // Sync mods
+                if (config.Mods != null)
+                {
+                    var modsDir = Path.Combine(im.GetGameDir(existing.Id), "mods");
+                    var syncer = new Core.Config.ModSyncer();
+                    await syncer.SyncAsync(config, modsDir);
+                }
+            }
+
+            ContentFrame.Navigate(typeof(HomePage));
+        }
+        catch { }
+    }
 
     private async Task HandlePendingConnectAsync()
     {
