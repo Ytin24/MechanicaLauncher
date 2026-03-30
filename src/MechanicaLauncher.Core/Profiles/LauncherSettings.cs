@@ -47,6 +47,9 @@ public sealed class LauncherSettings
     [JsonPropertyName("discordShowMods")]
     public bool DiscordShowMods { get; set; } = true;
 
+    [JsonPropertyName("activeEventUrl")]
+    public string? ActiveEventUrl { get; set; }
+
     private static string SettingsPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "MechanicaLauncher", "settings.json");
