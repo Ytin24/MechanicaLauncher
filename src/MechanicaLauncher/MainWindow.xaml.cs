@@ -84,6 +84,7 @@ public sealed partial class MainWindow : Window
     }
 
     public void HandlePendingConnect() => _ = HandlePendingConnectAsync();
+    public Task HandlePendingEventPublicAsync() => HandlePendingEventAsync();
 
     public void ApplyEventNavigation()
     {

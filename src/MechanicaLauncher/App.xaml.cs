@@ -42,9 +42,12 @@ public partial class App : Application
         if (!isNew)
         {
             var args = Environment.GetCommandLineArgs();
-            var connect = ProtocolHandler.ParseArgs(args);
+            var connect = ProtocolHandler.ParseConnect(args);
+            var eventReq = ProtocolHandler.ParseEvent(args);
             var pendingFile = GetPendingFile();
-            if (connect != null)
+            if (eventReq != null)
+                File.WriteAllText(pendingFile, $"EVENT|{eventReq.ConfigUrl}");
+            else if (connect != null)
                 File.WriteAllText(pendingFile, $"{connect.Server}|{connect.Port}|{connect.Version}");
             else
                 File.WriteAllText(pendingFile, "SHOW");
@@ -193,6 +196,22 @@ public partial class App : Application
                 if (content.Trim() == "SHOW")
                 {
                     ShowWindow();
+                    continue;
+                }
+
+                if (content.StartsWith("EVENT|"))
+                {
+                    var url = content["EVENT|".Length..].Trim();
+                    ShowWindow();
+                    MainWindow.DispatcherQueue.TryEnqueue(async () =>
+                    {
+                        await LoadEventAsync(url);
+                        if (MainWindow is MainWindow mw)
+                        {
+                            mw.ApplyEventNavigation();
+                            await mw.HandlePendingEventPublicAsync();
+                        }
+                    });
                     continue;
                 }
 
