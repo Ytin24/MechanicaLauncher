@@ -29,6 +29,33 @@ public sealed partial class InstanceManager
     public string GetInstanceDir(string instanceId) => Path.Combine(InstancesDir, instanceId);
     public string GetGameDir(string instanceId) => Path.Combine(InstancesDir, instanceId, ".minecraft");
 
+    // Resolved absolute path to the instance's custom icon, or null if not set / missing.
+    public string? GetIconAbsolutePath(GameInstance inst)
+    {
+        if (string.IsNullOrEmpty(inst.IconPath)) return null;
+        var p = Path.IsPathRooted(inst.IconPath)
+            ? inst.IconPath
+            : Path.Combine(GetInstanceDir(inst.Id), inst.IconPath);
+        return File.Exists(p) ? p : null;
+    }
+
+    // Copies an external image into the instance directory and returns the relative filename written
+    // to instance.json. Keeps only one active icon — overwrites previous.
+    public string SetIconFromFile(GameInstance inst, string sourcePath)
+    {
+        if (!File.Exists(sourcePath))
+            throw new FileNotFoundException("Icon source missing", sourcePath);
+        var ext = Path.GetExtension(sourcePath);
+        if (string.IsNullOrEmpty(ext)) ext = ".png";
+        var dstName = "icon" + ext.ToLowerInvariant();
+        var dst = Path.Combine(GetInstanceDir(inst.Id), dstName);
+        Directory.CreateDirectory(GetInstanceDir(inst.Id));
+        File.Copy(sourcePath, dst, overwrite: true);
+        inst.IconPath = dstName;
+        SaveInstance(inst);
+        return dstName;
+    }
+
     public GameInstance CreateInstance(string name, string mcVersion, LoaderType loader = LoaderType.None, string? loaderVersion = null, bool raiseChangedEvent = true)
     {
         var id = Slugify(name);
@@ -62,6 +89,54 @@ public sealed partial class InstanceManager
         if (Directory.Exists(dir))
             Directory.Delete(dir, true);
         Raise();
+    }
+
+    public GameInstance DuplicateInstance(string instanceId)
+    {
+        var src = GetInstance(instanceId) ?? throw new InvalidOperationException("Source instance not found");
+        var clone = new GameInstance
+        {
+            Name = src.Name + " (copy)",
+            McVersion = src.McVersion,
+            Loader = src.Loader,
+            LoaderVersion = src.LoaderVersion,
+            JavaPath = src.JavaPath,
+            MinMemoryMb = src.MinMemoryMb,
+            MaxMemoryMb = src.MaxMemoryMb,
+            JvmArgs = src.JvmArgs,
+            WindowWidth = src.WindowWidth,
+            WindowHeight = src.WindowHeight,
+            CreatedAt = DateTime.UtcNow,
+        };
+        var newId = Slugify(clone.Name);
+        if (Directory.Exists(GetInstanceDir(newId)))
+            newId += "-" + Guid.NewGuid().ToString("N")[..6];
+        clone.Id = newId;
+
+        var dstDir = GetInstanceDir(newId);
+        var srcDir = GetInstanceDir(instanceId);
+        // Deep copy — reuses loader libs from shared dir, but .minecraft/mods+configs+saves are per-instance.
+        CopyDirectory(srcDir, dstDir);
+        // Rewrite instance.json to match new id/name.
+        SaveInstance(clone);
+        Raise();
+        return clone;
+    }
+
+    private static void CopyDirectory(string src, string dst)
+    {
+        Directory.CreateDirectory(dst);
+        foreach (var file in Directory.EnumerateFiles(src))
+        {
+            var name = Path.GetFileName(file);
+            if (name == "instance.json") continue; // rewritten via SaveInstance
+            File.Copy(file, Path.Combine(dst, name), overwrite: true);
+        }
+        foreach (var sub in Directory.EnumerateDirectories(src))
+        {
+            var name = Path.GetFileName(sub);
+            CopyDirectory(sub, Path.Combine(dst, name));
+        }
     }
 
     public GameInstance? GetInstance(string instanceId)

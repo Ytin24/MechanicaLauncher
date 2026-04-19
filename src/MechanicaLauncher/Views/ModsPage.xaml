@@ -45,39 +45,39 @@
 
             <!-- Search -->
             <AutoSuggestBox PlaceholderText="Search mods, shaders, modpacks..." QueryIcon="Find"
-                            MinHeight="36" x:Name="ModSearchBox" QuerySubmitted="ModSearch_QuerySubmitted" />
+                            MinHeight="36" x:Name="ModSearchBox"
+                            TextChanged="ModSearch_TextChanged"
+                            QuerySubmitted="ModSearch_QuerySubmitted" />
 
-            <!-- Filters -->
-            <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
-                <ComboBox x:Name="TypeFilter" MinWidth="100" MinHeight="32" SelectedIndex="0"
-                          SelectionChanged="Filter_Changed">
-                    <ComboBoxItem Content="Mods" Tag="mod" />
-                    <ComboBoxItem Content="Shaders" Tag="shader" />
-                    <ComboBoxItem Content="Resource Packs" Tag="resourcepack" />
-                    <ComboBoxItem Content="Modpacks" Tag="modpack" />
-                    <ComboBoxItem Content="Datapacks" Tag="datapack" />
-                </ComboBox>
-                <ComboBox x:Name="SortFilter" MinWidth="110" MinHeight="32" SelectedIndex="0"
-                          SelectionChanged="Filter_Changed">
-                    <ComboBoxItem Content="Relevance" Tag="relevance" />
-                    <ComboBoxItem Content="Downloads" Tag="downloads" />
-                    <ComboBoxItem Content="Newest" Tag="newest" />
-                    <ComboBoxItem Content="Updated" Tag="updated" />
-                </ComboBox>
-                <ComboBox x:Name="CategoryFilter" MinWidth="110" MinHeight="32" SelectedIndex="0"
-                          SelectionChanged="Filter_Changed">
-                    <ComboBoxItem Content="All" Tag="" />
-                    <ComboBoxItem Content="Optimization" Tag="optimization" />
-                    <ComboBoxItem Content="Utility" Tag="utility" />
-                    <ComboBoxItem Content="Library" Tag="library" />
-                    <ComboBoxItem Content="Decoration" Tag="decoration" />
-                    <ComboBoxItem Content="Adventure" Tag="adventure" />
-                    <ComboBoxItem Content="Technology" Tag="technology" />
-                    <ComboBoxItem Content="Magic" Tag="magic" />
-                    <ComboBoxItem Content="Storage" Tag="storage" />
-                    <ComboBoxItem Content="World Gen" Tag="worldgen" />
-                </ComboBox>
-            </StackPanel>
+            <!-- Type tabs + sort/category -->
+            <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,10,0,0">
+                <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                              HorizontalScrollMode="Auto" VerticalScrollMode="Disabled">
+                    <StackPanel x:Name="TypeTabs" Orientation="Horizontal" Spacing="4" />
+                </ScrollViewer>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="12,0,0,0">
+                    <ComboBox x:Name="SortFilter" MinWidth="110" MinHeight="32" SelectedIndex="0"
+                              SelectionChanged="Filter_Changed">
+                        <ComboBoxItem Content="Relevance" Tag="relevance" />
+                        <ComboBoxItem Content="Downloads" Tag="downloads" />
+                        <ComboBoxItem Content="Newest" Tag="newest" />
+                        <ComboBoxItem Content="Updated" Tag="updated" />
+                    </ComboBox>
+                    <ComboBox x:Name="CategoryFilter" MinWidth="110" MinHeight="32" SelectedIndex="0"
+                              SelectionChanged="Filter_Changed">
+                        <ComboBoxItem Content="All" Tag="" />
+                        <ComboBoxItem Content="Optimization" Tag="optimization" />
+                        <ComboBoxItem Content="Utility" Tag="utility" />
+                        <ComboBoxItem Content="Library" Tag="library" />
+                        <ComboBoxItem Content="Decoration" Tag="decoration" />
+                        <ComboBoxItem Content="Adventure" Tag="adventure" />
+                        <ComboBoxItem Content="Technology" Tag="technology" />
+                        <ComboBoxItem Content="Magic" Tag="magic" />
+                        <ComboBoxItem Content="Storage" Tag="storage" />
+                        <ComboBoxItem Content="World Gen" Tag="worldgen" />
+                    </ComboBox>
+                </StackPanel>
+            </Grid>
 
             <!-- Results count -->
             <TextBlock Grid.Row="2" x:Name="ResultsInfo" Text="" FontSize="12"

@@ -26,21 +26,47 @@
                                Foreground="{StaticResource AccentLightBrush}" Opacity="0.6" />
                 </StackPanel>
 
-                <!-- Instance selector -->
-                <Border Style="{StaticResource CardPanel}" HorizontalAlignment="Center"
-                        MinWidth="340" MaxWidth="440" MinHeight="52">
-                    <ComboBox x:Name="ProfileSelector" HorizontalAlignment="Stretch"
-                              PlaceholderText="" FontSize="14" MinHeight="36"
-                              BorderThickness="0" Background="Transparent"
-                              SelectionChanged="ProfileSelector_Changed" />
-                </Border>
+                <!-- Recent instances chip row -->
+                <ScrollViewer x:Name="RecentScroll" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                              HorizontalScrollMode="Auto" VerticalScrollMode="Disabled"
+                              MaxWidth="520" Visibility="Collapsed">
+                    <StackPanel x:Name="RecentChips" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" />
+                </ScrollViewer>
 
-                <!-- Instance info line -->
-                <TextBlock x:Name="InstanceInfo" Text="" FontSize="12"
-                           Foreground="{StaticResource DimBrush}" HorizontalAlignment="Center" />
+                <!-- Hidden combo kept for selection state persistence & backwards-compat with code-behind -->
+                <ComboBox x:Name="ProfileSelector" Visibility="Collapsed"
+                          SelectionChanged="ProfileSelector_Changed" />
+
+                <!-- Hero card: clickable, opens instance-picker flyout -->
+                <DropDownButton x:Name="InstancePicker" HorizontalAlignment="Center"
+                                MinWidth="420" MaxWidth="520" MinHeight="76"
+                                Padding="16" CornerRadius="12"
+                                Background="{StaticResource CardBrush}" BorderThickness="0">
+                    <Grid ColumnDefinitions="Auto,*" MinWidth="360">
+                        <Border x:Name="HeroIconBorder" Width="52" Height="52" CornerRadius="10"
+                                Background="#14FFFFFF" VerticalAlignment="Center" Margin="0,0,14,0">
+                            <Grid x:Name="HeroIconGrid">
+                                <FontIcon x:Name="HeroIconGlyph" Glyph="&#xE74C;" FontSize="22"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                            <TextBlock x:Name="HeroName" Text="No instance" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                            <TextBlock x:Name="InstanceInfo" Text="" FontSize="12"
+                                       Foreground="{StaticResource DimBrush}" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </Grid>
+                    <DropDownButton.Flyout>
+                        <MenuFlyout x:Name="InstancePickerFlyout" Placement="Bottom" />
+                    </DropDownButton.Flyout>
+                </DropDownButton>
 
                 <!-- Play -->
-                <Button x:Name="PlayButton" Style="{StaticResource PlayButton}" Click="PlayButton_Click">
+                <Button x:Name="PlayButton" Style="{StaticResource PlayButton}" Click="PlayButton_Click"
+                        ToolTipService.ToolTip="Play (Ctrl+Enter)">
+                    <Button.KeyboardAccelerators>
+                        <KeyboardAccelerator Key="Enter" Modifiers="Control" />
+                    </Button.KeyboardAccelerators>
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <FontIcon Glyph="&#xE768;" FontSize="22" Foreground="White" />
                         <TextBlock Text="P L A Y" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />

@@ -12,6 +12,10 @@ public sealed partial class InstancesPage : Page
 {
     private static Core.Profiles.LauncherSettings S => App.Settings;
     private readonly InstanceManager _im = new();
+    private string _searchQuery = "";
+    private string _sortMode = "recent";
+    private readonly HashSet<LoaderType> _loaderFilter = new();
+    private bool _isLoaded;
 
     public InstancesPage()
     {
@@ -24,6 +28,7 @@ public sealed partial class InstancesPage : Page
         PageTitle.Text = App.L("inst.title");
         NewInstanceText.Text = App.L("inst.new");
         InstanceManager.InstancesChanged += OnInstancesChanged;
+        _isLoaded = true;
         LoadInstances();
     }
 
@@ -39,13 +44,15 @@ public sealed partial class InstancesPage : Page
     private void LoadInstances()
     {
         InstancesList.Children.Clear();
-        var instances = _im.GetAllInstances();
+        var allInstances = _im.GetAllInstances();
+        RebuildFilterChips(allInstances);
+        var instances = ApplyFilters(allInstances);
 
         if (instances.Count == 0)
         {
             InstancesList.Children.Add(new TextBlock
             {
-                Text = App.L("inst.no_instances"),
+                Text = allInstances.Count == 0 ? App.L("inst.no_instances") : "No instances match the current filters.",
                 Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 FontSize = 14,
@@ -63,6 +70,86 @@ public sealed partial class InstancesPage : Page
             AnimationHelper.AddCardHover(card);
             delay += 50;
         }
+    }
+
+    private void SearchBox_Changed(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    {
+        if (!_isLoaded) return;
+        _searchQuery = sender.Text?.Trim() ?? "";
+        LoadInstances();
+    }
+
+    private void Sort_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_isLoaded) return;
+        _sortMode = (SortBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "recent";
+        LoadInstances();
+    }
+
+    private List<GameInstance> ApplyFilters(List<GameInstance> all)
+    {
+        IEnumerable<GameInstance> q = all;
+        if (!string.IsNullOrEmpty(_searchQuery))
+            q = q.Where(i => i.Name.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase)
+                          || i.McVersion.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase));
+        if (_loaderFilter.Count > 0)
+            q = q.Where(i => _loaderFilter.Contains(i.Loader));
+
+        q = _sortMode switch
+        {
+            "name"   => q.OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase),
+            "loader" => q.OrderBy(i => i.Loader).ThenBy(i => i.Name, StringComparer.OrdinalIgnoreCase),
+            "mcver"  => q.OrderByDescending(i => i.McVersion, StringComparer.OrdinalIgnoreCase),
+            _        => q.OrderByDescending(i => i.LastPlayed ?? i.CreatedAt),
+        };
+        return q.ToList();
+    }
+
+    private void RebuildFilterChips(List<GameInstance> all)
+    {
+        FilterChips.Children.Clear();
+        var loaders = all.Select(i => i.Loader).Distinct().OrderBy(l => l).ToList();
+        if (loaders.Count <= 1) return;
+        foreach (var loader in loaders)
+            FilterChips.Children.Add(BuildChip(loader));
+    }
+
+    private Button BuildChip(LoaderType loader)
+    {
+        var active = _loaderFilter.Contains(loader);
+        var btn = new Button
+        {
+            Content = loader == LoaderType.None ? "Vanilla" : loader.ToString(),
+            MinHeight = 28,
+            Padding = new Thickness(12, 4, 12, 4),
+            CornerRadius = new CornerRadius(14),
+            FontSize = 12,
+            Background = new SolidColorBrush(active
+                ? Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xAF, 0x50)
+                : Windows.UI.Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF)),
+            Foreground = new SolidColorBrush(active ? Microsoft.UI.Colors.White : Windows.UI.Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
+        };
+        btn.Click += (_, _) =>
+        {
+            if (!_loaderFilter.Add(loader)) _loaderFilter.Remove(loader);
+            LoadInstances();
+        };
+        return btn;
+    }
+
+    private async void ImportMrpack_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new Windows.Storage.Pickers.FileOpenPicker();
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow);
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+        picker.FileTypeFilter.Add(".mrpack");
+        picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Downloads;
+
+        var file = await picker.PickSingleFileAsync();
+        if (file == null) return;
+
+        if (App.MainWindow is MainWindow mw)
+            await mw.ImportMrpackAsync(file.Path);
     }
 
     private Border CreateCard(GameInstance inst)
@@ -100,13 +187,27 @@ public sealed partial class InstancesPage : Page
             Width = 48, Height = 48,
             VerticalAlignment = VerticalAlignment.Center
         };
-        iconBorder.Child = new FontIcon
+        var customIconPath = _im.GetIconAbsolutePath(inst);
+        if (customIconPath != null)
         {
-            Glyph = "\uE74C", FontSize = 20,
-            Foreground = new SolidColorBrush(iconColor),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
-        };
+            iconBorder.Child = new Image
+            {
+                Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(customIconPath)),
+                Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill,
+                Width = 48, Height = 48,
+            };
+            iconBorder.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF));
+        }
+        else
+        {
+            iconBorder.Child = new FontIcon
+            {
+                Glyph = "\uE74C", FontSize = 20,
+                Foreground = new SolidColorBrush(iconColor),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        }
 
         var info = new StackPanel { Margin = new Thickness(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Spacing = 4 };
         var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
@@ -188,8 +289,20 @@ public sealed partial class InstancesPage : Page
         };
         editBtn.Click += EditInstance_Click;
 
+        var moreBtn = new Button
+        {
+            Content = new FontIcon { Glyph = "\uE712", FontSize = 14 },
+            FontSize = 13, Padding = new Thickness(8, 6, 8, 6),
+            MinHeight = 32, CornerRadius = new CornerRadius(6),
+            Tag = inst.Id,
+        };
+        ToolTipService.SetToolTip(moreBtn, "More actions");
+        var moreFlyout = BuildInstanceContextFlyout(inst);
+        moreBtn.Flyout = moreFlyout;
+
         buttons.Children.Add(selectBtn);
         buttons.Children.Add(editBtn);
+        buttons.Children.Add(moreBtn);
         buttons.Children.Add(deleteBtn);
         Grid.SetColumn(buttons, 2);
 
@@ -197,6 +310,8 @@ public sealed partial class InstancesPage : Page
         grid.Children.Add(info);
         grid.Children.Add(buttons);
         card.Child = grid;
+        // Right-click on the card pops the same menu as the ⋯ button — standard desktop idiom.
+        card.ContextFlyout = BuildInstanceContextFlyout(inst);
         return card;
     }
 
@@ -207,6 +322,124 @@ public sealed partial class InstancesPage : Page
             S.SelectedInstanceId = id;
             S.Save();
             LoadInstances();
+        }
+    }
+
+    private MenuFlyout BuildInstanceContextFlyout(GameInstance inst)
+    {
+        var flyout = new MenuFlyout { Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Bottom };
+
+        var play = new MenuFlyoutItem { Text = "Play", Icon = new FontIcon { Glyph = "\uE768" } };
+        play.Click += (_, _) =>
+        {
+            S.SelectedInstanceId = inst.Id;
+            S.Save();
+            if (App.MainWindow is MainWindow mw)
+                mw.DispatcherQueue.TryEnqueue(() => mw.NavigateToTag("Home"));
+        };
+
+        var openDir = new MenuFlyoutItem { Text = "Open .minecraft folder", Icon = new FontIcon { Glyph = "\uE838" } };
+        openDir.Click += (_, _) =>
+        {
+            var dir = _im.GetGameDir(inst.Id);
+            if (Directory.Exists(dir))
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = dir, UseShellExecute = true });
+        };
+
+        var openMods = new MenuFlyoutItem { Text = "Open mods folder", Icon = new FontIcon { Glyph = "\uEA86" } };
+        openMods.Click += (_, _) =>
+        {
+            var dir = Path.Combine(_im.GetGameDir(inst.Id), "mods");
+            Directory.CreateDirectory(dir);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = dir, UseShellExecute = true });
+        };
+
+        var dup = new MenuFlyoutItem { Text = "Duplicate", Icon = new FontIcon { Glyph = "\uE8C8" } };
+        dup.Click += (_, _) =>
+        {
+            try { _im.DuplicateInstance(inst.Id); }
+            catch (Exception ex)
+            {
+                _ = new ContentDialog
+                {
+                    Title = "Duplicate failed",
+                    Content = new TextBlock { Text = ex.Message, TextWrapping = TextWrapping.Wrap, MaxWidth = 500 },
+                    CloseButtonText = "OK",
+                    XamlRoot = this.XamlRoot,
+                }.ShowAsync();
+            }
+        };
+
+        var export = new MenuFlyoutItem { Text = "Export as .mrpack...", Icon = new FontIcon { Glyph = "\uEDE1" } };
+        export.Click += (_, _) => _ = DoExportAsync(inst);
+
+        flyout.Items.Add(play);
+        flyout.Items.Add(new MenuFlyoutSeparator());
+        flyout.Items.Add(openDir);
+        flyout.Items.Add(openMods);
+        flyout.Items.Add(new MenuFlyoutSeparator());
+        flyout.Items.Add(dup);
+        flyout.Items.Add(export);
+        return flyout;
+    }
+
+    private async void ExportInstance_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not string id) return;
+        var inst = _im.GetInstance(id);
+        if (inst == null) return;
+        await DoExportAsync(inst);
+    }
+
+    private async Task DoExportAsync(GameInstance inst)
+    {
+        var picker = new Windows.Storage.Pickers.FileSavePicker();
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow);
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+        picker.FileTypeChoices.Add("Modrinth modpack", [".mrpack"]);
+        picker.SuggestedFileName = $"{inst.Name}-{DateTime.UtcNow:yyyyMMdd}";
+
+        var file = await picker.PickSaveFileAsync();
+        if (file == null) return;
+
+        var dialog = new ContentDialog
+        {
+            Title = "Exporting modpack",
+            Content = new StackPanel
+            {
+                Spacing = 10,
+                Children =
+                {
+                    new TextBlock { Text = $"Packing {inst.Name}..." },
+                    new ProgressBar { IsIndeterminate = true }
+                }
+            },
+            XamlRoot = this.XamlRoot,
+        };
+        _ = dialog.ShowAsync();
+
+        try
+        {
+            await Task.Run(() => Core.Mods.ModpackInstaller.ExportAsync(inst, _im, file.Path));
+            dialog.Hide();
+            await new ContentDialog
+            {
+                Title = "Exported",
+                Content = new TextBlock { Text = $"Saved to:\n{file.Path}", TextWrapping = TextWrapping.Wrap, MaxWidth = 500 },
+                CloseButtonText = "OK",
+                XamlRoot = this.XamlRoot,
+            }.ShowAsync();
+        }
+        catch (Exception ex)
+        {
+            dialog.Hide();
+            await new ContentDialog
+            {
+                Title = "Export failed",
+                Content = new TextBlock { Text = ex.Message, TextWrapping = TextWrapping.Wrap, MaxWidth = 500 },
+                CloseButtonText = "OK",
+                XamlRoot = this.XamlRoot,
+            }.ShowAsync();
         }
     }
 
@@ -279,6 +512,56 @@ public sealed partial class InstancesPage : Page
         minMemSlider.ValueChanged += (_, args) => minMemLabel.Text = $"Min Memory: {(int)args.NewValue} MB";
         maxMemSlider.ValueChanged += (_, args) => maxMemLabel.Text = $"Max Memory: {(int)args.NewValue} MB";
 
+        var iconPreview = new Border
+        {
+            Width = 56, Height = 56, CornerRadius = new CornerRadius(8),
+            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)),
+        };
+        void RefreshIconPreview()
+        {
+            var p = _im.GetIconAbsolutePath(inst);
+            iconPreview.Child = p != null
+                ? (UIElement)new Image
+                {
+                    Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(p)) { CreateOptions = Microsoft.UI.Xaml.Media.Imaging.BitmapCreateOptions.IgnoreImageCache },
+                    Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill,
+                }
+                : new FontIcon { Glyph = "\uE74C", FontSize = 24, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        }
+        RefreshIconPreview();
+
+        var pickIconBtn = new Button { Content = "Change icon...", MinHeight = 34 };
+        var clearIconBtn = new Button { Content = "Remove", MinHeight = 34 };
+        pickIconBtn.Click += async (_, _) =>
+        {
+            var picker = new Windows.Storage.Pickers.FileOpenPicker();
+            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow);
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+            foreach (var e2 in new[] { ".png", ".jpg", ".jpeg", ".webp" }) picker.FileTypeFilter.Add(e2);
+            var f = await picker.PickSingleFileAsync();
+            if (f == null) return;
+            try { _im.SetIconFromFile(inst, f.Path); RefreshIconPreview(); }
+            catch { }
+        };
+        clearIconBtn.Click += (_, _) =>
+        {
+            inst.IconPath = null;
+            _im.SaveInstance(inst);
+            RefreshIconPreview();
+        };
+
+        var iconRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center };
+        iconRow.Children.Add(iconPreview);
+        iconRow.Children.Add(new StackPanel
+        {
+            Spacing = 6, VerticalAlignment = VerticalAlignment.Center,
+            Children =
+            {
+                new TextBlock { Text = "Icon", FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { pickIconBtn, clearIconBtn } }
+            }
+        });
+
         var content = new StackPanel
         {
             Spacing = 10, MinWidth = 360,
@@ -286,6 +569,7 @@ public sealed partial class InstancesPage : Page
             {
                 new TextBlock { Text = App.L("inst.name") }, nameBox,
                 new TextBlock { Text = $"Version: {inst.McVersion}  ·  {inst.Loader}{(inst.LoaderVersion != null ? $" {inst.LoaderVersion}" : "")}", Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF)), FontSize = 13 },
+                iconRow,
                 minMemLabel, minMemSlider,
                 maxMemLabel, maxMemSlider,
                 new TextBlock { Text = "JVM Arguments" }, jvmBox,

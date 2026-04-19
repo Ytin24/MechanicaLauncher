@@ -43,10 +43,19 @@ public sealed partial class SettingsPage : Page
         DiscordDimensionToggle.IsOn = S.DiscordShowDimension;
         DiscordAchievementToggle.IsOn = S.DiscordShowAchievements;
         DiscordModsToggle.IsOn = S.DiscordShowMods;
-        DiscordServerToggle.Header = "Show server name";
-        DiscordDimensionToggle.Header = "Show dimension (Overworld/Nether/End)";
-        DiscordAchievementToggle.Header = "Show achievements";
-        DiscordModsToggle.Header = "Show mod count";
+        // SettingsCard hosts the label/description now; clear the ToggleSwitch's own header so it
+        // doesn't render on top of the card.
+        // SettingsCard hosts the label/description now; clear the ToggleSwitch's own header + the
+        // default "Вкл/Выкл" captions so it doesn't render on top of the card.
+        foreach (var t in new[] { DiscordRpcToggle, DiscordServerToggle, DiscordDimensionToggle,
+                                  DiscordAchievementToggle, DiscordModsToggle,
+                                  CloseOnLaunchToggle, ShowSnapshotsToggle })
+        {
+            t.Header = null;
+            t.OnContent = "";
+            t.OffContent = "";
+            t.MinWidth = 0;
+        }
 
         for (int i = 0; i < LangSelector.Items.Count; i++)
         {
@@ -108,13 +117,13 @@ public sealed partial class SettingsPage : Page
             PageTitle.Text = App.L("set.title");
             AppearanceLabel.Text = App.L("set.appearance");
             LauncherLabel.Text = App.L("set.launcher");
-            ThemeSelector.Header = App.L("set.theme");
+            ThemeCard.Header = App.L("set.theme");
+            LangCard.Header = App.L("set.language");
             ThemeDark.Content = App.L("set.dark");
             ThemeLight.Content = App.L("set.light");
             ThemeSystem.Content = App.L("set.system");
-            CloseOnLaunchToggle.Header = App.L("set.close_on_launch");
-            ShowSnapshotsToggle.Header = App.L("set.show_snapshots");
-            LangSelector.Header = App.L("set.language");
+            CloseOnLaunchCard.Header = App.L("set.close_on_launch");
+            ShowSnapshotsCard.Header = App.L("set.show_snapshots");
         }
         catch { }
     }

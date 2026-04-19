@@ -43,6 +43,11 @@ public sealed class GameInstance
     [JsonPropertyName("lastPlayed")]
     public DateTime? LastPlayed { get; set; }
 
+    // Filename inside the instance directory (next to instance.json). Relative so the whole folder
+    // can be copied/renamed without breaking the reference.
+    [JsonPropertyName("iconPath")]
+    public string? IconPath { get; set; }
+
     public string GetEffectiveVersionId() => Loader switch
     {
         LoaderType.Fabric when !string.IsNullOrEmpty(LoaderVersion)

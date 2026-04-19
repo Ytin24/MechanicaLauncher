@@ -81,6 +81,154 @@ public sealed partial class HomePage : Page
         _loading = false;
         UpdatePlayButton();
         UpdateInstanceInfo();
+        RebuildRecentChips(instances);
+        RebuildInstancePickerFlyout(instances);
+        UpdateHeroCard();
+    }
+
+    private void UpdateHeroCard()
+    {
+        var inst = GetSelectedInstance();
+        if (inst == null)
+        {
+            HeroName.Text = "No instance";
+            HeroIconGrid.Children.Clear();
+            HeroIconGrid.Children.Add(new FontIcon { Glyph = "\uE74C", FontSize = 22, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+            HeroIconBorder.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF));
+            return;
+        }
+        HeroName.Text = inst.Name;
+
+        HeroIconGrid.Children.Clear();
+        var iconPath = _im.GetIconAbsolutePath(inst);
+        if (iconPath != null)
+        {
+            HeroIconGrid.Children.Add(new Image
+            {
+                Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(iconPath)) { CreateOptions = Microsoft.UI.Xaml.Media.Imaging.BitmapCreateOptions.IgnoreImageCache },
+                Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill,
+            });
+            HeroIconBorder.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF));
+        }
+        else
+        {
+            var (glyph, accent) = LoaderIconFor(inst.Loader);
+            HeroIconGrid.Children.Add(new FontIcon { Glyph = glyph, FontSize = 22, Foreground = new SolidColorBrush(accent), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+            HeroIconBorder.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x1A, accent.R, accent.G, accent.B));
+        }
+    }
+
+    private static (string Glyph, Windows.UI.Color Color) LoaderIconFor(LoaderType loader) => loader switch
+    {
+        LoaderType.Fabric   => ("\uE74C", Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xAF, 0x50)),
+        LoaderType.Quilt    => ("\uE74C", Windows.UI.Color.FromArgb(0xFF, 0xAB, 0x47, 0xBC)),
+        LoaderType.Forge    => ("\uE74C", Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x98, 0x00)),
+        LoaderType.NeoForge => ("\uE74C", Windows.UI.Color.FromArgb(0xFF, 0xE6, 0x5C, 0x00)),
+        _                   => ("\uE74C", Windows.UI.Color.FromArgb(0xFF, 0x78, 0x90, 0x9C)),
+    };
+
+    private void RebuildInstancePickerFlyout(List<Core.Instances.GameInstance> instances)
+    {
+        InstancePickerFlyout.Items.Clear();
+        foreach (var inst in instances)
+        {
+            var item = new MenuFlyoutItem { Text = $"{inst.Name}   ·   {inst.McVersion}" + (inst.Loader != LoaderType.None ? $" · {inst.Loader}" : "") };
+            var iconPath = _im.GetIconAbsolutePath(inst);
+            if (iconPath != null)
+            {
+                // MenuFlyoutItem.Icon only accepts IconElement subclasses; use ImageIcon to show the instance icon.
+                item.Icon = new ImageIcon
+                {
+                    Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(iconPath)),
+                };
+            }
+            else
+            {
+                var (glyph, color) = LoaderIconFor(inst.Loader);
+                item.Icon = new FontIcon { Glyph = glyph, Foreground = new SolidColorBrush(color) };
+            }
+            var id = inst.Id;
+            item.Click += (_, _) =>
+            {
+                for (int i = 0; i < ProfileSelector.Items.Count; i++)
+                    if ((ProfileSelector.Items[i] as ComboBoxItem)?.Tag?.ToString() == id)
+                    { ProfileSelector.SelectedIndex = i; break; }
+            };
+            InstancePickerFlyout.Items.Add(item);
+        }
+    }
+
+    private void RebuildRecentChips(List<Core.Instances.GameInstance> instances)
+    {
+        RecentChips.Children.Clear();
+        if (instances.Count <= 1)
+        {
+            RecentScroll.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        // Quick-switch rail: sort by LastPlayed (or CreatedAt), take 6, but always include the currently
+        // selected instance so a just-created one appears immediately.
+        var ranked = instances
+            .OrderByDescending(i => i.LastPlayed ?? i.CreatedAt)
+            .Take(6)
+            .ToList();
+        if (S.SelectedInstanceId != null && ranked.All(i => i.Id != S.SelectedInstanceId))
+        {
+            var sel = instances.FirstOrDefault(i => i.Id == S.SelectedInstanceId);
+            if (sel != null) ranked.Insert(0, sel);
+        }
+
+        RecentScroll.Visibility = Visibility.Visible;
+        foreach (var inst in ranked)
+        {
+            var running = IsInstanceRunning(inst.Id);
+            var isSelected = inst.Id == S.SelectedInstanceId;
+            var btn = new Button
+            {
+                MinHeight = 30,
+                Padding = new Thickness(12, 4, 12, 4),
+                CornerRadius = new CornerRadius(16),
+                Background = new SolidColorBrush(isSelected
+                    ? Windows.UI.Color.FromArgb(0x40, 0x4C, 0xAF, 0x50)
+                    : Windows.UI.Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)),
+                BorderBrush = new SolidColorBrush(isSelected
+                    ? Windows.UI.Color.FromArgb(0xAA, 0x4C, 0xAF, 0x50)
+                    : Windows.UI.Color.FromArgb(0x00, 0, 0, 0)),
+                BorderThickness = new Thickness(1),
+            };
+            var sp = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            if (running)
+                sp.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse
+                {
+                    Width = 8, Height = 8,
+                    Fill = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xAF, 0x50)),
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+            sp.Children.Add(new TextBlock
+            {
+                Text = inst.Name,
+                FontSize = 12,
+                FontWeight = isSelected ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            sp.Children.Add(new TextBlock
+            {
+                Text = inst.McVersion,
+                FontSize = 11,
+                Opacity = 0.6,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            btn.Content = sp;
+            var id = inst.Id;
+            btn.Click += (_, _) =>
+            {
+                for (int i = 0; i < ProfileSelector.Items.Count; i++)
+                    if ((ProfileSelector.Items[i] as ComboBoxItem)?.Tag?.ToString() == id)
+                    { ProfileSelector.SelectedIndex = i; break; }
+            };
+            RecentChips.Children.Add(btn);
+        }
     }
 
     private async Task LoadAsync()
@@ -196,6 +344,9 @@ public sealed partial class HomePage : Page
             S.Save();
             UpdatePlayButton();
             UpdateInstanceInfo();
+            UpdateHeroCard();
+            // Recent pills also update to highlight the new selection.
+            RebuildRecentChips(_im.GetAllInstances());
         }
     }
 
@@ -223,6 +374,9 @@ public sealed partial class HomePage : Page
     }
 
     // --- Play / Kill ---
+    private DispatcherTimer? _elapsedTimer;
+    private TextBlock? _elapsedLabel;
+
     private void UpdatePlayButton()
     {
         var inst = GetSelectedInstance();
@@ -238,20 +392,62 @@ public sealed partial class HomePage : Page
                 label = App.L("home.play_with", inst.Name);
         }
 
-        PlayButton.Content = new StackPanel
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
+        row.Children.Add(new FontIcon
         {
-            Orientation = Orientation.Horizontal, Spacing = 12,
-            Children =
-            {
-                new FontIcon { Glyph = running ? "\uE71A" : "\uE768", FontSize = 22,
-                    Foreground = new SolidColorBrush(running ? Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B) : Microsoft.UI.Colors.White) },
-                new TextBlock { Text = label, FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }
-            }
-        };
+            Glyph = running ? "\uE71A" : "\uE768", FontSize = 22,
+            Foreground = new SolidColorBrush(running ? Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B) : Microsoft.UI.Colors.White)
+        });
+        row.Children.Add(new TextBlock
+        {
+            Text = label, FontSize = 18,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        });
 
+        _elapsedLabel = null;
+        _elapsedTimer?.Stop();
+        _elapsedTimer = null;
+
+        if (running && inst != null && App.RunningInstances.TryGetValue(inst.Id, out var proc))
+        {
+            var startTime = proc.StartTime;
+            _elapsedLabel = new TextBlock
+            {
+                FontSize = 13, Opacity = 0.85,
+                VerticalAlignment = VerticalAlignment.Center,
+                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Cascadia Mono,Consolas,monospace"),
+            };
+            UpdateElapsedText(startTime);
+            row.Children.Add(new TextBlock
+            {
+                Text = "·", FontSize = 16, Opacity = 0.5,
+                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0),
+            });
+            row.Children.Add(_elapsedLabel);
+
+            _elapsedTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _elapsedTimer.Tick += (_, _) =>
+            {
+                if (!IsInstanceRunning(inst.Id)) { _elapsedTimer?.Stop(); return; }
+                UpdateElapsedText(startTime);
+            };
+            _elapsedTimer.Start();
+        }
+
+        PlayButton.Content = row;
         PlayButton.Background = running
             ? new SolidColorBrush(Windows.UI.Color.FromArgb(0x33, 0xFF, 0x00, 0x00))
             : (Brush)Application.Current.Resources["AccentBrush"];
+    }
+
+    private void UpdateElapsedText(DateTime startTime)
+    {
+        if (_elapsedLabel == null) return;
+        var elapsed = DateTime.Now - startTime;
+        _elapsedLabel.Text = elapsed.TotalHours >= 1
+            ? $"{(int)elapsed.TotalHours}:{elapsed.Minutes:D2}:{elapsed.Seconds:D2}"
+            : $"{elapsed.Minutes:D2}:{elapsed.Seconds:D2}";
     }
 
     private string? _pendingServer;

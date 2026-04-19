@@ -7,66 +7,133 @@
     NavigationCacheMode="Enabled">
 
     <ScrollViewer Padding="{StaticResource PagePadding}">
-        <StackPanel Spacing="20" MaxWidth="500" HorizontalAlignment="Stretch" Margin="20,0">
+        <StackPanel Spacing="16" HorizontalAlignment="Stretch">
             <TextBlock x:Name="PageTitle" Style="{StaticResource PageHeader}" HorizontalAlignment="Center" />
 
-            <Border x:Name="LoggedInPanel" Style="{StaticResource CardPanelWide}" Padding="32" Visibility="Collapsed" MinHeight="200">
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16">
-                    <PersonPicture Width="80" Height="80" HorizontalAlignment="Center" />
-                    <StackPanel HorizontalAlignment="Center" Spacing="6">
-                        <TextBlock x:Name="UsernameText" Text="" FontSize="24" FontWeight="Bold"
-                                   HorizontalAlignment="Center" Height="32" />
-                        <Border Background="{StaticResource AccentBrush}" CornerRadius="4"
-                                Padding="10,4" HorizontalAlignment="Center" MinHeight="24">
-                            <TextBlock x:Name="AccountBadge" Text="" FontSize="11"
-                                       Foreground="White" FontWeight="SemiBold" />
-                        </Border>
-                    </StackPanel>
-                    <Button x:Name="SignOutBtn" Click="SignOut_Click"
-                            Style="{StaticResource SmallButton}" HorizontalAlignment="Center"
-                            Foreground="#FF6B6B" MinWidth="100" />
-                </StackPanel>
-            </Border>
+            <StackPanel x:Name="LoggedInPanel" Visibility="Collapsed" Spacing="8">
 
-            <StackPanel x:Name="LoginPanel" Spacing="20">
-                <Border Style="{StaticResource CardPanelWide}" Padding="24" MinHeight="160">
-                    <StackPanel Spacing="14">
-                        <StackPanel Orientation="Horizontal" Spacing="12" Height="28">
-                            <FontIcon Glyph="&#xE8AB;" FontSize="22" Foreground="{StaticResource AccentBrush}" />
-                            <TextBlock x:Name="MsTitle" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
-                        </StackPanel>
-                        <TextBlock x:Name="MsDesc" Foreground="{StaticResource DimBrush}" FontSize="13"
-                                   TextWrapping="Wrap" MinHeight="18" />
-                        <Button Style="{StaticResource AccentSmallButton}" HorizontalAlignment="Stretch"
-                                HorizontalContentAlignment="Center" MinHeight="44" Click="MsLogin_Click">
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <FontIcon Glyph="&#xE72E;" FontSize="15" Foreground="White" />
-                                <TextBlock x:Name="MsSignInText" FontSize="14" />
+                <!-- Skin preview + edit (microsoft only) -->
+                <Border x:Name="SkinPanel" Background="{StaticResource CardBrush}" CornerRadius="10" Padding="20" MinHeight="220" Visibility="Collapsed">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Border Width="128" Height="192" CornerRadius="10" VerticalAlignment="Center" Margin="0,0,20,0"
+                                Background="#0AFFFFFF">
+                            <Grid>
+                                <FontIcon x:Name="SkinPlaceholder" Glyph="&#xE77B;" FontSize="48"
+                                          Foreground="{StaticResource SubtleBrush}"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                <Image x:Name="SkinBodyImage" Stretch="Uniform"
+                                       ImageOpened="SkinBody_Loaded" ImageFailed="SkinBody_Failed" />
+                            </Grid>
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="10">
+                            <TextBlock Text="Minecraft skin" FontSize="15" FontWeight="SemiBold" />
+                            <TextBlock x:Name="SkinDesc" Text="Upload a 64×64 PNG or open the built-in editor."
+                                       Foreground="{StaticResource DimBrush}" FontSize="12" TextWrapping="Wrap" />
+
+                            <!-- Classic/Slim above buttons so they don't fight for horizontal space -->
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="Model:" FontSize="12" VerticalAlignment="Center"
+                                           Foreground="{StaticResource DimBrush}" />
+                                <RadioButton x:Name="SkinModelClassic" Content="Classic" Tag="classic"
+                                             GroupName="SkinModel" Checked="SkinModel_Checked" FontSize="12" />
+                                <RadioButton x:Name="SkinModelSlim" Content="Slim" Tag="slim"
+                                             GroupName="SkinModel" Checked="SkinModel_Checked" FontSize="12" />
                             </StackPanel>
-                        </Button>
-                    </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Click="OpenSkinEditor_Click" Style="{StaticResource AccentSmallButton}" MinHeight="34" MinWidth="140">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE70F;" FontSize="12" Foreground="White" />
+                                        <TextBlock Text="Edit skin" FontSize="12" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Click="UploadSkin_Click" Style="{StaticResource SmallButton}" MinHeight="34" MinWidth="110">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE898;" FontSize="12" />
+                                        <TextBlock Text="Upload PNG" FontSize="12" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Click="RefreshSkin_Click" Style="{StaticResource SmallButton}" MinHeight="34" MinWidth="40"
+                                        ToolTipService.ToolTip="Refresh preview">
+                                    <FontIcon Glyph="&#xE72C;" FontSize="12" />
+                                </Button>
+                            </StackPanel>
+                            <TextBlock x:Name="SkinStatus" Text="" Foreground="{StaticResource SubtleBrush}" FontSize="11" />
+                        </StackPanel>
+                    </Grid>
                 </Border>
 
-                <Grid ColumnDefinitions="*,Auto,*" Height="20">
-                    <Border Height="1" Background="{StaticResource DimBrush}" VerticalAlignment="Center" Opacity="0.2" />
-                    <TextBlock Grid.Column="1" Text="—" Foreground="{StaticResource DimBrush}" Margin="20,0" FontSize="13" />
-                    <Border Grid.Column="2" Height="1" Background="{StaticResource DimBrush}" VerticalAlignment="Center" Opacity="0.2" />
-                </Grid>
-
-                <Border Style="{StaticResource CardPanelWide}" Padding="24" MinHeight="160">
-                    <StackPanel Spacing="14">
-                        <StackPanel Orientation="Horizontal" Spacing="12" Height="28">
-                            <FontIcon Glyph="&#xE77B;" FontSize="22" Foreground="{StaticResource SubtleBrush}" />
-                            <TextBlock x:Name="OfflineTitle" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <Border Background="{StaticResource CardBrush}" CornerRadius="10" Padding="20" MinHeight="112">
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                        <Border Width="72" Height="72" CornerRadius="10" VerticalAlignment="Center" Margin="0,0,18,0"
+                                Background="#1A4CAF50">
+                            <Grid>
+                                <FontIcon x:Name="AvatarPlaceholder" Glyph="&#xE77B;" FontSize="32"
+                                          Foreground="{StaticResource AccentBrush}"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                <Image x:Name="AvatarImage" Stretch="Uniform"
+                                       ImageOpened="AvatarImage_Loaded" ImageFailed="AvatarImage_Failed" />
+                            </Grid>
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="6">
+                            <TextBlock x:Name="UsernameText" Text="" FontSize="20" FontWeight="Bold" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Border Background="{StaticResource AccentBrush}" CornerRadius="4" Padding="8,2" VerticalAlignment="Center">
+                                    <TextBlock x:Name="AccountBadge" Text="" FontSize="10" Foreground="White" FontWeight="SemiBold" />
+                                </Border>
+                                <TextBlock x:Name="UuidShortText" Text="" FontSize="11" Foreground="{StaticResource DimBrush}"
+                                           VerticalAlignment="Center" FontFamily="Cascadia Mono,Consolas,monospace" />
+                            </StackPanel>
                         </StackPanel>
-                        <TextBlock x:Name="OfflineDesc" Foreground="{StaticResource DimBrush}" FontSize="13"
-                                   TextWrapping="Wrap" MinHeight="18" />
-                        <Grid ColumnDefinitions="*,Auto" MinHeight="36">
-                            <TextBox x:Name="NicknameBox" MinHeight="36" />
-                            <Button x:Name="SaveBtn" Grid.Column="1" Style="{StaticResource SmallButton}"
-                                    Margin="8,0,0,0" MinHeight="36" Click="SaveOffline_Click" />
-                        </Grid>
-                    </StackPanel>
+                        <Button x:Name="SignOutBtn" Grid.Column="2" Click="SignOut_Click"
+                                Style="{StaticResource SmallButton}" VerticalAlignment="Center"
+                                Foreground="#FF6B6B" MinWidth="96" MinHeight="36" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+
+            <StackPanel x:Name="LoginPanel" Spacing="8">
+
+                <!-- Microsoft sign-in hero -->
+                <Border Background="{StaticResource CardBrush}" CornerRadius="10" Padding="28" MinHeight="160">
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                        <Border Width="56" Height="56" CornerRadius="10" VerticalAlignment="Center" Margin="0,0,18,0"
+                                Background="#1A4CAF50">
+                            <FontIcon Glyph="&#xE8AB;" FontSize="28" Foreground="{StaticResource AccentBrush}"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                            <TextBlock x:Name="MsTitle" FontSize="17" FontWeight="SemiBold" />
+                            <TextBlock x:Name="MsDesc" Foreground="{StaticResource DimBrush}" FontSize="12" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button Grid.Column="2" Style="{StaticResource AccentSmallButton}" MinHeight="40" MinWidth="130"
+                                VerticalAlignment="Center" Click="MsLogin_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE72E;" FontSize="13" Foreground="White" />
+                                <TextBlock x:Name="MsSignInText" FontSize="13" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <!-- Offline -->
+                <Border Background="{StaticResource CardBrush}" CornerRadius="10" Padding="24" MinHeight="110">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Border Width="40" Height="40" CornerRadius="8" VerticalAlignment="Center" Margin="0,0,16,0"
+                                Background="#14FFFFFF">
+                            <FontIcon Glyph="&#xE77B;" FontSize="18" Foreground="{StaticResource SubtleBrush}"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Center">
+                            <TextBlock x:Name="OfflineTitle" FontSize="15" FontWeight="SemiBold" />
+                            <TextBlock x:Name="OfflineDesc" Foreground="{StaticResource DimBrush}" FontSize="12" TextWrapping="Wrap" />
+                            <Grid ColumnDefinitions="*,Auto" MinHeight="34" Margin="0,4,0,0">
+                                <TextBox x:Name="NicknameBox" MinHeight="34" />
+                                <Button x:Name="SaveBtn" Grid.Column="1" Style="{StaticResource SmallButton}"
+                                        Margin="8,0,0,0" MinHeight="34" Click="SaveOffline_Click" />
+                            </Grid>
+                        </StackPanel>
+                    </Grid>
                 </Border>
             </StackPanel>
         </StackPanel>

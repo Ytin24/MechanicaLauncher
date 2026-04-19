@@ -68,6 +68,9 @@ public sealed partial class MainWindow : Window
 
         ContentFrame.CacheSize = 5;
 
+        App.RunningInstancesChanged += OnRunningChanged;
+        this.Closed += (_, _) => App.RunningInstancesChanged -= OnRunningChanged;
+
         _scanResult = TLauncherDetector.Scan();
         if (_scanResult.IsDetected)
         {
@@ -88,6 +91,43 @@ public sealed partial class MainWindow : Window
 
     public void HandlePendingConnect() => _ = HandlePendingConnectAsync();
     public Task HandlePendingEventPublicAsync() => HandlePendingEventAsync();
+
+    public void NavigateToTag(string tag)
+    {
+        var item = NavView.MenuItems.OfType<NavigationViewItem>()
+            .Concat(NavView.FooterMenuItems.OfType<NavigationViewItem>())
+            .FirstOrDefault(i => (i.Tag as string) == tag);
+        if (item != null) NavView.SelectedItem = item;
+    }
+
+    private void OnRunningChanged()
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            var count = App.RunningInstances.Count(kv => !kv.Value.HasExited);
+            RunningBadge.Value = count;
+            RunningBadge.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        });
+    }
+
+    // Drag-drop: any .mrpack dropped on the window becomes an import.
+    private void Root_DragOver(object sender, Microsoft.UI.Xaml.DragEventArgs e)
+    {
+        e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+        e.DragUIOverride.Caption = "Import modpack";
+        e.DragUIOverride.IsCaptionVisible = true;
+        e.DragUIOverride.IsGlyphVisible = true;
+    }
+
+    private async void Root_Drop(object sender, Microsoft.UI.Xaml.DragEventArgs e)
+    {
+        if (!e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems)) return;
+        var items = await e.DataView.GetStorageItemsAsync();
+        var mrpack = items.OfType<Windows.Storage.StorageFile>()
+                          .FirstOrDefault(f => f.FileType.Equals(".mrpack", StringComparison.OrdinalIgnoreCase));
+        if (mrpack != null)
+            await ImportMrpackAsync(mrpack.Path);
+    }
 
     public async Task ImportMrpackAsync(string mrpackPath)
     {

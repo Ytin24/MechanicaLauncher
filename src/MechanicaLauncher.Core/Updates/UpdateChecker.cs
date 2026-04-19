@@ -27,7 +27,11 @@ public static class UpdateChecker
     {
         var asm = Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
         var ver = asm.GetName().Version;
-        return ver != null ? $"{ver.Major}.{ver.Minor}.{ver.Build}" : "0.0.0";
+        if (ver == null) return "99999.0.0";
+        // Dev builds default to 0.0.0 via MSBuild; rewrite to an always-ahead-of-latest version so the
+        // update banner stops nagging during local development.
+        if (ver.Major == 0 && ver.Minor == 0 && ver.Build == 0) return "99999.0.0";
+        return $"{ver.Major}.{ver.Minor}.{ver.Build}";
     }
 
     public static async Task<UpdateInfo> CheckAsync()

@@ -12,7 +12,10 @@ public sealed class DiscordPresence : IDisposable
     private readonly McStateMachine _sm = new();
     private string _mcVersion = "";
     private string _loaderName = "";
+    private LoaderType _loader = LoaderType.None;
+    private string _instanceName = "";
     private int _modCount;
+    private DateTime? _sessionStart;
 
     public void Init()
     {
@@ -29,8 +32,11 @@ public sealed class DiscordPresence : IDisposable
     {
         if (inst == null) return;
         _mcVersion = inst.McVersion;
+        _loader = inst.Loader;
         _loaderName = inst.Loader != LoaderType.None ? inst.Loader.ToString() : "Vanilla";
+        _instanceName = inst.Name;
         _modCount = modCount;
+        _sessionStart = DateTime.UtcNow;
     }
 
     public void ProcessLogLine(string line)
@@ -54,6 +60,7 @@ public sealed class DiscordPresence : IDisposable
     public void OnGameExit()
     {
         _sm.Reset();
+        _sessionStart = null;
         UpdatePresence();
     }
 
@@ -63,10 +70,29 @@ public sealed class DiscordPresence : IDisposable
 
         try
         {
+            var loaderKey = _loader switch
+            {
+                LoaderType.Fabric   => "fabric",
+                LoaderType.Quilt    => "quilt",
+                LoaderType.Forge    => "forge",
+                LoaderType.NeoForge => "neoforge",
+                _                   => "vanilla",
+            };
+
             var presence = new RichPresence
             {
-                Assets = new Assets { LargeImageKey = "mechanica", LargeImageText = "Mechanica Launcher" }
+                Assets = new Assets
+                {
+                    LargeImageKey = "mechanica",
+                    LargeImageText = string.IsNullOrEmpty(_instanceName) ? "Mechanica Launcher" : _instanceName,
+                    SmallImageKey = loaderKey,
+                    SmallImageText = string.IsNullOrEmpty(_mcVersion) ? _loaderName : $"{_loaderName} · {_mcVersion}",
+                }
             };
+
+            // Elapsed playtime — set once on first state transition out of Launcher, kept across menu/world switches.
+            if (_sessionStart.HasValue)
+                presence.Timestamps = new Timestamps { Start = _sessionStart.Value };
 
             var settings = LauncherSettings.Load();
             var state = _sm.State;
@@ -77,16 +103,17 @@ public sealed class DiscordPresence : IDisposable
             {
                 case McStateType.Launcher:
                     presence.Details = "In launcher";
-                    presence.State = "Idle";
+                    presence.State = string.IsNullOrEmpty(_instanceName) ? "Idle" : $"Preparing {_instanceName}";
+                    presence.Timestamps = null;
                     break;
 
                 case McStateType.Menu:
-                    presence.Details = "In main menu";
+                    presence.Details = "Main menu";
                     presence.State = stateInfo;
                     break;
 
                 case McStateType.SinglePlayer:
-                    var spDetails = "Singleplayer";
+                    var spDetails = !string.IsNullOrEmpty(state.World) ? $"World: {state.World}" : "Singleplayer";
                     if (state.Gamemode != null) spDetails += $" · {state.Gamemode}";
                     if (state.Dimension != null && settings.DiscordShowDimension) spDetails += $" · {state.Dimension}";
                     presence.Details = spDetails;
@@ -97,9 +124,11 @@ public sealed class DiscordPresence : IDisposable
 
                 case McStateType.MultiPlayer:
                     presence.Details = settings.DiscordShowServer
-                        ? $"Playing on {state.Server}"
+                        ? $"On {state.Server}"
                         : "Multiplayer";
-                    presence.State = stateInfo;
+                    var mpState = stateInfo;
+                    if (state.Dimension != null && settings.DiscordShowDimension) mpState += $" · {state.Dimension}";
+                    presence.State = mpState;
                     presence.Buttons =
                     [
                         new Button

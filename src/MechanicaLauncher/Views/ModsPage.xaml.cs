@@ -24,10 +24,123 @@ public sealed partial class ModsPage : Page
     private string _modsDir = "";
     private string _lastQuery = "";
     private int _searchOffset;
+    private string _selectedType = "mod";
+
+    private static readonly (string Tag, string Label, string Glyph)[] ContentTypes =
+    {
+        ("mod", "Mods", "\uE8D2"),
+        ("modpack", "Modpacks", "\uF133"),
+        ("shader", "Shaders", "\uE706"),
+        ("resourcepack", "Resource Packs", "\uEB9F"),
+        ("datapack", "Datapacks", "\uE7B8"),
+    };
 
     public ModsPage()
     {
         this.InitializeComponent();
+        BuildTypeTabs();
+    }
+
+    private async Task ResolveModrinthInfoAsync(string jarPath, Grid iconGrid, TextBlock nameBlock, TextBlock subBlock)
+    {
+        string sha1;
+        try
+        {
+            using var stream = File.OpenRead(jarPath);
+            var hash = await System.Security.Cryptography.SHA1.HashDataAsync(stream);
+            sha1 = Convert.ToHexString(hash).ToLowerInvariant();
+        }
+        catch { return; }
+
+        ModrinthProjectInfo? proj;
+        try { proj = await _modrinth.LookupProjectByHashAsync(sha1); }
+        catch { return; }
+
+        if (proj == null) return;
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!string.IsNullOrEmpty(proj.Title)) nameBlock.Text = proj.Title;
+            // Preserve filesize, append Modrinth description snippet.
+            if (!string.IsNullOrEmpty(proj.Description))
+            {
+                var desc = proj.Description.Length > 80 ? proj.Description[..80] + "…" : proj.Description;
+                subBlock.Text = desc;
+            }
+            if (!string.IsNullOrEmpty(proj.IconUrl))
+            {
+                iconGrid.Children.Clear();
+                iconGrid.Children.Add(new Image
+                {
+                    Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(proj.IconUrl)),
+                    Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill,
+                });
+            }
+        });
+    }
+
+    private static Border BuildSkeletonCard()
+    {
+        var row = new StackPanel { Orientation = Orientation.Vertical, Spacing = 6 };
+        var titleBar = new Border
+        {
+            Width = 180, Height = 14, CornerRadius = new CornerRadius(4),
+            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)),
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        var subBar = new Border
+        {
+            Width = 300, Height = 10, CornerRadius = new CornerRadius(4),
+            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x0D, 0xFF, 0xFF, 0xFF)),
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        row.Children.Add(titleBar);
+        row.Children.Add(subBar);
+        return new Border
+        {
+            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x0D, 0xFF, 0xFF, 0xFF)),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(16), MinHeight = 72,
+            Child = row,
+        };
+    }
+
+    private void BuildTypeTabs()
+    {
+        TypeTabs.Children.Clear();
+        foreach (var (tag, label, glyph) in ContentTypes)
+        {
+            var active = tag == _selectedType;
+            var btn = new Button
+            {
+                MinHeight = 32,
+                Padding = new Thickness(12, 4, 12, 4),
+                CornerRadius = new CornerRadius(16),
+                BorderThickness = new Thickness(0),
+                Background = new SolidColorBrush(active
+                    ? Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xAF, 0x50)
+                    : Windows.UI.Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)),
+                Foreground = new SolidColorBrush(active ? Microsoft.UI.Colors.White : Windows.UI.Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
+                Tag = tag,
+            };
+            btn.Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 6,
+                Children =
+                {
+                    new FontIcon { Glyph = glyph, FontSize = 13, VerticalAlignment = VerticalAlignment.Center },
+                    new TextBlock { Text = label, FontSize = 12, VerticalAlignment = VerticalAlignment.Center }
+                }
+            };
+            btn.Click += async (s, _) =>
+            {
+                var t = (string)((Button)s!).Tag!;
+                if (t == _selectedType) return;
+                _selectedType = t;
+                BuildTypeTabs();
+                await DoSearch();
+            };
+            TypeTabs.Children.Add(btn);
+        }
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -65,6 +178,10 @@ public sealed partial class ModsPage : Page
         var mods = ModInstaller.GetInstalledMods(_modsDir);
         ModCountLabel.Text = mods.Count(m => m.Enabled).ToString();
 
+        // Kick off an empty search so the Modrinth side isn't an empty placeholder — shows top-ranked
+        // mods/modpacks/shaders for the currently selected type on page open.
+        _ = DoDefaultBrowseAsync();
+
         if (mods.Count == 0)
         {
             InstalledModsPanel.Children.Add(MakeText(App.L("mods.no_mods")));
@@ -86,25 +203,57 @@ public sealed partial class ModsPage : Page
             {
                 ColumnDefinitions =
                 {
+                    new ColumnDefinition { Width = GridLength.Auto },
                     new ColumnDefinition(),
                     new ColumnDefinition { Width = GridLength.Auto },
                     new ColumnDefinition { Width = GridLength.Auto }
                 }
             };
 
-            var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 1 };
-            info.Children.Add(new TextBlock
+            // Icon placeholder — resolved async via Modrinth hash lookup.
+            var iconBorder = new Border
             {
-                Text = mod.FileName, FontSize = 13,
+                Width = 36, Height = 36, CornerRadius = new CornerRadius(6),
+                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)),
+                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0),
+            };
+            var iconGrid = new Grid();
+            iconGrid.Children.Add(new FontIcon { Glyph = "\uE8A5", FontSize = 16, Foreground = Dim,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+            iconBorder.Child = iconGrid;
+            Grid.SetColumn(iconBorder, 0);
+
+            var nameBlock = new TextBlock
+            {
+                Text = mod.FileName, FontSize = 14,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 200
-            });
-            info.Children.Add(new TextBlock { Text = mod.SizeFormatted, FontSize = 11, Foreground = Dim });
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                HorizontalAlignment = HorizontalAlignment.Left,
+            };
+            var subBlock = new TextBlock
+            {
+                Text = mod.SizeFormatted, FontSize = 11, Foreground = Dim,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                HorizontalAlignment = HorizontalAlignment.Left,
+            };
+            var info = new StackPanel
+            {
+                Orientation = Orientation.Vertical,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Spacing = 2,
+            };
+            info.Children.Add(nameBlock);
+            info.Children.Add(subBlock);
+            Grid.SetColumn(info, 1);
+
+            _ = ResolveModrinthInfoAsync(mod.FilePath, iconGrid, nameBlock, subBlock);
 
             var toggle = new ToggleSwitch
             {
                 IsOn = mod.Enabled, VerticalAlignment = VerticalAlignment.Center,
-                MinWidth = 0, Tag = mod.FilePath
+                MinWidth = 0, Tag = mod.FilePath,
+                OnContent = "", OffContent = "",
             };
             toggle.Toggled += (s, _) =>
             {
@@ -114,7 +263,7 @@ public sealed partial class ModsPage : Page
                     LoadInstance();
                 }
             };
-            Grid.SetColumn(toggle, 1);
+            Grid.SetColumn(toggle, 2);
 
             var delBtn = new Button
             {
@@ -140,8 +289,9 @@ public sealed partial class ModsPage : Page
                     LoadInstance();
                 }
             };
-            Grid.SetColumn(delBtn, 2);
+            Grid.SetColumn(delBtn, 3);
 
+            grid.Children.Add(iconBorder);
             grid.Children.Add(info);
             grid.Children.Add(toggle);
             grid.Children.Add(delBtn);
@@ -159,10 +309,40 @@ public sealed partial class ModsPage : Page
         await DoSearch();
     }
 
+    private CancellationTokenSource? _searchDebounceCts;
+
+    private async void ModSearch_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    {
+        // Only fire on real user typing — programmatic text changes come through as SuggestionChosen.
+        if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput) return;
+
+        var query = sender.Text?.Trim() ?? "";
+        if (query == _lastQuery) return;
+
+        // 300 ms debounce so we don't hammer Modrinth while the user is still typing.
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts = new CancellationTokenSource();
+        var ct = _searchDebounceCts.Token;
+        try { await Task.Delay(300, ct); }
+        catch (TaskCanceledException) { return; }
+        if (ct.IsCancellationRequested) return;
+
+        _lastQuery = query;
+        await DoSearch();
+    }
+
     private async void Filter_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (!string.IsNullOrEmpty(_lastQuery))
-            await DoSearch();
+        // Always re-search on filter change — even with empty query, so the user sees top results
+        // for the chosen category/sort without having to type anything.
+        await DoSearch();
+    }
+
+    private async Task DoDefaultBrowseAsync()
+    {
+        if (_instance == null) return;
+        _lastQuery = "";
+        await DoSearch();
     }
 
     private async Task DoSearch(bool append = false)
@@ -180,12 +360,20 @@ public sealed partial class ModsPage : Page
             if (loadMoreBtn is Button) SearchResultsPanel.Children.Remove(loadMoreBtn);
         }
 
-        SearchResultsPanel.Children.Add(new ProgressRing { IsActive = true, Width = 24, Height = 24, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 20, 0, 0) });
+        if (!append)
+        {
+            for (int i = 0; i < 5; i++)
+                SearchResultsPanel.Children.Add(BuildSkeletonCard());
+        }
+        else
+        {
+            SearchResultsPanel.Children.Add(new ProgressRing { IsActive = true, Width = 22, Height = 22, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 12, 0, 0) });
+        }
         ResultsInfo.Text = "Searching...";
 
         try
         {
-            var type = (TypeFilter.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "mod";
+            var type = _selectedType;
             var loader = (type == "mod" || type == "modpack")
                 ? (_instance.Loader != LoaderType.None ? _instance.Loader.ToString().ToLowerInvariant() : null)
                 : null;
@@ -198,7 +386,9 @@ public sealed partial class ModsPage : Page
                 projectType: type, category: category,
                 sortBy: sort, offset: _searchOffset, limit: 50);
 
-            SearchResultsPanel.Children.RemoveAt(SearchResultsPanel.Children.Count - 1); // remove spinner
+            // Clear skeletons / spinner — the append path leaves existing cards.
+            if (!append) SearchResultsPanel.Children.Clear();
+            else SearchResultsPanel.Children.RemoveAt(SearchResultsPanel.Children.Count - 1);
             _searchOffset += result.Hits.Count;
             ResultsInfo.Text = App.L("mods.results", result.TotalHits);
 

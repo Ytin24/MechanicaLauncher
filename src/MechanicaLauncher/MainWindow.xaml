@@ -5,7 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Mechanica Launcher">
 
-    <Grid>
+    <Grid AllowDrop="True" DragOver="Root_DragOver" Drop="Root_Drop">
         <NavigationView
             x:Name="NavView"
             IsBackButtonVisible="Collapsed"
@@ -17,10 +17,14 @@
             IsPaneToggleButtonVisible="False">
 
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="Home" Tag="Home" IsSelected="True">
+                <NavigationViewItem x:Name="NavHome" Content="Home" Tag="Home" IsSelected="True">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE80F;" FontSize="16" />
                     </NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge x:Name="RunningBadge" Visibility="Collapsed"
+                                   Style="{ThemeResource AttentionValueInfoBadgeStyle}" />
+                    </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
                 <NavigationViewItem Content="Instances" Tag="Instances">
                     <NavigationViewItem.Icon>

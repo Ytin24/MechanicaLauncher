@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace MechanicaLauncher.Core.Discord;
 
-public record McState(McStateType Type, string? Server = null, int? Port = null, string? Gamemode = null, string? Dimension = null, string? Achievement = null);
+public record McState(McStateType Type, string? Server = null, int? Port = null, string? Gamemode = null, string? Dimension = null, string? Achievement = null, string? World = null, string? Player = null);
 
 public enum McStateType { Launcher, Menu, SinglePlayer, MultiPlayer }
 
@@ -15,8 +15,10 @@ public sealed partial class McStateMachine
     private string? _dimension;
     private string? _achievement;
     private bool _inWorld;
+    private string? _world;
+    private string? _player;
 
-    public McState State => new(_current, _server, _port, _gamemode, _dimension, _achievement);
+    public McState State => new(_current, _server, _port, _gamemode, _dimension, _achievement, _world, _player);
 
     public bool ProcessLine(string line)
     {
@@ -31,6 +33,13 @@ public sealed partial class McStateMachine
             _current = McStateType.MultiPlayer;
             _inWorld = true;
             return true;
+        }
+
+        // World name — vanilla prints `Preparing level "<worldname>"` right before start-region load.
+        var worldMatch = WorldRegex().Match(line);
+        if (worldMatch.Success)
+        {
+            _world = worldMatch.Groups[1].Value;
         }
 
         // Entered world (singleplayer)
@@ -59,8 +68,14 @@ public sealed partial class McStateMachine
             return true;
         }
 
-        // MC window loaded — menu (only if not already in world)
-        if (!_inWorld && (line.Contains("Setting user:") || line.Contains("Narrator library")))
+        // MC window loaded — menu (only if not already in world). Also extract the player nickname.
+        var userMatch = UserRegex().Match(line);
+        if (userMatch.Success)
+        {
+            _player = userMatch.Groups[1].Value;
+            if (!_inWorld) { _current = McStateType.Menu; return true; }
+        }
+        if (!_inWorld && line.Contains("Narrator library"))
         {
             _current = McStateType.Menu;
             return true;
@@ -110,6 +125,8 @@ public sealed partial class McStateMachine
         _gamemode = null;
         _dimension = null;
         _achievement = null;
+        _world = null;
+        _player = null;
         _inWorld = false;
     }
 
@@ -118,4 +135,10 @@ public sealed partial class McStateMachine
 
     [GeneratedRegex(@"has made the advancement \[(.+?)\]")]
     private static partial Regex AdvancementRegex();
+
+    [GeneratedRegex(@"Preparing level ""(.+?)""")]
+    private static partial Regex WorldRegex();
+
+    [GeneratedRegex(@"Setting user:\s*(\S+)")]
+    private static partial Regex UserRegex();
 }

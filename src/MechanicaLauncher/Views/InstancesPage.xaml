@@ -6,12 +6,23 @@
     Background="Transparent"
     NavigationCacheMode="Enabled">
 
-    <Grid Padding="{StaticResource PagePadding}" RowDefinitions="Auto,*">
-        <Grid ColumnDefinitions="*,Auto">
+    <Grid Padding="{StaticResource PagePadding}" RowDefinitions="Auto,Auto,Auto,*">
+        <Grid ColumnDefinitions="*,Auto,Auto">
             <TextBlock x:Name="PageTitle" Style="{StaticResource PageHeader}" />
-            <Button Grid.Column="1" Style="{StaticResource AccentSmallButton}"
+            <Button Grid.Column="1" Click="ImportMrpack_Click" MinHeight="36" MinWidth="140"
+                    VerticalAlignment="Top" Margin="0,0,8,0">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE8B5;" FontSize="14" />
+                    <TextBlock x:Name="ImportMrpackText" FontSize="13" Text="Import Modpack" />
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="2" Style="{StaticResource AccentSmallButton}"
                     Click="NewInstance_Click" MinHeight="36" MinWidth="140"
-                    VerticalAlignment="Top">
+                    VerticalAlignment="Top"
+                    ToolTipService.ToolTip="New instance (Ctrl+N)">
+                <Button.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="N" Modifiers="Control" />
+                </Button.KeyboardAccelerators>
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon Glyph="&#xE710;" FontSize="14" Foreground="White" />
                     <TextBlock x:Name="NewInstanceText" FontSize="13" />
@@ -19,7 +30,21 @@
             </Button>
         </Grid>
 
-        <ScrollViewer Grid.Row="1">
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,14,0,0">
+            <AutoSuggestBox x:Name="SearchBox" PlaceholderText="Search instances..."
+                            QueryIcon="Find" TextChanged="SearchBox_Changed" MinHeight="36" />
+            <ComboBox x:Name="SortBox" Grid.Column="1" Margin="8,0,0,0" MinHeight="36" MinWidth="140"
+                      SelectionChanged="Sort_Changed" SelectedIndex="0">
+                <ComboBoxItem Content="Recent" Tag="recent" />
+                <ComboBoxItem Content="Name" Tag="name" />
+                <ComboBoxItem Content="Loader" Tag="loader" />
+                <ComboBoxItem Content="MC version" Tag="mcver" />
+            </ComboBox>
+        </Grid>
+
+        <StackPanel x:Name="FilterChips" Grid.Row="2" Orientation="Horizontal" Spacing="6" Margin="0,10,0,6" />
+
+        <ScrollViewer Grid.Row="3">
             <StackPanel x:Name="InstancesList" Spacing="8" />
         </ScrollViewer>
     </Grid>
