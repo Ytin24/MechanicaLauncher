@@ -81,16 +81,39 @@ public sealed class VersionManager
         return new VersionMeta
         {
             Id = child.Id,
+            InheritsFrom = child.InheritsFrom,
             MainClass = !string.IsNullOrEmpty(child.MainClass) ? child.MainClass : parent.MainClass,
             Type = !string.IsNullOrEmpty(child.Type) ? child.Type : parent.Type,
             Assets = !string.IsNullOrEmpty(child.Assets) ? child.Assets : parent.Assets,
             AssetIndex = child.AssetIndex ?? parent.AssetIndex,
             Downloads = child.Downloads.Count > 0 ? child.Downloads : parent.Downloads,
-            Libraries = [.. child.Libraries, .. parent.Libraries],
+            Libraries = DedupeLibraries(child.Libraries, parent.Libraries),
             Arguments = MergeArguments(parent.Arguments, child.Arguments),
             MinecraftArguments = child.MinecraftArguments ?? parent.MinecraftArguments,
             JavaVersion = child.JavaVersion ?? parent.JavaVersion,
         };
+    }
+
+    // Child (loader) libraries take precedence over parent (vanilla) on group:artifact clash;
+    // otherwise classpath ends up with two versions of asm/guava/etc and class-version mismatches surface at runtime.
+    private static List<Library> DedupeLibraries(List<Library> child, List<Library> parent)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<Library>(child.Count + parent.Count);
+        foreach (var lib in child.Concat(parent))
+        {
+            var key = LibraryKey(lib.Name);
+            if (seen.Add(key)) result.Add(lib);
+        }
+        return result;
+    }
+
+    private static string LibraryKey(string name)
+    {
+        var parts = name.Split(':');
+        if (parts.Length < 2) return name;
+        // group:artifact[:classifier] — version excluded so different versions collide.
+        return parts.Length >= 4 ? $"{parts[0]}:{parts[1]}:{parts[3]}" : $"{parts[0]}:{parts[1]}";
     }
 
     private static GameArguments? MergeArguments(GameArguments? parent, GameArguments? child)

@@ -7,82 +7,76 @@ namespace MechanicaLauncher.Core.Auth;
 public sealed class MicrosoftAuth
 {
     private static readonly HttpClient Http = new();
+
+    // Legacy Mojang Launcher client_id — whitelisted by Minecraft Services.
+    // A custom Azure app registration would be rejected by api.minecraftservices.com with 403 "Invalid app registration".
     private const string ClientId = "00000000441cc96b";
-    private const string AuthBase = "https://login.live.com";
+    private const string AuthorizeEndpoint = "https://login.live.com/oauth20_authorize.srf";
+    private const string TokenEndpoint = "https://login.live.com/oauth20_token.srf";
+    public const string RedirectUri = "https://login.live.com/oauth20_desktop.srf";
     private const string Scope = "service::user.auth.xboxlive.com::MBI_SSL";
 
-    public sealed class DeviceCodeInfo
+    public static string BuildAuthorizeUrl()
     {
-        public string UserCode { get; set; } = "";
-        public string VerificationUri { get; set; } = "";
-        public string DeviceCode { get; set; } = "";
-        public int Interval { get; set; } = 5;
+        return $"{AuthorizeEndpoint}?client_id={ClientId}" +
+               $"&response_type=code" +
+               $"&redirect_uri={Uri.EscapeDataString(RedirectUri)}" +
+               $"&scope={Uri.EscapeDataString(Scope)}" +
+               "&prompt=select_account";
     }
 
-    public async Task<DeviceCodeInfo> RequestDeviceCodeAsync()
+    public async Task<AuthResult> CompleteWithCodeAsync(string code, CancellationToken ct = default)
     {
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["client_id"] = ClientId,
+            ["code"] = code,
+            ["grant_type"] = "authorization_code",
+            ["redirect_uri"] = RedirectUri,
             ["scope"] = Scope,
-            ["response_type"] = "device_code"
         });
 
-        var resp = await Http.PostAsync($"{AuthBase}/oauth20_connect.srf", content);
-        var json = await resp.Content.ReadAsStringAsync();
+        var resp = await Http.PostAsync(TokenEndpoint, form, ct);
+        var json = await resp.Content.ReadAsStringAsync(ct);
         if (!resp.IsSuccessStatusCode)
-            throw new Exception($"Device code request failed: {json[..Math.Min(300, json.Length)]}");
+            throw new Exception($"Token exchange failed: {json[..Math.Min(300, json.Length)]}");
 
         var data = JsonSerializer.Deserialize<JsonElement>(json);
-        return new DeviceCodeInfo
-        {
-            UserCode = GetStr(data, "user_code"),
-            VerificationUri = data.TryGetProperty("verification_uri", out var vu)
-                ? vu.GetString() ?? "https://microsoft.com/devicelogin"
-                : "https://microsoft.com/devicelogin",
-            DeviceCode = GetStr(data, "device_code"),
-            Interval = data.TryGetProperty("interval", out var i) ? i.GetInt32() : 5
-        };
+        var msaToken = GetStr(data, "access_token");
+        var refreshToken = data.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
+
+        var result = await ExchangeForMinecraftAsync(msaToken);
+        result.RefreshToken = refreshToken;
+        return result;
     }
 
-    public async Task<AuthResult> PollForTokenAsync(DeviceCodeInfo deviceCode, CancellationToken ct = default)
+    public async Task<AuthResult> RefreshAsync(string refreshToken, CancellationToken ct = default)
     {
-        while (!ct.IsCancellationRequested)
+        var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            await Task.Delay(deviceCode.Interval * 1000, ct);
+            ["client_id"] = ClientId,
+            ["refresh_token"] = refreshToken,
+            ["grant_type"] = "refresh_token",
+            ["redirect_uri"] = RedirectUri,
+            ["scope"] = Scope,
+        });
+        var resp = await Http.PostAsync(TokenEndpoint, form, ct);
+        var json = await resp.Content.ReadAsStringAsync(ct);
+        if (!resp.IsSuccessStatusCode)
+            throw new Exception($"Refresh failed: {json[..Math.Min(300, json.Length)]}");
 
-            var content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["client_id"] = ClientId,
-                ["device_code"] = deviceCode.DeviceCode,
-                ["grant_type"] = "urn:ietf:params:oauth:grant-type:device_code"
-            });
+        var data = JsonSerializer.Deserialize<JsonElement>(json);
+        var msaToken = GetStr(data, "access_token");
+        var newRefresh = data.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : refreshToken;
 
-            var resp = await Http.PostAsync($"{AuthBase}/oauth20_token.srf", content, ct);
-            var json = await resp.Content.ReadAsStringAsync(ct);
-            var data = JsonSerializer.Deserialize<JsonElement>(json);
-
-            if (data.TryGetProperty("error", out var error))
-            {
-                var err = error.GetString();
-                if (err == "authorization_pending") continue;
-                if (err == "slow_down") { await Task.Delay(5000, ct); continue; }
-                if (err == "expired_token") throw new Exception("Code expired — try again.");
-                throw new Exception($"Auth error: {err}");
-            }
-
-            if (!data.TryGetProperty("access_token", out var tokenProp))
-                throw new Exception("No access_token in Microsoft response");
-
-            return await ExchangeForMinecraftAsync(tokenProp.GetString()!);
-        }
-
-        throw new OperationCanceledException();
+        var result = await ExchangeForMinecraftAsync(msaToken);
+        result.RefreshToken = newRefresh;
+        return result;
     }
 
     private async Task<AuthResult> ExchangeForMinecraftAsync(string msaToken)
     {
-        // 1. Xbox Live User Token
+        // MBI_SSL scope => RpsTicket uses "t={token}".
         var xblBody = new
         {
             Properties = new
@@ -99,7 +93,6 @@ public sealed class MicrosoftAuth
         var uhs = xbl.GetProperty("DisplayClaims").GetProperty("xui")[0].GetProperty("uhs").GetString()
                   ?? throw new Exception("Missing user hash from Xbox Live");
 
-        // 2. XSTS Token
         var xstsBody = new
         {
             Properties = new
@@ -126,12 +119,10 @@ public sealed class MicrosoftAuth
 
         var xstsToken = GetStr(xsts, "Token");
 
-        // 3. Minecraft Services Login
         var mcBody = new { identityToken = $"XBL3.0 x={uhs};{xstsToken}" };
         var mc = await PostJsonAsync("https://api.minecraftservices.com/authentication/login_with_xbox", mcBody);
         var mcToken = GetStr(mc, "access_token");
 
-        // 4. Minecraft Profile
         using var req = new HttpRequestMessage(HttpMethod.Get, "https://api.minecraftservices.com/minecraft/profile");
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", mcToken);
         var profileResp = await Http.SendAsync(req);
@@ -148,6 +139,18 @@ public sealed class MicrosoftAuth
             AccessToken = mcToken,
             UserType = "msa"
         };
+    }
+
+    public static async Task<bool> ValidateTokenAsync(string accessToken)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, "https://api.minecraftservices.com/minecraft/profile");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            var resp = await Http.SendAsync(req);
+            return resp.IsSuccessStatusCode;
+        }
+        catch { return false; }
     }
 
     private static async Task<JsonElement> PostJsonAsync(string url, object payload)

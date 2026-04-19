@@ -40,7 +40,10 @@ public static class ProtocolHandler
                 var portStr = query["port"];
                 var version = query["version"];
                 if (string.IsNullOrEmpty(server) || string.IsNullOrEmpty(version)) continue;
-                return new ConnectRequest(server, int.TryParse(portStr, out var p) ? p : 25565, version);
+                if (server.Length > 253 || version.Length > 32) continue;
+                var port = int.TryParse(portStr, out var p) ? p : 25565;
+                if (port < 1 || port > 65535) port = 25565;
+                return new ConnectRequest(server, port, version);
             }
             catch { }
         }
@@ -58,7 +61,10 @@ public static class ProtocolHandler
                 if (uri.Host != "event") continue;
                 var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
                 var url = query["url"];
-                if (!string.IsNullOrEmpty(url)) return new EventRequest(url);
+                if (string.IsNullOrEmpty(url) || url.Length > 2048) continue;
+                if (!Uri.TryCreate(url, UriKind.Absolute, out var eventUri) ||
+                    (eventUri.Scheme != "https" && eventUri.Scheme != "http")) continue;
+                return new EventRequest(url);
             }
             catch { }
         }

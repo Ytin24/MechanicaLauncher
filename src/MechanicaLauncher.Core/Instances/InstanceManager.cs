@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -7,6 +8,10 @@ public sealed partial class InstanceManager
 {
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
     private readonly string _baseDir;
+
+    // Fires whenever any InstanceManager creates, saves, or deletes an instance — lets UI pages react live.
+    public static event Action? InstancesChanged;
+    private static void Raise() => InstancesChanged?.Invoke();
 
     public InstanceManager(string? baseDir = null)
     {
@@ -24,7 +29,7 @@ public sealed partial class InstanceManager
     public string GetInstanceDir(string instanceId) => Path.Combine(InstancesDir, instanceId);
     public string GetGameDir(string instanceId) => Path.Combine(InstancesDir, instanceId, ".minecraft");
 
-    public GameInstance CreateInstance(string name, string mcVersion, LoaderType loader = LoaderType.None, string? loaderVersion = null)
+    public GameInstance CreateInstance(string name, string mcVersion, LoaderType loader = LoaderType.None, string? loaderVersion = null, bool raiseChangedEvent = true)
     {
         var id = Slugify(name);
         if (Directory.Exists(GetInstanceDir(id)))
@@ -46,7 +51,8 @@ public sealed partial class InstanceManager
         Directory.CreateDirectory(Path.Combine(gameDir, "config"));
         Directory.CreateDirectory(Path.Combine(gameDir, "saves"));
 
-        SaveInstance(instance);
+        SaveInstance(instance, raiseChangedEvent);
+        if (raiseChangedEvent) Raise();
         return instance;
     }
 
@@ -55,6 +61,7 @@ public sealed partial class InstanceManager
         var dir = GetInstanceDir(instanceId);
         if (Directory.Exists(dir))
             Directory.Delete(dir, true);
+        Raise();
     }
 
     public GameInstance? GetInstance(string instanceId)
@@ -80,19 +87,25 @@ public sealed partial class InstanceManager
                 var inst = JsonSerializer.Deserialize<GameInstance>(json);
                 if (inst != null) result.Add(inst);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Corrupted instance.json in {dir}: {ex.Message}");
+            }
         }
 
         return result.OrderByDescending(i => i.LastPlayed ?? i.CreatedAt).ToList();
     }
 
-    public void SaveInstance(GameInstance instance)
+    public void SaveInstance(GameInstance instance, bool raiseChangedEvent = true)
     {
         var dir = GetInstanceDir(instance.Id);
         Directory.CreateDirectory(dir);
         var json = JsonSerializer.Serialize(instance, JsonOpts);
         File.WriteAllText(Path.Combine(dir, "instance.json"), json);
+        if (raiseChangedEvent) Raise();
     }
+
+    public void NotifyChanged() => Raise();
 
     private static string Slugify(string name)
     {

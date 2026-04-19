@@ -5,6 +5,8 @@ namespace MechanicaLauncher.Core.Profiles;
 
 public sealed class LauncherSettings
 {
+    private static readonly object _lock = new();
+
     [JsonPropertyName("username")]
     public string Username { get; set; } = "Player";
 
@@ -16,6 +18,9 @@ public sealed class LauncherSettings
 
     [JsonPropertyName("accessToken")]
     public string AccessToken { get; set; } = "0";
+
+    [JsonPropertyName("msRefreshToken")]
+    public string MsRefreshToken { get; set; } = "";
 
     [JsonPropertyName("selectedInstanceId")]
     public string? SelectedInstanceId { get; set; }
@@ -56,23 +61,29 @@ public sealed class LauncherSettings
 
     public static LauncherSettings Load()
     {
-        try
+        lock (_lock)
         {
-            if (File.Exists(SettingsPath))
+            try
             {
-                var json = File.ReadAllText(SettingsPath);
-                return JsonSerializer.Deserialize<LauncherSettings>(json) ?? new();
+                if (File.Exists(SettingsPath))
+                {
+                    var json = File.ReadAllText(SettingsPath);
+                    return JsonSerializer.Deserialize<LauncherSettings>(json) ?? new();
+                }
             }
+            catch { }
+            return new();
         }
-        catch { }
-        return new();
     }
 
     public void Save()
     {
-        var dir = Path.GetDirectoryName(SettingsPath)!;
-        Directory.CreateDirectory(dir);
-        var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(SettingsPath, json);
+        lock (_lock)
+        {
+            var dir = Path.GetDirectoryName(SettingsPath)!;
+            Directory.CreateDirectory(dir);
+            var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(SettingsPath, json);
+        }
     }
 }

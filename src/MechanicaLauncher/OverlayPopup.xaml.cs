@@ -42,7 +42,9 @@ public sealed partial class OverlayPopup : Window
 
         var popup = new OverlayPopup();
         popup._request = request;
-        popup.TitleText.Text = $"Подключиться к {request.Server}?";
+        popup.YesBtn.Content = App.L("overlay.yes");
+        popup.NoBtn.Content = App.L("overlay.no");
+        popup.TitleText.Text = App.L("overlay.connect_to", request.Server);
         popup.DescText.Text = $"MC {request.Version} · Port {request.Port}";
         popup.Activate();
         _current = popup;

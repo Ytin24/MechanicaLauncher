@@ -2,14 +2,21 @@ using System.Security.Cryptography;
 
 namespace MechanicaLauncher.Core.Config;
 
+public sealed class SyncResult
+{
+    public List<string> FailedMods { get; } = [];
+    public bool HasFailures => FailedMods.Count > 0;
+}
+
 public sealed class ModSyncer
 {
     private static readonly HttpClient Http = new();
 
     public event Action<string, double>? ProgressChanged;
 
-    public async Task SyncAsync(EventConfig config, string modsDir)
+    public async Task<SyncResult> SyncAsync(EventConfig config, string modsDir)
     {
+        var result = new SyncResult();
         Directory.CreateDirectory(modsDir);
 
         if (config.Mods?.Forbidden != null)
@@ -68,6 +75,7 @@ public sealed class ModSyncer
                     }
                     catch (Exception ex)
                     {
+                        result.FailedMods.Add(mod.Name);
                         ProgressChanged?.Invoke($"Failed: {mod.Name} — {ex.Message}", progress);
                     }
                 }
@@ -75,6 +83,7 @@ public sealed class ModSyncer
         }
 
         ProgressChanged?.Invoke("Mods synced!", 100);
+        return result;
     }
 
     private static async Task<string> ComputeSha256Async(string path)

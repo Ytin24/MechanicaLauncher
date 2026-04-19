@@ -7,7 +7,7 @@
     NavigationCacheMode="Enabled">
 
     <ScrollViewer Padding="{StaticResource PagePadding}">
-        <StackPanel Spacing="20" Width="500" HorizontalAlignment="Center">
+        <StackPanel Spacing="20" MaxWidth="500" HorizontalAlignment="Stretch" Margin="20,0">
             <TextBlock x:Name="PageTitle" Style="{StaticResource PageHeader}" HorizontalAlignment="Center" />
 
             <Border x:Name="LoggedInPanel" Style="{StaticResource CardPanelWide}" Padding="32" Visibility="Collapsed" MinHeight="200">

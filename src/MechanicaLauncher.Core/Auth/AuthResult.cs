@@ -6,6 +6,7 @@ public sealed class AuthResult
     public string Uuid { get; set; } = "0";
     public string AccessToken { get; set; } = "0";
     public string UserType { get; set; } = "legacy";
+    public string? RefreshToken { get; set; }
     public bool IsOnline => UserType == "msa";
 
     public static AuthResult Offline(string username) => new()

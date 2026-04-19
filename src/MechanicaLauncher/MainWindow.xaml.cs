@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.UI;
 using Microsoft.UI.Composition;
 using Microsoft.UI.Composition.SystemBackdrops;
@@ -164,7 +165,9 @@ public sealed partial class MainWindow : Window
                 {
                     var modsDir = Path.Combine(im.GetGameDir(existing.Id), "mods");
                     var syncer = new Core.Config.ModSyncer();
-                    await syncer.SyncAsync(config, modsDir);
+                    var syncResult = await syncer.SyncAsync(config, modsDir);
+                    if (syncResult.HasFailures)
+                        Debug.WriteLine($"Mod sync failures: {string.Join(", ", syncResult.FailedMods)}");
                 }
             }
 

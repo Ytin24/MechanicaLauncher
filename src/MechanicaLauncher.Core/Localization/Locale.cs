@@ -22,14 +22,29 @@ public static class Locale
     public static string Get(string key) =>
         _strings.TryGetValue(key, out var val) ? val : key;
 
+    // Host (UI layer) may supply a system language hint — WinUI 3 apps have a broken CurrentUICulture,
+    // and only the host can query Windows.System.UserProfile.GlobalizationPreferences.
+    public static Func<IEnumerable<string>>? SystemLanguagesProvider { get; set; }
+
     private static string DetectLanguage()
     {
-        var culture = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName;
-        return culture switch
+        var candidates = new List<string>();
+        try
         {
-            "ru" or "uk" or "be" => "ru",
-            _ => "en"
-        };
+            if (SystemLanguagesProvider != null)
+                foreach (var l in SystemLanguagesProvider()) candidates.Add(l);
+        }
+        catch { }
+        candidates.Add(CultureInfo.InstalledUICulture.TwoLetterISOLanguageName);
+        candidates.Add(CultureInfo.CurrentUICulture.TwoLetterISOLanguageName);
+
+        foreach (var raw in candidates)
+        {
+            if (string.IsNullOrEmpty(raw)) continue;
+            var two = raw.Length >= 2 ? raw[..2].ToLowerInvariant() : raw.ToLowerInvariant();
+            if (two is "ru" or "uk" or "be") return "ru";
+        }
+        return "en";
     }
 
     private static Dictionary<string, string> En() => new()
@@ -52,6 +67,7 @@ public static class Locale
         ["home.instances"] = "INSTANCES",
         ["home.game_output"] = "Game Output",
         ["home.game_closed"] = "Game closed.",
+        ["home.loading"] = "Loading...",
         ["home.crashed"] = "Crashed (exit {0})",
 
         // Instances
@@ -83,6 +99,7 @@ public static class Locale
         ["mods.load_more"] = "Load More ({0} remaining)",
         ["mods.results"] = "{0} results",
         ["mods.downloads"] = "downloads",
+        ["mods.delete_confirm"] = "Remove this mod?",
 
         // Account
         ["acc.title"] = "Account",
@@ -96,6 +113,7 @@ public static class Locale
         ["acc.signout"] = "Sign Out",
         ["acc.auth_failed"] = "Authorization Failed",
         ["acc.ok"] = "OK",
+        ["acc.session_expired"] = "Session expired. Please sign in again on the Account page.",
 
         // Settings
         ["set.title"] = "Settings",
@@ -132,6 +150,14 @@ public static class Locale
         // General
         ["gen.error"] = "Error",
         ["gen.delete"] = "Delete",
+        ["inst.running_cannot_delete"] = "This instance is currently running. Stop it before deleting.",
+        ["gen.no_internet"] = "No internet connection.",
+        ["gen.file_error"] = "Could not access files.",
+        ["gen.corrupted_data"] = "Data is corrupted.",
+        ["gen.unknown_error"] = "Something went wrong. Try again.",
+        ["overlay.yes"] = "Yes",
+        ["overlay.no"] = "No",
+        ["overlay.connect_to"] = "Connect to {0}?",
     };
 
     private static Dictionary<string, string> Ru() => new()
@@ -154,6 +180,7 @@ public static class Locale
         ["home.instances"] = "ИНСТАНСЫ",
         ["home.game_output"] = "Вывод игры",
         ["home.game_closed"] = "Игра закрыта.",
+        ["home.loading"] = "Загрузка...",
         ["home.crashed"] = "Крашнулась (код {0})",
 
         // Instances
@@ -185,6 +212,7 @@ public static class Locale
         ["mods.load_more"] = "Загрузить ещё ({0} осталось)",
         ["mods.results"] = "{0} результатов",
         ["mods.downloads"] = "скачиваний",
+        ["mods.delete_confirm"] = "Удалить этот мод?",
 
         // Account
         ["acc.title"] = "Аккаунт",
@@ -198,6 +226,7 @@ public static class Locale
         ["acc.signout"] = "Выйти",
         ["acc.auth_failed"] = "Ошибка авторизации",
         ["acc.ok"] = "ОК",
+        ["acc.session_expired"] = "Сессия истекла. Войди заново на вкладке Аккаунт.",
 
         // Settings
         ["set.title"] = "Настройки",
@@ -234,5 +263,13 @@ public static class Locale
         // General
         ["gen.error"] = "Ошибка",
         ["gen.delete"] = "Удалить",
+        ["inst.running_cannot_delete"] = "Этот инстанс сейчас запущен. Останови его перед удалением.",
+        ["gen.no_internet"] = "Нет подключения к интернету.",
+        ["gen.file_error"] = "Не удалось получить доступ к файлам.",
+        ["gen.corrupted_data"] = "Данные повреждены.",
+        ["gen.unknown_error"] = "Что-то пошло не так. Попробуй ещё раз.",
+        ["overlay.yes"] = "Да",
+        ["overlay.no"] = "Нет",
+        ["overlay.connect_to"] = "Подключиться к {0}?",
     };
 }

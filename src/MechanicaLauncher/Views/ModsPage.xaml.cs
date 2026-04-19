@@ -118,15 +118,24 @@ public sealed partial class ModsPage : Page
 
             var delBtn = new Button
             {
-                Content = new FontIcon { Glyph = "\uE74D", FontSize = 11 },
-                Padding = new Thickness(5), MinWidth = 28, MinHeight = 28,
+                Content = new FontIcon { Glyph = "\uE74D", FontSize = 13 },
+                Padding = new Thickness(6), MinWidth = 36, MinHeight = 36,
                 CornerRadius = new CornerRadius(6), VerticalAlignment = VerticalAlignment.Center,
                 Tag = mod.FilePath
             };
-            delBtn.Click += (s, _) =>
+            delBtn.Click += async (s, _) =>
             {
                 if (s is Button b && b.Tag is string path)
                 {
+                    var dialog = new ContentDialog
+                    {
+                        Title = App.L("gen.delete"),
+                        Content = App.L("mods.delete_confirm"),
+                        PrimaryButtonText = App.L("gen.delete"),
+                        CloseButtonText = App.L("inst.cancel"),
+                        XamlRoot = this.XamlRoot
+                    };
+                    if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
                     ModInstaller.RemoveMod(path);
                     LoadInstance();
                 }

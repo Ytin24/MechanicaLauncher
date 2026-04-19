@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.UI.Windowing;
 using MechanicaLauncher.Core.Discord;
@@ -17,6 +18,8 @@ public partial class App : Application
     public static Window MainWindow { get; private set; } = null!;
     public static LauncherSettings Settings { get; } = LauncherSettings.Load();
     public static ConcurrentDictionary<string, Process> RunningInstances { get; } = new();
+    public static event Action? RunningInstancesChanged;
+    public static void NotifyRunningChanged() => RunningInstancesChanged?.Invoke();
     public static DiscordPresence Discord { get; } = new();
     public static Core.Updates.UpdateInfo? LatestUpdate { get; set; }
     public static ConnectRequest? PendingConnect { get; set; }
@@ -33,6 +36,7 @@ public partial class App : Application
     public App()
     {
         this.InitializeComponent();
+        Locale.SystemLanguagesProvider = () => Windows.System.UserProfile.GlobalizationPreferences.Languages;
         Locale.Init(Settings.Language);
     }
 
@@ -88,14 +92,36 @@ public partial class App : Application
 
     public static void ShowWindow()
     {
+        // May be called from the game-exit watcher thread; AppWindow operations require UI thread.
+        var dq = MainWindow?.DispatcherQueue;
+        if (dq == null || dq.HasThreadAccess) { DoShow(); return; }
+        dq.TryEnqueue(DoShow);
+    }
+
+    private static void DoShow()
+    {
         try
         {
+            var hwnd = WindowNative.GetWindowHandle(MainWindow);
             var appWindow = GetAppWindow();
             appWindow?.Show();
+            NativeShowWindow(hwnd, SW_RESTORE);
+            SetForegroundWindow(hwnd);
+            (MainWindow as MainWindow)?.Activate();
             IsHidden = false;
         }
         catch { }
     }
+
+    private const int SW_RESTORE = 9;
+
+    [DllImport("user32.dll", EntryPoint = "ShowWindow")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool NativeShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
 
     public static bool HasRunningInstances() =>
         RunningInstances.Any(kv => !kv.Value.HasExited);
@@ -178,7 +204,7 @@ public partial class App : Application
     private static async Task CheckUpdatesAsync()
     {
         try { LatestUpdate = await Core.Updates.UpdateChecker.CheckAsync(); }
-        catch { }
+        catch (Exception ex) { Debug.WriteLine($"Update check failed: {ex.Message}"); }
     }
 
     private static async Task PollPendingAsync()
@@ -189,9 +215,14 @@ public partial class App : Application
             await Task.Delay(1000);
             try
             {
-                if (!File.Exists(pendingFile)) continue;
-                var content = await File.ReadAllTextAsync(pendingFile);
-                File.Delete(pendingFile);
+                string content;
+                try
+                {
+                    content = await File.ReadAllTextAsync(pendingFile);
+                    File.Delete(pendingFile);
+                }
+                catch (FileNotFoundException) { continue; }
+                catch (DirectoryNotFoundException) { continue; }
 
                 if (content.Trim() == "SHOW")
                 {
@@ -203,7 +234,7 @@ public partial class App : Application
                 {
                     var url = content["EVENT|".Length..].Trim();
                     ShowWindow();
-                    MainWindow.DispatcherQueue.TryEnqueue(async () =>
+                    MainWindow?.DispatcherQueue?.TryEnqueue(async () =>
                     {
                         await LoadEventAsync(url);
                         if (MainWindow is MainWindow mw)
@@ -225,7 +256,7 @@ public partial class App : Application
 
                     if (HasRunningInstances())
                     {
-                        MainWindow.DispatcherQueue.TryEnqueue(() =>
+                        MainWindow?.DispatcherQueue?.TryEnqueue(() =>
                             OverlayPopup.Show(request));
                     }
                     else
@@ -233,11 +264,14 @@ public partial class App : Application
                         PendingConnect = request;
                         ShowWindow();
                         if (MainWindow is MainWindow mw)
-                            mw.DispatcherQueue.TryEnqueue(() => mw.HandlePendingConnect());
+                            mw.DispatcherQueue?.TryEnqueue(() => mw.HandlePendingConnect());
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"PollPendingAsync error: {ex.Message}");
+            }
         }
     }
 }

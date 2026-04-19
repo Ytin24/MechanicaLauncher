@@ -51,29 +51,24 @@ public sealed class ForgeInstaller
         var versionDir = Path.Combine(_instanceGameDir, "versions", versionId);
         Directory.CreateDirectory(versionDir);
 
+        JsonElement? versionProfile = null;
         using (var zip = ZipFile.OpenRead(tmpPath))
         {
-            var versionJson = zip.GetEntry("version.json");
-            if (versionJson != null)
-            {
-                using var stream = versionJson.Open();
-                using var reader = new StreamReader(stream);
-                var json = await reader.ReadToEndAsync();
-                await File.WriteAllTextAsync(Path.Combine(versionDir, $"{versionId}.json"), json);
-            }
+            var versionJson = zip.GetEntry("version.json")
+                ?? throw new InvalidDataException("version.json not found in Forge installer");
 
-            var installProfile = zip.GetEntry("install_profile.json");
-            if (installProfile != null)
-            {
-                using var stream = installProfile.Open();
-                var profile = await JsonSerializer.DeserializeAsync<JsonElement>(stream);
-
-                if (profile.TryGetProperty("libraries", out var libs))
-                    await DownloadLibrariesAsync(libs);
-            }
+            using var stream = versionJson.Open();
+            using var reader = new StreamReader(stream);
+            var json = await reader.ReadToEndAsync();
+            await File.WriteAllTextAsync(Path.Combine(versionDir, $"{versionId}.json"), json);
+            versionProfile = JsonSerializer.Deserialize<JsonElement>(json);
         }
 
         try { File.Delete(tmpPath); } catch { }
+
+        if (versionProfile is { } vp && vp.TryGetProperty("libraries", out var libs))
+            await DownloadLibrariesAsync(libs);
+
         ProgressChanged?.Invoke("Forge installed!", 100);
     }
 

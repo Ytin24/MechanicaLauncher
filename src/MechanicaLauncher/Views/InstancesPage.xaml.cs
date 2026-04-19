@@ -23,8 +23,18 @@ public sealed partial class InstancesPage : Page
         base.OnNavigatedTo(e);
         PageTitle.Text = App.L("inst.title");
         NewInstanceText.Text = App.L("inst.new");
+        InstanceManager.InstancesChanged += OnInstancesChanged;
         LoadInstances();
     }
+
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        base.OnNavigatedFrom(e);
+        InstanceManager.InstancesChanged -= OnInstancesChanged;
+    }
+
+    private void OnInstancesChanged() =>
+        DispatcherQueue.TryEnqueue(LoadInstances);
 
     private void LoadInstances()
     {
@@ -204,6 +214,18 @@ public sealed partial class InstancesPage : Page
     {
         if (sender is Button btn && btn.Tag is string id)
         {
+            if (App.RunningInstances.TryGetValue(id, out var proc) && !proc.HasExited)
+            {
+                await new ContentDialog
+                {
+                    Title = App.L("gen.error"),
+                    Content = App.L("inst.running_cannot_delete"),
+                    CloseButtonText = "OK",
+                    XamlRoot = this.XamlRoot
+                }.ShowAsync();
+                return;
+            }
+
             var dialog = new ContentDialog
             {
                 Title = App.L("inst.delete"),
@@ -218,12 +240,12 @@ public sealed partial class InstancesPage : Page
                 {
                     _im.DeleteInstance(id);
                 }
-                catch (Exception ex)
+                catch
                 {
                     await new ContentDialog
                     {
                         Title = App.L("gen.error"),
-                        Content = $"Could not delete: {ex.Message}",
+                        Content = App.L("gen.file_error"),
                         CloseButtonText = "OK",
                         XamlRoot = this.XamlRoot
                     }.ShowAsync();
@@ -300,7 +322,7 @@ public sealed partial class InstancesPage : Page
 
     private async void NewInstance_Click(object sender, RoutedEventArgs e)
     {
-        var nameBox = new TextBox { PlaceholderText = "Instance name", MinHeight = 36 };
+        var nameBox = new TextBox { PlaceholderText = App.L("inst.name"), MinHeight = 36 };
         var versionBox = new ComboBox { PlaceholderText = "Loading...", MinWidth = 280, MinHeight = 36, IsEnabled = false };
         var loaderBox = new ComboBox { MinWidth = 280, MinHeight = 36 };
         loaderBox.Items.Add(new ComboBoxItem { Content = App.L("inst.none"), Tag = "None" });
@@ -370,63 +392,45 @@ public sealed partial class InstancesPage : Page
         };
         string? loaderVersion = null;
 
-        if (loader == LoaderType.Fabric)
-        {
-            try
-            {
-                var fi = new FabricInstaller(_im.SharedDir, "");
-                var versions = await fi.GetLoaderVersionsAsync(mcVersion);
-                loaderVersion = versions.FirstOrDefault(v => v.Stable)?.Version ?? versions.FirstOrDefault()?.Version;
-            }
-            catch { }
-        }
-        else if (loader == LoaderType.Quilt)
-        {
-            try
-            {
-                var qi = new QuiltInstaller(_im.SharedDir, "");
-                var versions = await qi.GetLoaderVersionsAsync(mcVersion);
-                loaderVersion = versions.FirstOrDefault();
-            }
-            catch { }
-        }
-        else if (loader == LoaderType.Forge)
-        {
-            try
-            {
-                var fi = new ForgeInstaller(_im.SharedDir, "");
-                var versions = await fi.GetVersionsAsync(mcVersion);
-                loaderVersion = versions.FirstOrDefault();
-            }
-            catch { }
-        }
-        else if (loader == LoaderType.NeoForge)
-        {
-            try
-            {
-                var ni = new NeoForgeInstaller(_im.SharedDir, "");
-                var versions = await ni.GetVersionsAsync(mcVersion);
-                loaderVersion = versions.FirstOrDefault();
-            }
-            catch { }
-        }
-
-        var instance = _im.CreateInstance(name, mcVersion, loader, loaderVersion);
-        var gameDir = _im.GetGameDir(instance.Id);
-
+        Exception? fetchError = null;
         try
         {
-            if (loader == LoaderType.Fabric && loaderVersion != null)
-                await new FabricInstaller(_im.SharedDir, gameDir).InstallAsync(mcVersion, loaderVersion);
-            else if (loader == LoaderType.Quilt && loaderVersion != null)
-                await new QuiltInstaller(_im.SharedDir, gameDir).InstallAsync(mcVersion, loaderVersion);
-            else if (loader == LoaderType.Forge && loaderVersion != null)
-                await new ForgeInstaller(_im.SharedDir, gameDir).InstallAsync(mcVersion, loaderVersion);
-            else if (loader == LoaderType.NeoForge && loaderVersion != null)
-                await new NeoForgeInstaller(_im.SharedDir, gameDir).InstallAsync(mcVersion, loaderVersion);
+            if (loader == LoaderType.Fabric)
+            {
+                var versions = await new FabricInstaller(_im.SharedDir, "").GetLoaderVersionsAsync(mcVersion);
+                loaderVersion = versions.FirstOrDefault(v => v.Stable)?.Version ?? versions.FirstOrDefault()?.Version;
+            }
+            else if (loader == LoaderType.Quilt)
+                loaderVersion = (await new QuiltInstaller(_im.SharedDir, "").GetLoaderVersionsAsync(mcVersion)).FirstOrDefault();
+            else if (loader == LoaderType.Forge)
+                loaderVersion = (await new ForgeInstaller(_im.SharedDir, "").GetVersionsAsync(mcVersion)).FirstOrDefault();
+            else if (loader == LoaderType.NeoForge)
+                loaderVersion = (await new NeoForgeInstaller(_im.SharedDir, "").GetVersionsAsync(mcVersion)).FirstOrDefault();
         }
-        catch { }
+        catch (Exception ex) { fetchError = ex; }
 
+        if (loader != LoaderType.None && string.IsNullOrEmpty(loaderVersion))
+        {
+            await new ContentDialog
+            {
+                Title = $"{loader} not available for {mcVersion}",
+                Content = new TextBlock
+                {
+                    Text = fetchError != null
+                        ? $"Failed to fetch loader versions:\n{fetchError.Message}"
+                        : $"No {loader} releases found for Minecraft {mcVersion}. Pick another version or loader.",
+                    TextWrapping = TextWrapping.Wrap,
+                    MaxWidth = 400
+                },
+                CloseButtonText = "OK",
+                XamlRoot = this.XamlRoot
+            }.ShowAsync();
+            return;
+        }
+
+        // Create only — the loader installer (downloads mappings, runs NeoForge processors, etc.) runs
+        // on first Play so creation stays instant.
+        var instance = _im.CreateInstance(name, mcVersion, loader, loaderVersion);
         S.SelectedInstanceId = instance.Id;
         S.Save();
         LoadInstances();

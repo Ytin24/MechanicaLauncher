@@ -12,10 +12,10 @@
             <TextBlock x:Name="DescText" Text="" FontSize="13"
                        Foreground="#BBBBBB" TextWrapping="Wrap" />
             <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
-                <Button x:Name="YesBtn" Content="Да" Click="Yes_Click"
+                <Button x:Name="YesBtn" Click="Yes_Click"
                         MinWidth="80" MinHeight="32" CornerRadius="6"
                         Background="#4CAF50" Foreground="White" />
-                <Button x:Name="NoBtn" Content="Нет" Click="No_Click"
+                <Button x:Name="NoBtn" Click="No_Click"
                         MinWidth="80" MinHeight="32" CornerRadius="6" />
             </StackPanel>
         </StackPanel>

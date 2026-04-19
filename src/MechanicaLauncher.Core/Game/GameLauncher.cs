@@ -36,7 +36,13 @@ public sealed class GameLauncher
 
         Directory.CreateDirectory(nativesDir);
 
-        var classpath = BuildClasspath(meta, jarPath, librariesDir);
+        // For modded launches (inheritsFrom = vanilla), the unpatched vanilla jar must NOT be on the
+        // classpath — NeoForge/Forge/Fabric ship patched or remapped Minecraft classes as libraries
+        // (net.minecraft:client:<ver>-<neoform>:slim for NeoForge, intermediary-mapped jars for Fabric),
+        // and including the raw vanilla jar makes fancymodloader/Knot load the wrong minecraft classes,
+        // producing ClassNotFoundException on transformed symbols at runtime.
+        var includeVanillaJar = string.IsNullOrEmpty(meta.InheritsFrom);
+        var classpath = BuildClasspath(meta, jarPath, librariesDir, includeVanillaJar);
 
         var vars = new Dictionary<string, string>
         {
@@ -185,7 +191,7 @@ public sealed class GameLauncher
         return template;
     }
 
-    private static string BuildClasspath(VersionMeta meta, string clientJar, string librariesDir)
+    private static string BuildClasspath(VersionMeta meta, string clientJar, string librariesDir, bool includeClientJar)
     {
         var paths = new List<string>();
         foreach (var lib in meta.Libraries)
@@ -206,7 +212,7 @@ public sealed class GameLauncher
                 }
             }
         }
-        paths.Add(clientJar);
+        if (includeClientJar) paths.Add(clientJar);
         return string.Join(Path.PathSeparator, paths);
     }
 
