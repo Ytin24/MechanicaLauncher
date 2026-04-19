@@ -81,11 +81,75 @@ public sealed partial class MainWindow : Window
                 _ = HandlePendingEventAsync();
             else if (App.PendingConnect != null)
                 _ = HandlePendingConnectAsync();
+            else if (App.PendingMrpack != null)
+                _ = ImportMrpackAsync(App.PendingMrpack);
         }
     }
 
     public void HandlePendingConnect() => _ = HandlePendingConnectAsync();
     public Task HandlePendingEventPublicAsync() => HandlePendingEventAsync();
+
+    public async Task ImportMrpackAsync(string mrpackPath)
+    {
+        var im = new InstanceManager();
+        var importer = new MechanicaLauncher.Core.Mods.ModpackInstaller();
+
+        var statusText = new TextBlock { Text = "Reading modpack...", TextWrapping = TextWrapping.Wrap };
+        var progress = new ProgressBar { Minimum = 0, Maximum = 100, IsIndeterminate = true, Width = 360 };
+        importer.ProgressChanged += (s, p) =>
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                statusText.Text = s;
+                if (p >= 0) { progress.IsIndeterminate = false; progress.Value = p; }
+            });
+        };
+
+        var dialog = new ContentDialog
+        {
+            Title = "Importing Modpack",
+            Content = new StackPanel { Spacing = 10, Children = { statusText, progress } },
+            XamlRoot = Content.XamlRoot
+        };
+        var dialogTask = dialog.ShowAsync().AsTask();
+
+        try
+        {
+            var inst = await importer.ImportAsync(mrpackPath, im);
+            App.Settings.SelectedInstanceId = inst.Id;
+            App.Settings.Save();
+            try { dialog.Hide(); } catch { }
+            await Task.Delay(200);
+
+            await new ContentDialog
+            {
+                Title = "Modpack imported",
+                Content = new TextBlock { Text = $"Created instance '{inst.Name}' ({inst.McVersion} · {inst.Loader}). Press Play to install the loader and launch.", TextWrapping = TextWrapping.Wrap, MaxWidth = 400 },
+                CloseButtonText = "OK",
+                XamlRoot = Content.XamlRoot
+            }.ShowAsync();
+        }
+        catch (Exception ex)
+        {
+            try { dialog.Hide(); } catch { }
+            await Task.Delay(200);
+            try
+            {
+                await new ContentDialog
+                {
+                    Title = "Modpack import failed",
+                    Content = new TextBlock { Text = ex.Message, TextWrapping = TextWrapping.Wrap, MaxWidth = 500 },
+                    CloseButtonText = "OK",
+                    XamlRoot = Content.XamlRoot
+                }.ShowAsync();
+            }
+            catch { }
+        }
+        finally
+        {
+            App.PendingMrpack = null;
+        }
+    }
 
     public void ApplyEventNavigation()
     {

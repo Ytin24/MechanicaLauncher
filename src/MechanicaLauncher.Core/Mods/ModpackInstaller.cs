@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using MechanicaLauncher.Core.Instances;
 
 namespace MechanicaLauncher.Core.Mods;
 
@@ -9,6 +10,43 @@ public sealed class ModpackInstaller
     private static readonly HttpClient Http = new();
 
     public event Action<string, double>? ProgressChanged;
+
+    public async Task<GameInstance> ImportAsync(string mrpackPath, InstanceManager im)
+    {
+        using var zip = ZipFile.OpenRead(mrpackPath);
+        var indexEntry = zip.GetEntry("modrinth.index.json")
+            ?? throw new Exception("Invalid mrpack: missing modrinth.index.json");
+
+        MrpackIndex index;
+        using (var stream = indexEntry.Open())
+            index = await JsonSerializer.DeserializeAsync<MrpackIndex>(stream)
+                ?? throw new Exception("Invalid mrpack: empty index");
+
+        if (!index.Dependencies.TryGetValue("minecraft", out var mcVersion) || string.IsNullOrEmpty(mcVersion))
+            throw new Exception("Modpack manifest missing minecraft dependency");
+
+        // Modrinth dependency keys map to our loader enum.
+        LoaderType loader = LoaderType.None;
+        string? loaderVersion = null;
+        foreach (var (key, ver) in index.Dependencies)
+        {
+            switch (key)
+            {
+                case "neoforge":       loader = LoaderType.NeoForge; loaderVersion = ver; break;
+                case "forge":          loader = LoaderType.Forge;    loaderVersion = ver; break;
+                case "fabric-loader":  loader = LoaderType.Fabric;   loaderVersion = ver; break;
+                case "quilt-loader":   loader = LoaderType.Quilt;    loaderVersion = ver; break;
+            }
+        }
+
+        var instanceName = !string.IsNullOrEmpty(index.Name) ? index.Name : Path.GetFileNameWithoutExtension(mrpackPath);
+
+        // Raise later — don't reveal the instance on Home until files are on disk.
+        var inst = im.CreateInstance(instanceName, mcVersion, loader, loaderVersion, raiseChangedEvent: false);
+        await InstallAsync(mrpackPath, im.GetGameDir(inst.Id));
+        im.NotifyChanged();
+        return inst;
+    }
 
     public async Task InstallAsync(string mrpackPath, string gameDir)
     {

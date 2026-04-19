@@ -24,6 +24,7 @@ public partial class App : Application
     public static Core.Updates.UpdateInfo? LatestUpdate { get; set; }
     public static ConnectRequest? PendingConnect { get; set; }
     public static Core.Protocol.EventRequest? PendingEvent { get; set; }
+    public static string? PendingMrpack { get; set; }
     public static Core.Config.EventConfigManager EventManager { get; } = new();
     public static Core.Config.EventConfig? EventConfig => EventManager.Active;
     public static bool IsEventMode => EventManager.IsEventMode;
@@ -48,8 +49,11 @@ public partial class App : Application
             var args = Environment.GetCommandLineArgs();
             var connect = ProtocolHandler.ParseConnect(args);
             var eventReq = ProtocolHandler.ParseEvent(args);
+            var mrpack = ParseMrpack(args);
             var pendingFile = GetPendingFile();
-            if (eventReq != null)
+            if (mrpack != null)
+                File.WriteAllText(pendingFile, $"MRPACK|{mrpack}");
+            else if (eventReq != null)
                 File.WriteAllText(pendingFile, $"EVENT|{eventReq.ConfigUrl}");
             else if (connect != null)
                 File.WriteAllText(pendingFile, $"{connect.Server}|{connect.Port}|{connect.Version}");
@@ -65,6 +69,7 @@ public partial class App : Application
         var cmdArgs = Environment.GetCommandLineArgs();
         PendingConnect = ProtocolHandler.ParseConnect(cmdArgs);
         PendingEvent = ProtocolHandler.ParseEvent(cmdArgs);
+        PendingMrpack = ParseMrpack(cmdArgs);
 
         // Restore cached event config
         if (PendingEvent == null && !string.IsNullOrEmpty(Settings.ActiveEventUrl))
@@ -201,6 +206,18 @@ public partial class App : Application
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "MechanicaLauncher", "pending_connect.txt");
 
+    // Windows passes the double-clicked file as a plain positional argument; accept only local .mrpack paths that exist.
+    private static string? ParseMrpack(string[] args)
+    {
+        for (int i = 1; i < args.Length; i++)
+        {
+            var a = args[i];
+            if (a.EndsWith(".mrpack", StringComparison.OrdinalIgnoreCase) && File.Exists(a))
+                return Path.GetFullPath(a);
+        }
+        return null;
+    }
+
     private static async Task CheckUpdatesAsync()
     {
         try { LatestUpdate = await Core.Updates.UpdateChecker.CheckAsync(); }
@@ -227,6 +244,18 @@ public partial class App : Application
                 if (content.Trim() == "SHOW")
                 {
                     ShowWindow();
+                    continue;
+                }
+
+                if (content.StartsWith("MRPACK|"))
+                {
+                    var path = content["MRPACK|".Length..].Trim();
+                    ShowWindow();
+                    MainWindow?.DispatcherQueue?.TryEnqueue(async () =>
+                    {
+                        if (MainWindow is MainWindow mw)
+                            await mw.ImportMrpackAsync(path);
+                    });
                     continue;
                 }
 
