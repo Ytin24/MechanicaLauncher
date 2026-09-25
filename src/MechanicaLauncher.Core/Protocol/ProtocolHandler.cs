@@ -11,6 +11,7 @@ public static class ProtocolHandler
 
     public static void Register()
     {
+        if (!OperatingSystem.IsWindows()) return;
         try
         {
             var exePath = Environment.ProcessPath ?? "";

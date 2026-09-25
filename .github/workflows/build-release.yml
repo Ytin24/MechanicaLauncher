@@ -133,6 +133,14 @@ jobs:
             MechanicaLauncher-x64-portable.zip
             output/MechanicaLauncher-*-setup.exe
 
+      - name: Upload failed UI snapshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MechanicaLauncher-ui-failure
+          retention-days: 7
+          path: tests/out/nitidus-ui-tests-*/*.png
+
   release:
     needs: build
     runs-on: ubuntu-latest

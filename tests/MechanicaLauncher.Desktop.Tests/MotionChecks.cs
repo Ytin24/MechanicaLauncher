@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
 using MechanicaLauncher.Desktop;
@@ -12,6 +13,7 @@ internal static partial class Program
     {
         var view = presentation.View;
         bool reduced = false;
+        using var preference = new MotionPreferenceScope(model, view, () => reduced);
         void Frame(double seconds = 1d / 60)
         {
             context.Drain(); view.Animations.ReducedMotion = reduced; host.Render(time += seconds);
@@ -76,7 +78,9 @@ internal static partial class Program
         Capture(host, "motion-dialog-050ms");
         var close = UiTransform.VisualBounds(view.Find("dialogClose"));
         host.Click(close.X + close.Width / 2, close.Y + close.Height / 2); Frame(0);
-        Check(!model.DialogOpen && view.Find("dialogExit").Get(Ui.Visible) && !view.Find("dialogExit").Get(Ui.Enabled), "closing commits immediately while a non-interactive dialog visual departs");
+        var exit = view.Find("dialogExit");
+        Check(!model.DialogOpen, $"clicking the moving dialog close action commits immediately (reduced={view.Animations.ReducedMotion}, systemAnimations={Platform.SystemAnimations})");
+        Check(exit.Get(Ui.Visible) && !exit.Get(Ui.Enabled), $"a non-interactive dialog visual departs after closing (visible={exit.Get(Ui.Visible)}, enabled={exit.Get(Ui.Enabled)}, reduced={view.Animations.ReducedMotion})");
         Frame(.08); Capture(host, "motion-dialog-exit-080ms");
         Check(view.Find("dialogExit").Get(Ui.Opacity) is > 0 and < 1 && view.Find("dialogGhost").Get(Ui.TranslateY) > 0, "dialog has a real closing transition");
         Settle();
@@ -165,5 +169,26 @@ internal static partial class Program
             !view.Find("pageExit").Get(Ui.Visible) && !view.Animations.NeedsFrames, "disabling motion clears active transforms and departing visuals immediately");
         model.Animations = true; reduced = false; model.RefreshLibrary(); Settle();
         Check(!view.Animations.NeedsFrames, "enabling transitions does not restart decorative effects");
+    }
+
+    private sealed class MotionPreferenceScope : IDisposable
+    {
+        private readonly LauncherModel model;
+        private readonly CompiledView view;
+        private readonly PropertyChangedEventHandler changed;
+        private readonly bool previous;
+        public MotionPreferenceScope(LauncherModel model, CompiledView view, Func<bool> reduced)
+        {
+            this.model = model; this.view = view; previous = view.Animations.ReducedMotion;
+            // HeadlessHost renders inside input dispatch, before the test's next explicit frame.
+            changed = (_, _) => view.Animations.ReducedMotion = reduced();
+            model.PropertyChanged += changed;
+            view.Animations.ReducedMotion = reduced();
+        }
+        public void Dispose()
+        {
+            model.PropertyChanged -= changed;
+            view.Animations.ReducedMotion = previous;
+        }
     }
 }
