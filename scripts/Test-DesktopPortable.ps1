@@ -105,7 +105,27 @@ try {
             $launcher.Refresh()
         } while ($launcher.MainWindowHandle -eq [IntPtr]::Zero -and [DateTime]::UtcNow -lt $deadline)
         Start-Sleep -Milliseconds 80
-    } elseif ($launcher.WaitForExit(12000)) { throw ('Launcher exited during startup: ' + $launcher.ExitCode + '; data: ' + $dataDir) }
+    } else {
+        $deadline = [DateTime]::UtcNow.AddSeconds(60)
+        $startupLog = Join-Path $dataDir 'logs\launcher-startup.log'
+        $readyMarker = '[' + $launcher.Id + '] First command poll'
+        while ($true) {
+            Assert-PrimaryRunning
+            $ready = $false
+            try {
+                if (Test-Path -LiteralPath $startupLog) {
+                    $stream = [IO.File]::Open($startupLog, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+                    $reader = [IO.StreamReader]::new($stream)
+                    try { $ready = $reader.ReadToEnd().Contains($readyMarker) }
+                    finally { $reader.Dispose() }
+                }
+            }
+            catch [IO.IOException] { }
+            if ($ready -and $launcher.MainWindowHandle -ne [IntPtr]::Zero) { break }
+            if ([DateTime]::UtcNow -gt $deadline) { throw 'Launcher window did not finish startup' }
+            Start-Sleep -Milliseconds 100
+        }
+    }
     $launcher.Refresh()
     if ($launcher.MainWindowHandle -eq [IntPtr]::Zero) { throw ('No launcher window; data: ' + $dataDir) }
     Write-Output ('PASS startup: ' + $launcher.MainWindowTitle)

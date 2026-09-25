@@ -7,6 +7,7 @@ namespace MechanicaLauncher.Desktop;
 
 internal static class Program
 {
+    private static readonly object startupTraceLock = new();
     [STAThread]
     private static int Main(string[] args)
     {
@@ -122,7 +123,8 @@ internal static class Program
         {
             string logs = Path.Combine(LauncherPaths.DataDirectory, "logs");
             Directory.CreateDirectory(logs);
-            File.AppendAllText(Path.Combine(logs, "launcher-startup.log"), $"{DateTimeOffset.UtcNow:O} [{Environment.ProcessId}] {message}\n");
+            lock (startupTraceLock)
+                File.AppendAllText(Path.Combine(logs, "launcher-startup.log"), $"{DateTimeOffset.UtcNow:O} [{Environment.ProcessId}] {message}\n");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }

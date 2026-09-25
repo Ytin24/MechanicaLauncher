@@ -14,6 +14,8 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    outputs:
+      prerelease: ${{ steps.version.outputs.PRERELEASE }}
     defaults:
       run:
         shell: pwsh
@@ -36,6 +38,8 @@ jobs:
             $ver = "0.0.0"
           }
           echo "VERSION=$ver" >> $env:GITHUB_OUTPUT
+          $prerelease = $ver -match '^\d+\.\d+\.\d+-'
+          echo "PRERELEASE=$($prerelease.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
 
       - name: Restore
         run: |
@@ -71,14 +75,15 @@ jobs:
         env:
           MICROSOFT_CLIENT_ID: ${{ vars.MICROSOFT_CLIENT_ID }}
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
+          IS_PRERELEASE: ${{ steps.version.outputs.PRERELEASE }}
         run: |
           $clientId = [guid]::Empty
           if (-not [string]::IsNullOrWhiteSpace($env:MICROSOFT_CLIENT_ID) -and
               (-not [guid]::TryParse($env:MICROSOFT_CLIENT_ID, [ref]$clientId) -or $clientId -eq [guid]::Empty)) {
             throw 'MICROSOFT_CLIENT_ID must be the Application (client) ID of Mechanica.'
           }
-          if ($env:GITHUB_REF -like 'refs/tags/v*' -and [string]::IsNullOrWhiteSpace($env:MICROSOFT_CLIENT_ID)) {
-            throw 'Set the approved Mechanica application ID in repository variable MICROSOFT_CLIENT_ID before releasing.'
+          if ($env:GITHUB_REF -like 'refs/tags/v*' -and $env:IS_PRERELEASE -ne 'true' -and [string]::IsNullOrWhiteSpace($env:MICROSOFT_CLIENT_ID)) {
+            throw 'Set the approved Mechanica application ID in repository variable MICROSOFT_CLIENT_ID before a stable release.'
           }
           dotnet restore src/MechanicaLauncher/MechanicaLauncher.csproj `
             --locked-mode -p:Platform=x64 -p:SelfContained=true
@@ -147,6 +152,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -154,7 +161,10 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: .github/release-notes.md
+          prerelease: ${{ needs.build.outputs.prerelease == 'true' }}
+          make_latest: ${{ needs.build.outputs.prerelease == 'true' && 'false' || 'true' }}
+          fail_on_unmatched_files: true
           files: |
             artifacts/MechanicaLauncher-x64/MechanicaLauncher-x64-portable.zip
             artifacts/MechanicaLauncher-x64/output/MechanicaLauncher-*-setup.exe
