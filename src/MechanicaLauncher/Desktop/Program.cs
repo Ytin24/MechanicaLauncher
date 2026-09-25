@@ -27,8 +27,10 @@ internal static class Program
             if (!primary)
             {
                 File.WriteAllText(pendingFile, PendingCommand(args));
+                TraceStartup("Forwarded second launch");
                 return 0;
             }
+            TraceStartup("Primary instance acquired");
             if (!LauncherPaths.HasCustomDataDirectory) ProtocolHandler.Register();
             var settings = LauncherSettings.Load();
             using var model = new LauncherModel(settings);
@@ -54,6 +56,7 @@ internal static class Program
             using var shell = new LauncherWindowController(window, model);
             window.Opened += () =>
             {
+                TraceStartup("Startup callback entered");
                 SynchronizationContext.SetSynchronizationContext(uiContext);
                 model.Sessions.Discord.Configure(settings, Locale.CurrentLanguage);
                 model.Run(async () =>
@@ -62,8 +65,10 @@ internal static class Program
                     await model.ResumePendingCommand();
                 });
                 _ = Poll(model, pendingFile, lifetime.Token);
+                TraceStartup("Startup callback completed");
             };
             window.Closed += lifetime.Cancel;
+            TraceStartup("Entering window loop");
             window.Run("Mechanica Launcher", width: 1180, height: 800);
             return 0;
         }
@@ -88,14 +93,17 @@ internal static class Program
     {
         try
         {
+            TraceStartup("Command polling started");
+            bool firstTick = true;
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
             while (await timer.WaitForNextTickAsync(token))
             {
+                if (firstTick) { TraceStartup("First command poll"); firstTick = false; }
                 model.Tick();
                 try { await model.ResumePendingCommand(); }
                 catch (Exception ex) when (!token.IsCancellationRequested) { model.Notice(ex.Message, true); }
                 string text;
-                try { text = await File.ReadAllTextAsync(pendingFile, token); File.Delete(pendingFile); }
+                try { text = await File.ReadAllTextAsync(pendingFile, token); File.Delete(pendingFile); TraceStartup("Forwarded command consumed"); }
                 catch (FileNotFoundException) { continue; }
                 catch (IOException) { continue; }
                 try { await HandleCommand(text, model); }
@@ -103,9 +111,21 @@ internal static class Program
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
-        catch (Exception ex) { model.Notice(ex.Message, true); }
+        catch (Exception ex) { TraceStartup("Command polling failed: " + ex); model.Notice(ex.Message, true); }
     }
     private static Task HandleCommand(string command, LauncherModel model) => model.HandleCommand(command);
+
+    internal static void TraceStartup(string message)
+    {
+        if (Environment.GetEnvironmentVariable("MECHANICA_STARTUP_TRACE") != "1") return;
+        try
+        {
+            string logs = Path.Combine(LauncherPaths.DataDirectory, "logs");
+            Directory.CreateDirectory(logs);
+            File.AppendAllText(Path.Combine(logs, "launcher-startup.log"), $"{DateTimeOffset.UtcNow:O} [{Environment.ProcessId}] {message}\n");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
 }
 
 internal sealed class LauncherSynchronizationContext(WindowDispatcher dispatcher, CancellationToken lifetime) : SynchronizationContext

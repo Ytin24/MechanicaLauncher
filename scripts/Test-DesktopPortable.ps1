@@ -44,15 +44,60 @@ function Wait-TrayState([scriptblock]$Condition) {
         Start-Sleep -Milliseconds 40
     }
 }
+function Assert-PrimaryRunning {
+    if ($null -eq $launcher) { throw 'Primary launcher process was not created' }
+    $launcher.Refresh()
+    if ($launcher.HasExited) { throw ('Primary launcher exited unexpectedly: ' + $launcher.ExitCode) }
+}
+function Write-SmokeFailure {
+    Write-Output ('Smoke environment: UserInteractive={0}; SessionId={1}; data={2}' -f [Environment]::UserInteractive, [Diagnostics.Process]::GetCurrentProcess().SessionId, $dataDir)
+    if ($null -eq $launcher) { Write-Output 'Primary: not created' }
+    else {
+        $launcher.Refresh()
+        $state = [ordered]@{ PID = $launcher.Id; HasExited = $launcher.HasExited }
+        if ($launcher.HasExited) { $state.ExitCode = $launcher.ExitCode }
+        else {
+            $state.Responding = $launcher.Responding
+            $state.Window = '0x{0:X}' -f $launcher.MainWindowHandle.ToInt64()
+            $state.SessionId = $launcher.SessionId
+        }
+        Write-Output ('Primary: ' + ($state | ConvertTo-Json -Compress))
+    }
+    $pendingPath = Join-Path $dataDir 'pending_connect.txt'
+    if (Test-Path -LiteralPath $pendingPath) {
+        $command = [IO.File]::ReadAllText($pendingPath)
+        $description = if ($command.Trim() -ceq 'SHOW') { 'SHOW' } else { 'unexpected command; length=' + $command.Length }
+        Write-Output ('Pending: ' + $description)
+    } else { Write-Output 'Pending: absent' }
+    foreach ($name in @('launcher-startup.log', 'launcher-errors.log')) {
+        $errorLog = Join-Path $dataDir ('logs\' + $name)
+        if (Test-Path -LiteralPath $errorLog) {
+            Write-Output ($name + ':')
+            Get-Content -LiteralPath $errorLog -Raw
+        }
+    }
+}
+function Close-SmokeProcess([Diagnostics.Process]$Process) {
+    if ($null -eq $Process) { return }
+    try { if (-not $Process.HasExited) { $Process.Kill() } }
+    catch { Write-Warning ('Smoke process cleanup failed: ' + $_.Exception.Message) -WarningAction Continue }
+    finally {
+        try { $Process.Dispose() }
+        catch { Write-Warning ('Smoke process disposal failed: ' + $_.Exception.Message) -WarningAction Continue }
+    }
+}
 $startInfo = New-Object System.Diagnostics.ProcessStartInfo
 $startInfo.FileName = Join-Path $portableDir 'MechanicaLauncher.exe'
 $startInfo.WorkingDirectory = $portableDir
 $startInfo.UseShellExecute = $false
 $startInfo.CreateNoWindow = $true
+$startInfo.EnvironmentVariables['MECHANICA_STARTUP_TRACE'] = '1'
 if ($PortableData) { $startInfo.EnvironmentVariables.Remove('MECHANICA_DATA_DIR') }
 else { $startInfo.EnvironmentVariables['MECHANICA_DATA_DIR'] = $dataDir }
-$launcher = [System.Diagnostics.Process]::Start($startInfo)
+$launcher = $null
 try {
+    $launcher = [System.Diagnostics.Process]::Start($startInfo)
+    Assert-PrimaryRunning
     if ($CloseDuringEntrance) {
         $deadline = [DateTime]::UtcNow.AddSeconds(12)
         do {
@@ -81,13 +126,19 @@ try {
         Write-Output 'PASS default close hides to tray and preserves the process'
     }
     if (-not $CloseDuringEntrance) {
+      Assert-PrimaryRunning
       $second = [System.Diagnostics.Process]::Start($startInfo)
       try {
+        if ($null -eq $second) { throw 'Second launcher process was not created' }
         if (-not $second.WaitForExit(10000)) { throw 'Second launcher did not forward to the first instance' }
         if ($second.ExitCode -ne 0) { throw ('Second instance exit: ' + $second.ExitCode) }
         $pending = Join-Path $dataDir 'pending_connect.txt'
         $deadline = [DateTime]::UtcNow.AddSeconds(5)
-        while ((Test-Path -LiteralPath $pending) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 100 }
+        while ((Test-Path -LiteralPath $pending) -and [DateTime]::UtcNow -lt $deadline) {
+            Assert-PrimaryRunning
+            Start-Sleep -Milliseconds 100
+        }
+        Assert-PrimaryRunning
         if (Test-Path -LiteralPath $pending) { throw 'Primary launcher did not consume the forwarded command' }
         Write-Output 'PASS single-instance forwarding'
         if ($Tray) {
@@ -96,7 +147,7 @@ try {
             Write-Output 'PASS second launch restores the maximized tray window'
         }
       }
-      finally { if (-not $second.HasExited) { $second.Kill() }; $second.Dispose() }
+      finally { Close-SmokeProcess $second }
     }
     if ($Tray) {
         $null = [MechanicaTraySmoke]::Post($windowHandle, 0x16, [IntPtr]1, [IntPtr]::Zero)
@@ -107,4 +158,10 @@ try {
     Write-Output 'PASS clean launcher exit'
     Write-Output ('Isolated data: ' + $dataDir)
 }
-finally { if (-not $launcher.HasExited) { $launcher.Kill() }; $launcher.Dispose() }
+catch {
+    $failure = $_
+    try { Write-SmokeFailure }
+    catch { Write-Warning ('Smoke diagnostics failed: ' + $_.Exception.Message) -WarningAction Continue }
+    throw $failure
+}
+finally { Close-SmokeProcess $launcher }

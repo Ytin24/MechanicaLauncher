@@ -35,8 +35,10 @@ internal sealed class LauncherWindowController : NativeWindow, IDisposable
 
     private void Opened()
     {
+        Program.TraceStartup("Window controller opened");
         using var process = Process.GetCurrentProcess();
         AssignHandle(process.MainWindowHandle);
+        Program.TraceStartup("Window handle assigned");
         string path = Path.Combine(AppContext.BaseDirectory, "Assets", "Mechanica.ico");
         if (File.Exists(path))
         {
@@ -44,11 +46,13 @@ internal sealed class LauncherWindowController : NativeWindow, IDisposable
             SendMessageW(Handle, WmSetIcon, 0, smallIcon.Handle);
             SendMessageW(Handle, WmSetIcon, 1, largeIcon.Handle);
         }
+        Program.TraceStartup("Registering tray icon");
         try { window.SetTrayIcon("Mechanica Launcher", File.Exists(path) ? path : null); trayReady = true; }
         catch (InvalidOperationException)
         {
             model.Notice(model.T("Трей Windows недоступен. Окно будет сворачиваться на панель задач.", "The Windows tray is unavailable. The window will minimize to the taskbar."));
         }
+        Program.TraceStartup("Window controller ready");
     }
 
     private void Closing(object? sender, CancelEventArgs e)
