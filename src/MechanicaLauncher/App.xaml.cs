@@ -6,6 +6,7 @@ using Microsoft.UI.Windowing;
 using MechanicaLauncher.Core.Discord;
 using MechanicaLauncher.Core.Localization;
 using MechanicaLauncher.Core.Profiles;
+using MechanicaLauncher.Core.IO;
 using MechanicaLauncher.Core.Protocol;
 using WinRT.Interop;
 
@@ -18,6 +19,12 @@ public partial class App : Application
     public static Window MainWindow { get; private set; } = null!;
     public static LauncherSettings Settings { get; } = LauncherSettings.Load();
     public static ConcurrentDictionary<string, Process> RunningInstances { get; } = new();
+    public static SemaphoreSlim LaunchPreparationGate { get; } = new(1, 1);
+    public static DownloadQueue Downloads { get; } = new();
+    public static CancellationTokenSource? PreparationCancellation { get; set; }
+    public static string? PreparingInstanceId { get; set; }
+    public static bool IsInstanceBusy(string id) => PreparingInstanceId == id ||
+        (RunningInstances.TryGetValue(id, out var process) && !process.HasExited);
     public static event Action? RunningInstancesChanged;
     public static void NotifyRunningChanged() => RunningInstancesChanged?.Invoke();
     public static DiscordPresence Discord { get; } = new();
@@ -36,14 +43,31 @@ public partial class App : Application
 
     public App()
     {
+        UnhandledException += (_, args) => WriteCrashLog(args.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, args) => WriteCrashLog(args.ExceptionObject as Exception);
         this.InitializeComponent();
         Locale.SystemLanguagesProvider = () => Windows.System.UserProfile.GlobalizationPreferences.Languages;
         Locale.Init(Settings.Language);
     }
 
+    private static void WriteCrashLog(Exception? exception)
+    {
+        try
+        {
+            var directory = Path.Combine(LauncherPaths.DataDirectory, "logs");
+            Directory.CreateDirectory(directory);
+            File.AppendAllText(Path.Combine(directory, "launcher-errors.log"), $"{DateTimeOffset.Now:O}\n{exception}\n");
+        }
+        catch (Exception ex) { Debug.WriteLine(ex); }
+    }
+
     protected override void OnLaunched(LaunchActivatedEventArgs e)
     {
-        _mutex = new Mutex(true, "MechanicaLauncher_SingleInstance", out var isNew);
+        var mutexName = "MechanicaLauncher_SingleInstance";
+        if (LauncherPaths.HasCustomDataDirectory)
+            mutexName += "_" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(LauncherPaths.DataDirectory.ToUpperInvariant())))[..16];
+        _mutex = new Mutex(true, mutexName, out var isNew);
         if (!isNew)
         {
             var args = Environment.GetCommandLineArgs();
@@ -63,8 +87,8 @@ public partial class App : Application
             return;
         }
 
-        ProtocolHandler.Register();
-        if (Settings.DiscordRpc) Discord.Init();
+        if (!LauncherPaths.HasCustomDataDirectory) ProtocolHandler.Register();
+        Discord.Configure(Settings, Locale.CurrentLanguage);
 
         var cmdArgs = Environment.GetCommandLineArgs();
         PendingConnect = ProtocolHandler.ParseConnect(cmdArgs);
@@ -202,9 +226,11 @@ public partial class App : Application
         return AppWindow.GetFromWindowId(id);
     }
 
-    private static string GetPendingFile() =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "MechanicaLauncher", "pending_connect.txt");
+    private static string GetPendingFile()
+    {
+        Directory.CreateDirectory(LauncherPaths.DataDirectory);
+        return Path.Combine(LauncherPaths.DataDirectory, "pending_connect.txt");
+    }
 
     // Windows passes the double-clicked file as a plain positional argument; accept only local .mrpack paths that exist.
     private static string? ParseMrpack(string[] args)

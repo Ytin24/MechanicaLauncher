@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using MechanicaLauncher.Core.IO;
 
 namespace MechanicaLauncher.Core.Profiles;
 
@@ -22,17 +23,32 @@ public sealed class LauncherSettings
     [JsonPropertyName("msRefreshToken")]
     public string MsRefreshToken { get; set; } = "";
 
+    [JsonPropertyName("msClientId")]
+    public string MsClientId { get; set; } = "";
+
     [JsonPropertyName("selectedInstanceId")]
     public string? SelectedInstanceId { get; set; }
 
+    [JsonPropertyName("compactInstances")]
+    public bool CompactInstances { get; set; }
+
     [JsonPropertyName("closeOnLaunch")]
     public bool CloseOnLaunch { get; set; }
+
+    [JsonPropertyName("closeToTray")]
+    public bool CloseToTray { get; set; } = true;
+
+    [JsonPropertyName("minimizeToTray")]
+    public bool MinimizeToTray { get; set; }
 
     [JsonPropertyName("showSnapshots")]
     public bool ShowSnapshots { get; set; }
 
     [JsonPropertyName("theme")]
     public string Theme { get; set; } = "Dark";
+
+    [JsonPropertyName("animations")]
+    public bool Animations { get; set; } = true;
 
     [JsonPropertyName("language")]
     public string? Language { get; set; }
@@ -55,23 +71,31 @@ public sealed class LauncherSettings
     [JsonPropertyName("activeEventUrl")]
     public string? ActiveEventUrl { get; set; }
 
-    private static string SettingsPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "MechanicaLauncher", "settings.json");
+    [JsonPropertyName("tlauncherScanDirectories")]
+    public string[] TLauncherScanDirectories { get; set; } = [];
+
+    [JsonPropertyName("knownTLauncherFiles")]
+    public string[] KnownTLauncherFiles { get; set; } = [];
+
+    [JsonPropertyName("knownTLauncherDirectories")]
+    public string[] KnownTLauncherDirectories { get; set; } = [];
+
+    private static string SettingsPath => Path.Combine(LauncherPaths.DataDirectory, "settings.json");
 
     public static LauncherSettings Load()
     {
         lock (_lock)
         {
-            try
+            foreach (var path in new[] { SettingsPath, SettingsPath + ".bak" })
             {
-                if (File.Exists(SettingsPath))
+                try
                 {
-                    var json = File.ReadAllText(SettingsPath);
-                    return JsonSerializer.Deserialize<LauncherSettings>(json) ?? new();
+                    if (!File.Exists(path)) continue;
+                    var settings = JsonSerializer.Deserialize<LauncherSettings>(File.ReadAllText(path));
+                    if (settings != null) return settings;
                 }
+                catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { }
             }
-            catch { }
             return new();
         }
     }
@@ -83,7 +107,7 @@ public sealed class LauncherSettings
             var dir = Path.GetDirectoryName(SettingsPath)!;
             Directory.CreateDirectory(dir);
             var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(SettingsPath, json);
+            AtomicFile.WriteText(SettingsPath, json, keepBackup: true);
         }
     }
 }

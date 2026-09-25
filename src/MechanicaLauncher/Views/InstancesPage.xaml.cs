@@ -27,6 +27,12 @@ public sealed partial class InstancesPage : Page
         base.OnNavigatedTo(e);
         PageTitle.Text = App.L("inst.title");
         NewInstanceText.Text = App.L("inst.new");
+        ImportMrpackText.Text = App.L("inst.import");
+        CompactCards.Content = App.L("feature.compact");
+        CompactCards.IsChecked = S.CompactInstances;
+        SearchBox.PlaceholderText = App.L("inst.search");
+        foreach (var item in SortBox.Items.OfType<ComboBoxItem>())
+            item.Content = App.L("inst.sort_" + item.Tag);
         InstanceManager.InstancesChanged += OnInstancesChanged;
         _isLoaded = true;
         LoadInstances();
@@ -41,6 +47,14 @@ public sealed partial class InstancesPage : Page
     private void OnInstancesChanged() =>
         DispatcherQueue.TryEnqueue(LoadInstances);
 
+    private void Compact_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_isLoaded) return;
+        S.CompactInstances = CompactCards.IsChecked == true;
+        S.Save();
+        LoadInstances();
+    }
+
     private void LoadInstances()
     {
         InstancesList.Children.Clear();
@@ -52,8 +66,8 @@ public sealed partial class InstancesPage : Page
         {
             InstancesList.Children.Add(new TextBlock
             {
-                Text = allInstances.Count == 0 ? App.L("inst.no_instances") : "No instances match the current filters.",
-                Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)),
+                Text = allInstances.Count == 0 ? App.L("inst.no_instances") : App.L("inst.no_matches"),
+                Foreground = (Brush)Application.Current.Resources["DimBrush"],
                 HorizontalAlignment = HorizontalAlignment.Center,
                 FontSize = 14,
                 Margin = new Thickness(0, 40, 0, 0)
@@ -120,14 +134,9 @@ public sealed partial class InstancesPage : Page
         var btn = new Button
         {
             Content = loader == LoaderType.None ? "Vanilla" : loader.ToString(),
-            MinHeight = 28,
-            Padding = new Thickness(12, 4, 12, 4),
-            CornerRadius = new CornerRadius(14),
-            FontSize = 12,
-            Background = new SolidColorBrush(active
-                ? Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xAF, 0x50)
-                : Windows.UI.Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF)),
-            Foreground = new SolidColorBrush(active ? Microsoft.UI.Colors.White : Windows.UI.Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
+            Style = (Style)Application.Current.Resources["FilterChip"],
+            Background = (Brush)Application.Current.Resources[active ? "SelectionBrush" : "CardBrush"],
+            Foreground = (Brush)Application.Current.Resources[active ? "SelectionTextBrush" : "PrimaryBrush"],
         };
         btn.Click += (_, _) =>
         {
@@ -156,9 +165,10 @@ public sealed partial class InstancesPage : Page
     {
         var card = new Border
         {
-            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF)),
+            Background = (Brush)Application.Current.Resources["CardBrush"],
+            BorderBrush = (Brush)Application.Current.Resources["CardBorderBrush"], BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(20),
+            Padding = new Thickness(S.CompactInstances ? 12 : 20),
             MinHeight = 72,
         };
 
@@ -196,7 +206,7 @@ public sealed partial class InstancesPage : Page
                 Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill,
                 Width = 48, Height = 48,
             };
-            iconBorder.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF));
+            iconBorder.Background = (Brush)Application.Current.Resources["CardHoverBrush"];
         }
         else
         {
@@ -209,15 +219,22 @@ public sealed partial class InstancesPage : Page
             };
         }
 
-        var info = new StackPanel { Margin = new Thickness(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Spacing = 4 };
-        var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        titleRow.Children.Add(new TextBlock { Text = inst.Name, FontSize = 17, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        var info = new StackPanel { Margin = new Thickness(16, 0, 16, 0), VerticalAlignment = VerticalAlignment.Center, Spacing = 4 };
+        var titleRow = new Grid
+        {
+            ColumnSpacing = 8,
+            ColumnDefinitions = { new ColumnDefinition(), new ColumnDefinition { Width = GridLength.Auto }, new ColumnDefinition { Width = GridLength.Auto } }
+        };
+        var name = new TextBlock { Text = inst.Name, FontSize = 17, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextTrimming = TextTrimming.CharacterEllipsis };
+        ToolTipService.SetToolTip(name, inst.Name);
+        titleRow.Children.Add(name);
 
         if (inst.Loader != LoaderType.None)
         {
             var badge = new Border
             {
-                Background = new SolidColorBrush(iconColor),
+                Background = (Brush)Application.Current.Resources["SelectionBrush"],
                 CornerRadius = new CornerRadius(4),
                 Padding = new Thickness(8, 3, 8, 3),
                 VerticalAlignment = VerticalAlignment.Center
@@ -225,9 +242,10 @@ public sealed partial class InstancesPage : Page
             badge.Child = new TextBlock
             {
                 Text = inst.Loader.ToString(),
-                FontSize = 10, Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)),
+                FontSize = 11, Foreground = (Brush)Application.Current.Resources["SelectionTextBrush"],
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
             };
+            Grid.SetColumn(badge, 1);
             titleRow.Children.Add(badge);
         }
 
@@ -239,19 +257,20 @@ public sealed partial class InstancesPage : Page
         {
             var runBadge = new Border
             {
-                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0x21, 0x96, 0xF3)),
+                Background = (Brush)Application.Current.Resources["SelectionBrush"],
                 CornerRadius = new CornerRadius(4),
                 Padding = new Thickness(8, 3, 8, 3),
                 VerticalAlignment = VerticalAlignment.Center
             };
-            runBadge.Child = new TextBlock { Text = "Running", FontSize = 10, Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
+            runBadge.Child = new TextBlock { Text = App.L("home.running"), FontSize = 11, Foreground = (Brush)Application.Current.Resources["SelectionTextBrush"], FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
+            Grid.SetColumn(runBadge, 2);
             titleRow.Children.Add(runBadge);
         }
 
         var sub = $"{inst.McVersion}";
         if (inst.LastPlayed.HasValue)
             sub += $"  ·  Last played {inst.LastPlayed.Value:MMM dd}";
-        info.Children.Add(new TextBlock { Text = sub, Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)), FontSize = 12 });
+        info.Children.Add(new TextBlock { Text = sub, Foreground = (Brush)Application.Current.Resources["SubtleBrush"], FontSize = 12 });
 
         Grid.SetColumn(info, 1);
 
@@ -266,8 +285,8 @@ public sealed partial class InstancesPage : Page
         };
         if (S.SelectedInstanceId == inst.Id)
         {
-            selectBtn.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xAF, 0x50));
-            selectBtn.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF));
+            selectBtn.Background = (Brush)Application.Current.Resources["SelectionBrush"];
+            selectBtn.Foreground = (Brush)Application.Current.Resources["SelectionTextBrush"];
         }
         selectBtn.Click += SelectInstance_Click;
 
@@ -282,12 +301,14 @@ public sealed partial class InstancesPage : Page
 
         var editBtn = new Button
         {
-            Content = new FontIcon { Glyph = "\uE70F", FontSize = 14 },
+            Content = new FontIcon { Glyph = "\uE713", FontSize = 14 },
             FontSize = 13, Padding = new Thickness(8, 6, 8, 6),
             MinHeight = 32, CornerRadius = new CornerRadius(6),
             Tag = inst.Id
         };
         editBtn.Click += EditInstance_Click;
+        ToolTipService.SetToolTip(editBtn, App.L("feature.details"));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(editBtn, App.L("feature.details"));
 
         var moreBtn = new Button
         {
@@ -309,7 +330,17 @@ public sealed partial class InstancesPage : Page
         grid.Children.Add(iconBorder);
         grid.Children.Add(info);
         grid.Children.Add(buttons);
-        card.Child = grid;
+        var body = new StackPanel { Spacing = 14 };
+        var cover = _im.GetCoverAbsolutePath(inst);
+        if (cover != null && !S.CompactInstances)
+            body.Children.Add(new Border { CornerRadius = new CornerRadius(6), Height = 120, Child = new Image
+            {
+                Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage { DecodePixelWidth = 1200, UriSource = new Uri(cover) },
+                Stretch = Stretch.UniformToFill
+            } });
+        body.Children.Add(grid);
+        card.Child = body;
+        if (InstanceMedia.IsAccent(inst.AccentColor)) card.BorderBrush = InstanceDetailsPage.AccentBrush(inst.AccentColor);
         // Right-click on the card pops the same menu as the ⋯ button — standard desktop idiom.
         card.ContextFlyout = BuildInstanceContextFlyout(inst);
         return card;
@@ -328,6 +359,14 @@ public sealed partial class InstancesPage : Page
     private MenuFlyout BuildInstanceContextFlyout(GameInstance inst)
     {
         var flyout = new MenuFlyout { Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Bottom };
+
+        foreach (var (tab, glyph) in new[] { ("settings", "\uE713"), ("compatibility", "\uE73E"), ("screenshots", "\uEB9F"), ("crashes", "\uE7BA"), ("appearance", "\uE790") })
+        {
+            var item = new MenuFlyoutItem { Text = App.L("feature." + tab), Icon = new FontIcon { Glyph = glyph } };
+            item.Click += (_, _) => Frame.Navigate(typeof(InstanceDetailsPage), new InstanceDetailsRequest(inst.Id, tab));
+            flyout.Items.Add(item);
+        }
+        flyout.Items.Add(new MenuFlyoutSeparator());
 
         var play = new MenuFlyoutItem { Text = "Play", Icon = new FontIcon { Glyph = "\uE768" } };
         play.Click += (_, _) =>
@@ -447,12 +486,12 @@ public sealed partial class InstancesPage : Page
     {
         if (sender is Button btn && btn.Tag is string id)
         {
-            if (App.RunningInstances.TryGetValue(id, out var proc) && !proc.HasExited)
+            if (App.IsInstanceBusy(id))
             {
                 await new ContentDialog
                 {
                     Title = App.L("gen.error"),
-                    Content = App.L("inst.running_cannot_delete"),
+                    Content = App.L("inst.busy"),
                     CloseButtonText = "OK",
                     XamlRoot = this.XamlRoot
                 }.ShowAsync();
@@ -469,6 +508,7 @@ public sealed partial class InstancesPage : Page
             };
             if (await dialog.ShowAsync() == ContentDialogResult.Primary)
             {
+                if (App.IsInstanceBusy(id)) return;
                 try
                 {
                     _im.DeleteInstance(id);
@@ -494,121 +534,19 @@ public sealed partial class InstancesPage : Page
         }
     }
 
-    private async void EditInstance_Click(object sender, RoutedEventArgs e)
+    private void EditInstance_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button btn || btn.Tag is not string id) return;
-        var inst = _im.GetInstance(id);
-        if (inst == null) return;
-
-        var nameBox = new TextBox { Text = inst.Name, MinHeight = 36 };
-        var minMemSlider = new Slider { Minimum = 512, Maximum = 16384, Value = inst.MinMemoryMb, StepFrequency = 512, SnapsTo = Microsoft.UI.Xaml.Controls.Primitives.SliderSnapsTo.StepValues };
-        var maxMemSlider = new Slider { Minimum = 512, Maximum = 16384, Value = inst.MaxMemoryMb, StepFrequency = 512, SnapsTo = Microsoft.UI.Xaml.Controls.Primitives.SliderSnapsTo.StepValues };
-        var minMemLabel = new TextBlock { Text = $"Min Memory: {inst.MinMemoryMb} MB", FontSize = 13 };
-        var maxMemLabel = new TextBlock { Text = $"Max Memory: {inst.MaxMemoryMb} MB", FontSize = 13 };
-        var jvmBox = new TextBox { Text = inst.JvmArgs, PlaceholderText = "-XX:+UseG1GC", MinHeight = 36 };
-        var widthBox = new TextBox { Text = inst.WindowWidth.ToString(), MinHeight = 36, MinWidth = 80 };
-        var heightBox = new TextBox { Text = inst.WindowHeight.ToString(), MinHeight = 36, MinWidth = 80 };
-
-        minMemSlider.ValueChanged += (_, args) => minMemLabel.Text = $"Min Memory: {(int)args.NewValue} MB";
-        maxMemSlider.ValueChanged += (_, args) => maxMemLabel.Text = $"Max Memory: {(int)args.NewValue} MB";
-
-        var iconPreview = new Border
-        {
-            Width = 56, Height = 56, CornerRadius = new CornerRadius(8),
-            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)),
-        };
-        void RefreshIconPreview()
-        {
-            var p = _im.GetIconAbsolutePath(inst);
-            iconPreview.Child = p != null
-                ? (UIElement)new Image
-                {
-                    Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(p)) { CreateOptions = Microsoft.UI.Xaml.Media.Imaging.BitmapCreateOptions.IgnoreImageCache },
-                    Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill,
-                }
-                : new FontIcon { Glyph = "\uE74C", FontSize = 24, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        }
-        RefreshIconPreview();
-
-        var pickIconBtn = new Button { Content = "Change icon...", MinHeight = 34 };
-        var clearIconBtn = new Button { Content = "Remove", MinHeight = 34 };
-        pickIconBtn.Click += async (_, _) =>
-        {
-            var picker = new Windows.Storage.Pickers.FileOpenPicker();
-            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow);
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
-            foreach (var e2 in new[] { ".png", ".jpg", ".jpeg", ".webp" }) picker.FileTypeFilter.Add(e2);
-            var f = await picker.PickSingleFileAsync();
-            if (f == null) return;
-            try { _im.SetIconFromFile(inst, f.Path); RefreshIconPreview(); }
-            catch { }
-        };
-        clearIconBtn.Click += (_, _) =>
-        {
-            inst.IconPath = null;
-            _im.SaveInstance(inst);
-            RefreshIconPreview();
-        };
-
-        var iconRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center };
-        iconRow.Children.Add(iconPreview);
-        iconRow.Children.Add(new StackPanel
-        {
-            Spacing = 6, VerticalAlignment = VerticalAlignment.Center,
-            Children =
-            {
-                new TextBlock { Text = "Icon", FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
-                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { pickIconBtn, clearIconBtn } }
-            }
-        });
-
-        var content = new StackPanel
-        {
-            Spacing = 10, MinWidth = 360,
-            Children =
-            {
-                new TextBlock { Text = App.L("inst.name") }, nameBox,
-                new TextBlock { Text = $"Version: {inst.McVersion}  ·  {inst.Loader}{(inst.LoaderVersion != null ? $" {inst.LoaderVersion}" : "")}", Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF)), FontSize = 13 },
-                iconRow,
-                minMemLabel, minMemSlider,
-                maxMemLabel, maxMemSlider,
-                new TextBlock { Text = "JVM Arguments" }, jvmBox,
-                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children =
-                {
-                    new StackPanel { Spacing = 4, Children = { new TextBlock { Text = "Width", FontSize = 12 }, widthBox } },
-                    new TextBlock { Text = "×", VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 10) },
-                    new StackPanel { Spacing = 4, Children = { new TextBlock { Text = "Height", FontSize = 12 }, heightBox } }
-                }}
-            }
-        };
-
-        var dialog = new ContentDialog
-        {
-            Title = App.L("inst.edit"),
-            Content = new ScrollViewer { Content = content, MaxHeight = 500 },
-            PrimaryButtonText = App.L("inst.save"),
-            CloseButtonText = App.L("inst.cancel"),
-            XamlRoot = this.XamlRoot
-        };
-
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-
-        inst.Name = nameBox.Text?.Trim() ?? inst.Name;
-        inst.MinMemoryMb = (int)minMemSlider.Value;
-        inst.MaxMemoryMb = (int)maxMemSlider.Value;
-        inst.JvmArgs = jvmBox.Text ?? "";
-        if (int.TryParse(widthBox.Text, out var w)) inst.WindowWidth = w;
-        if (int.TryParse(heightBox.Text, out var h)) inst.WindowHeight = h;
-
-        _im.SaveInstance(inst);
-        LoadInstances();
+        if (sender is Button { Tag: string id })
+            Frame.Navigate(typeof(InstanceDetailsPage), new InstanceDetailsRequest(id));
     }
 
     private async void NewInstance_Click(object sender, RoutedEventArgs e)
     {
         var nameBox = new TextBox { PlaceholderText = App.L("inst.name"), MinHeight = 36 };
-        var versionBox = new ComboBox { PlaceholderText = "Loading...", MinWidth = 280, MinHeight = 36, IsEnabled = false };
+        var versionBox = new ComboBox { PlaceholderText = App.L("home.loading"), MinWidth = 280, MinHeight = 36, IsEnabled = false };
         var loaderBox = new ComboBox { MinWidth = 280, MinHeight = 36 };
+        var errorText = new TextBlock { TextWrapping = TextWrapping.Wrap, MaxWidth = 360, Visibility = Visibility.Collapsed };
+        var retryButton = new Button { Content = App.L("gen.retry"), Visibility = Visibility.Collapsed };
         loaderBox.Items.Add(new ComboBoxItem { Content = App.L("inst.none"), Tag = "None" });
         loaderBox.Items.Add(new ComboBoxItem { Content = "Fabric", Tag = "Fabric" });
         loaderBox.Items.Add(new ComboBoxItem { Content = "Quilt", Tag = "Quilt" });
@@ -622,41 +560,70 @@ public sealed partial class InstancesPage : Page
             Children = {
                 new TextBlock { Text = App.L("inst.name") }, nameBox,
                 new TextBlock { Text = App.L("inst.mc_version") }, versionBox,
-                new TextBlock { Text = App.L("inst.loader") }, loaderBox
+                new TextBlock { Text = App.L("inst.loader") }, loaderBox,
+                errorText, retryButton
             }
         };
 
         var dialog = new ContentDialog
         {
             Title = App.L("inst.new"),
+            RequestedTheme = ActualTheme,
             Content = content,
             PrimaryButtonText = App.L("inst.create"),
+            IsPrimaryButtonEnabled = false,
             CloseButtonText = App.L("inst.cancel"),
             XamlRoot = this.XamlRoot
         };
 
-        _ = Task.Run(async () =>
+        using var cancellation = new CancellationTokenSource();
+        var cancellationToken = cancellation.Token;
+        void UpdateCanCreate() => dialog.IsPrimaryButtonEnabled =
+            !string.IsNullOrWhiteSpace(nameBox.Text) && versionBox.IsEnabled && versionBox.SelectedItem != null;
+        nameBox.TextChanged += (_, _) => UpdateCanCreate();
+        versionBox.SelectionChanged += (_, _) => UpdateCanCreate();
+        dialog.PrimaryButtonClick += (_, args) =>
         {
+            UpdateCanCreate();
+            args.Cancel = !dialog.IsPrimaryButtonEnabled;
+        };
+        dialog.Closed += (_, _) => cancellation.Cancel();
+
+        async Task LoadVersionsAsync()
+        {
+            errorText.Visibility = Visibility.Collapsed;
+            retryButton.Visibility = Visibility.Collapsed;
+            versionBox.IsEnabled = false;
+            versionBox.PlaceholderText = App.L("home.loading");
+            UpdateCanCreate();
             try
             {
                 var vm = new VersionManager(_im.SharedDir);
-                var manifest = await vm.GetManifestAsync();
+                var manifest = await vm.GetManifestAsync(cancellationToken);
                 var versions = manifest.Versions
                     .Where(v => v.Type == "release" || (App.Settings.ShowSnapshots && v.Type == "snapshot"))
                     .ToList();
-
-                DispatcherQueue.TryEnqueue(() =>
-                {
-                    versionBox.Items.Clear();
-                    foreach (var v in versions)
-                        versionBox.Items.Add(new ComboBoxItem { Content = v.Id, Tag = v.Id });
-                    if (versionBox.Items.Count > 0) versionBox.SelectedIndex = 0;
-                    versionBox.PlaceholderText = "Select version";
-                    versionBox.IsEnabled = true;
-                });
+                cancellationToken.ThrowIfCancellationRequested();
+                if (versions.Count == 0) throw new InvalidDataException(App.L("inst.no_versions"));
+                versionBox.Items.Clear();
+                foreach (var v in versions)
+                    versionBox.Items.Add(new ComboBoxItem { Content = v.Id, Tag = v.Id });
+                versionBox.SelectedIndex = 0;
+                versionBox.PlaceholderText = App.L("inst.select_version");
+                versionBox.IsEnabled = true;
+                UpdateCanCreate();
             }
-            catch { }
-        });
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+            catch (Exception ex)
+            {
+                versionBox.PlaceholderText = App.L("inst.select_version");
+                errorText.Text = App.L("inst.versions_failed") + "\n" + ex.Message;
+                errorText.Visibility = Visibility.Visible;
+                retryButton.Visibility = Visibility.Visible;
+            }
+        }
+        dialog.Opened += async (_, _) => await LoadVersionsAsync();
+        retryButton.Click += async (_, _) => await LoadVersionsAsync();
 
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
 

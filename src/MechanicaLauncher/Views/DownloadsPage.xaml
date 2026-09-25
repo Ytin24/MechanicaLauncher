@@ -1,0 +1,14 @@
+<Page x:Class="MechanicaLauncher.Views.DownloadsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="Transparent">
+    <Grid Padding="{StaticResource PagePadding}" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="16">
+        <TextBlock x:Name="TitleText" Style="{StaticResource PageHeader}" />
+        <TextBlock x:Name="HintText" Grid.Row="1" TextWrapping="Wrap" Foreground="{StaticResource SubtleBrush}" />
+        <ComboBox x:Name="Filter" Grid.Row="2" SelectionChanged="Filter_Changed" MinWidth="180" />
+        <ScrollViewer Grid.Row="3" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="Rows" Spacing="12">
+                <TextBlock x:Name="EmptyText" TextWrapping="Wrap" Margin="0,24" Foreground="{StaticResource SubtleBrush}" />
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

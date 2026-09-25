@@ -68,9 +68,8 @@ public sealed class SkinEditorWindow
             {
                 _tool = tag;
                 foreach (var child in toolRow.Children.OfType<Button>())
-                    child.Background = new SolidColorBrush((string)child.Tag! == _tool
-                        ? Color.FromArgb(0xFF, 0x4C, 0xAF, 0x50)
-                        : Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF));
+                    child.Background = (Brush)Application.Current.Resources[(string)child.Tag! == _tool
+                        ? "SelectionBrush" : "CardBrush"];
             };
             toolRow.Children.Add(b);
         }
@@ -79,11 +78,11 @@ public sealed class SkinEditorWindow
         AddTool("fill", "\uE771", "Bucket fill");
         AddTool("eyedropper", "\uE7A8", "Eyedropper");
         // trigger initial highlight
-        ((Button)toolRow.Children[0]).Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x4C, 0xAF, 0x50));
+        ((Button)toolRow.Children[0]).Background = (Brush)Application.Current.Resources["SelectionBrush"];
 
         var status = new TextBlock
         {
-            Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
+            Foreground = (Brush)Application.Current.Resources["SubtleBrush"],
             FontSize = 12, TextWrapping = TextWrapping.Wrap,
         };
 

@@ -1,5 +1,8 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
+using System.Security.Cryptography;
+using MechanicaLauncher.Core.IO;
 using MechanicaLauncher.Core.Models;
 
 namespace MechanicaLauncher.Core.Game;
@@ -21,8 +24,34 @@ public sealed class GameLauncher
                           string? extraJvmArgs = null,
                           int windowWidth = 1920, int windowHeight = 1080,
                           string? vanillaVersionId = null,
+                          string? server = null, int? port = null) =>
+        Process.Start(CreateStartInfo(meta, javaPath, username, uuid, accessToken, minMem, maxMem,
+            extraJvmArgs, windowWidth, windowHeight, vanillaVersionId, server, port))
+        ?? throw new InvalidOperationException("Failed to start Java process");
+
+    internal ProcessStartInfo CreateStartInfo(VersionMeta meta, string javaPath, string username,
+                          string uuid = "0", string accessToken = "0",
+                          int minMem = 2048, int maxMem = 4096,
+                          string? extraJvmArgs = null,
+                          int windowWidth = 1920, int windowHeight = 1080,
+                          string? vanillaVersionId = null,
                           string? server = null, int? port = null)
     {
+        if (!File.Exists(javaPath))
+            throw new FileNotFoundException("Selected Java executable was not found.", javaPath);
+        if (minMem <= 0 || maxMem < minMem)
+            throw new ArgumentException("Memory limits must be positive; maximum must be at least the minimum.");
+        if (windowWidth <= 0 || windowHeight <= 0)
+            throw new ArgumentException("Window width and height must be positive.");
+        if (string.IsNullOrWhiteSpace(username)) throw new ArgumentException("Player name is required.");
+        if (string.IsNullOrWhiteSpace(accessToken) || accessToken == "0")
+        {
+            accessToken = "0";
+            uuid = OfflineUuid(username);
+        }
+        else if (!Guid.TryParse(uuid, out _))
+            throw new ArgumentException("The Minecraft account UUID is invalid. Sign in again.");
+
         var clientVersionId = vanillaVersionId ?? meta.InheritsFrom ?? meta.Id;
         var versionDir = Path.Combine(_instanceGameDir, "versions", clientVersionId);
         var jarPath = Path.Combine(versionDir, $"{clientVersionId}.jar");
@@ -36,12 +65,13 @@ public sealed class GameLauncher
 
         Directory.CreateDirectory(nativesDir);
 
-        // For modded launches (inheritsFrom = vanilla), the unpatched vanilla jar must NOT be on the
-        // classpath — NeoForge/Forge/Fabric ship patched or remapped Minecraft classes as libraries
-        // (net.minecraft:client:<ver>-<neoform>:slim for NeoForge, intermediary-mapped jars for Fabric),
-        // and including the raw vanilla jar makes fancymodloader/Knot load the wrong minecraft classes,
-        // producing ClassNotFoundException on transformed symbols at runtime.
-        var includeVanillaJar = string.IsNullOrEmpty(meta.InheritsFrom);
+        // Only NeoForge/Forge 1.17+ (BootstrapLauncher) and ModLauncher-based Forge 1.13–1.16 expect
+        // the vanilla client jar off the classpath — they resolve minecraft via JPMS module path
+        // or via -DminecraftJars launch args respectively. Fabric, Quilt, legacy LaunchWrapper Forge
+        // and vanilla itself all require the vanilla jar on the classpath to find minecraft classes.
+        var includeVanillaJar = meta.MainClass is not (
+            "cpw.mods.bootstraplauncher.BootstrapLauncher" or
+            "cpw.mods.modlauncher.Launcher");
         var classpath = BuildClasspath(meta, jarPath, librariesDir, includeVanillaJar);
 
         var vars = new Dictionary<string, string>
@@ -55,6 +85,7 @@ public sealed class GameLauncher
             ["${auth_access_token}"] = accessToken,
             ["${clientid}"] = "",
             ["${auth_xuid}"] = "",
+            ["${user_properties}"] = "{}",
             ["${user_type}"] = accessToken == "0" ? "legacy" : "msa",
             ["${version_type}"] = meta.Type.Length > 0 ? meta.Type : "release",
             ["${natives_directory}"] = nativesDir,
@@ -68,6 +99,13 @@ public sealed class GameLauncher
         };
 
         var args = new List<string> { $"-Xms{minMem}M", $"-Xmx{maxMem}M", "-Dminecraft.api.env.disableDiscord=true" };
+
+        if (meta.Logging.TryGetValue("client", out var logging))
+        {
+            var path = FileDownloader.GetPath(_sharedDir, $"assets/log_configs/{logging.File.Id}");
+            if (!File.Exists(path)) throw new FileNotFoundException("Minecraft logging configuration is missing. Run installation again.", path);
+            args.Add(logging.Argument.Replace("${path}", path));
+        }
 
         if (meta.Arguments?.Jvm != null)
         {
@@ -85,7 +123,7 @@ public sealed class GameLauncher
         }
 
         if (!string.IsNullOrWhiteSpace(extraJvmArgs))
-            args.AddRange(extraJvmArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+            args.AddRange(SplitArguments(extraJvmArgs));
 
         args.Add(meta.MainClass);
 
@@ -124,11 +162,57 @@ public sealed class GameLauncher
             UseShellExecute = false,
             RedirectStandardError = true,
             RedirectStandardOutput = true,
+            CreateNoWindow = true,
         };
         foreach (var arg in args)
             psi.ArgumentList.Add(arg);
 
-        return Process.Start(psi) ?? throw new Exception("Failed to start Java process");
+        return psi;
+    }
+
+    internal static string OfflineUuid(string username)
+    {
+        var bytes = MD5.HashData(Encoding.UTF8.GetBytes("OfflinePlayer:" + username));
+        bytes[6] = (byte)((bytes[6] & 0x0F) | 0x30);
+        bytes[8] = (byte)((bytes[8] & 0x3F) | 0x80);
+        return Guid.ParseExact(Convert.ToHexString(bytes), "N").ToString("D");
+    }
+
+    internal static List<string> SplitArguments(string arguments)
+    {
+        var result = new List<string>();
+        var value = new StringBuilder();
+        bool quoted = false, started = false;
+        for (int i = 0; i < arguments.Length; i++)
+        {
+            var ch = arguments[i];
+            if (char.IsWhiteSpace(ch) && !quoted)
+            {
+                if (started) result.Add(value.ToString());
+                value.Clear();
+                started = false;
+                continue;
+            }
+            started = true;
+            if (ch == '\\')
+            {
+                int count = 1;
+                while (i + 1 < arguments.Length && arguments[i + 1] == '\\') { count++; i++; }
+                if (i + 1 < arguments.Length && arguments[i + 1] == '"')
+                {
+                    value.Append('\\', count / 2);
+                    i++;
+                    if (count % 2 == 1) value.Append('"');
+                    else quoted = !quoted;
+                }
+                else value.Append('\\', count);
+            }
+            else if (ch == '"') quoted = !quoted;
+            else value.Append(ch);
+        }
+        if (quoted) throw new ArgumentException("Unclosed quote in JVM arguments.");
+        if (started) result.Add(value.ToString());
+        return result;
     }
 
     private static List<string> ResolveArgs(List<JsonElement> jsonArgs, Dictionary<string, string> vars)
@@ -158,31 +242,8 @@ public sealed class GameLauncher
         return result;
     }
 
-    private static bool EvaluateRules(JsonElement rules)
-    {
-        bool anyAllow = false;
-        foreach (var rule in rules.EnumerateArray())
-        {
-            var action = rule.GetProperty("action").GetString();
-            if (rule.TryGetProperty("features", out _)) continue;
-            if (rule.TryGetProperty("os", out var os))
-            {
-                if (os.TryGetProperty("name", out var name))
-                {
-                    bool isWin = name.GetString() == "windows";
-                    if (action == "allow" && isWin) anyAllow = true;
-                    if (action == "disallow" && isWin) return false;
-                }
-                else if (action == "allow") anyAllow = true;
-            }
-            else
-            {
-                if (action == "allow") anyAllow = true;
-                if (action == "disallow") return false;
-            }
-        }
-        return anyAllow;
-    }
+    private static bool EvaluateRules(JsonElement rules) => LaunchRules.Evaluate(
+        rules.Deserialize<List<Rule>>(), new Dictionary<string, bool> { ["has_custom_resolution"] = true });
 
     private static string Substitute(string template, Dictionary<string, string> vars)
     {
@@ -191,40 +252,21 @@ public sealed class GameLauncher
         return template;
     }
 
-    private static string BuildClasspath(VersionMeta meta, string clientJar, string librariesDir, bool includeClientJar)
+    internal static string BuildClasspath(VersionMeta meta, string clientJar, string librariesDir, bool includeClientJar)
     {
         var paths = new List<string>();
         foreach (var lib in meta.Libraries)
         {
             if (!AssetDownloader.ShouldIncludeLibrary(lib)) continue;
-            if (lib.Downloads?.Artifact is { } artifact)
+            if (AssetDownloader.GetArtifact(lib) is { } artifact)
             {
-                var p = Path.Combine(librariesDir, artifact.Path.Replace('/', Path.DirectorySeparatorChar));
-                if (File.Exists(p)) paths.Add(p);
-            }
-            else
-            {
-                var maven = MavenToPath(lib.Name);
-                if (maven != null)
-                {
-                    var p = Path.Combine(librariesDir, maven);
-                    if (File.Exists(p)) paths.Add(p);
-                }
+                var p = FileDownloader.GetPath(librariesDir, artifact.Path);
+                if (!File.Exists(p) || new FileInfo(p).Length == 0)
+                    throw new FileNotFoundException($"Required library is missing: {lib.Name}. Run installation again.", p);
+                paths.Add(p);
             }
         }
         if (includeClientJar) paths.Add(clientJar);
-        return string.Join(Path.PathSeparator, paths);
-    }
-
-    private static string? MavenToPath(string name)
-    {
-        var parts = name.Split(':');
-        if (parts.Length < 3) return null;
-        var group = parts[0].Replace('.', Path.DirectorySeparatorChar);
-        var artifact = parts[1];
-        var version = parts[2];
-        if (parts.Length >= 4)
-            return Path.Combine(group, artifact, version, $"{artifact}-{version}-{parts[3]}.jar");
-        return Path.Combine(group, artifact, version, $"{artifact}-{version}.jar");
+        return string.Join(Path.PathSeparator, paths.Distinct(StringComparer.OrdinalIgnoreCase));
     }
 }

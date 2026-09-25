@@ -1,80 +1,149 @@
 using MechanicaLauncher.Core.Models;
+using MechanicaLauncher.Core.IO;
+using MechanicaLauncher.Core.Instances;
 
 namespace MechanicaLauncher.Core.Mods;
 
 public sealed class ModInstaller
 {
-    private static readonly HttpClient Http = new();
-    private readonly ModrinthClient _client = new();
+    private static readonly HttpClient DefaultHttp = new();
+    private readonly HttpClient Http;
+    private readonly ModrinthClient _client;
+
+    public ModInstaller(HttpClient? http = null, ModrinthClient? client = null)
+    {
+        Http = http ?? DefaultHttp;
+        _client = client ?? new();
+    }
 
     public event Action<string>? StatusChanged;
 
-    public async Task InstallModAsync(ModrinthVersion version, string modsDir,
+    public Task InstallModAsync(ModrinthVersion version, string modsDir,
                                        string? mcVersion = null, string? loader = null,
-                                       string? gameDir = null)
+                                       string? gameDir = null, CancellationToken cancellationToken = default)
+        => InstallFilesAsync(version, modsDir, ".jar", mcVersion, loader, cancellationToken);
+
+    public Task InstallContentAsync(ModrinthVersion version, string gameDir, string contentType,
+        string mcVersion, string? loader = null, string? worldName = null, CancellationToken cancellationToken = default)
     {
-        Directory.CreateDirectory(modsDir);
+        if (contentType == "mod" && string.IsNullOrEmpty(loader))
+            throw new InvalidOperationException("Select an instance with a mod loader before installing mods.");
+        var directory = GetContentDirectory(gameDir, contentType, worldName);
+        return InstallFilesAsync(version, directory, contentType == "mod" ? ".jar" : ".zip", mcVersion,
+            contentType == "datapack" ? "datapack" : contentType == "mod" ? loader : null, cancellationToken);
+    }
 
-        var mrpack = version.Files.FirstOrDefault(f => f.Filename.EndsWith(".mrpack"));
-        if (mrpack != null && gameDir != null)
+    public static string GetContentDirectory(string gameDir, string contentType, string? worldName = null)
+    {
+        var folder = contentType switch
         {
-            var tmpPath = Path.Combine(Path.GetTempPath(), mrpack.Filename);
-            StatusChanged?.Invoke($"Downloading modpack {mrpack.Filename}...");
-            var bytes = await Http.GetByteArrayAsync(mrpack.Url);
-            await File.WriteAllBytesAsync(tmpPath, bytes);
+            "mod" => "mods",
+            "shader" => "shaderpacks",
+            "resourcepack" => "resourcepacks",
+            "datapack" => null,
+            _ => throw new ArgumentException("Unsupported content type.", nameof(contentType))
+        };
+        if (folder != null) return FileDownloader.GetPath(gameDir, folder);
+        if (string.IsNullOrWhiteSpace(worldName) || Path.GetFileName(worldName) != worldName)
+            throw new ArgumentException("Select an existing world.", nameof(worldName));
+        var world = FileDownloader.GetPath(Path.Combine(gameDir, "saves"), worldName);
+        if (!File.Exists(Path.Combine(world, "level.dat"))) throw new DirectoryNotFoundException("The selected world no longer exists.");
+        return FileDownloader.GetPath(world, "datapacks");
+    }
 
-            var packInstaller = new ModpackInstaller();
-            packInstaller.ProgressChanged += (s, _) => StatusChanged?.Invoke(s);
-            await packInstaller.InstallAsync(tmpPath, gameDir);
-
-            try { File.Delete(tmpPath); } catch { }
-            return;
+    public async Task<GameInstance> ImportModpackAsync(ModrinthVersion version, InstanceManager instances,
+        CancellationToken cancellationToken = default)
+    {
+        var file = SelectFile(version, ".mrpack");
+        var path = Path.Combine(Path.GetTempPath(), "mechanica-" + Guid.NewGuid().ToString("N") + ".mrpack");
+        try
+        {
+            StatusChanged?.Invoke(file.Filename);
+            await DownloadAsync(file, path, cancellationToken);
+            var installer = new ModpackInstaller(Http);
+            installer.ProgressChanged += (message, _) => StatusChanged?.Invoke(message);
+            return await installer.ImportAsync(path, instances, cancellationToken);
         }
+        finally { AtomicFile.TryDelete(path); }
+    }
 
-        var file = version.Files.FirstOrDefault(f => f.Primary && f.Filename.EndsWith(".jar"))
-                ?? version.Files.FirstOrDefault(f => f.Filename.EndsWith(".jar"));
-        if (file == null) throw new Exception("No .jar file found for this project.");
+    public static ModrinthFile SelectFile(ModrinthVersion version, string extension) =>
+        version.Files.FirstOrDefault(f => f.Primary && f.Filename.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+        ?? version.Files.FirstOrDefault(f => f.Filename.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+        ?? throw new InvalidDataException($"No {extension} file found for {version.Name}.");
 
-        var dest = Path.Combine(modsDir, file.Filename);
-        if (!File.Exists(dest))
+    private async Task InstallFilesAsync(ModrinthVersion version, string modsDir, string extension,
+        string? mcVersion, string? loader, CancellationToken cancellationToken)
+    {
+        var selected = new Dictionary<string, string>(StringComparer.Ordinal);
+        var files = new List<ModrinthFile>();
+        await ResolveAsync(version);
+        var destinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in files)
+            if (!destinations.Add(FileDownloader.GetPath(modsDir, file.Filename)))
+                throw new InvalidDataException($"Dependencies contain conflicting filenames: {file.Filename}");
+
+        var staging = Path.Combine(modsDir, ".install-" + Guid.NewGuid().ToString("N"));
+        try
         {
-            StatusChanged?.Invoke($"Downloading {file.Filename}...");
-            var bytes = await Http.GetByteArrayAsync(file.Url);
-            await File.WriteAllBytesAsync(dest, bytes);
-        }
-
-        var deps = version.Dependencies.Where(d => d.DependencyType == "required").ToList();
-        foreach (var dep in deps)
-        {
-            if (string.IsNullOrEmpty(dep.ProjectId)) continue;
-
-            try
+            foreach (var file in files)
             {
-                var versions = await _client.GetProjectVersionsAsync(dep.ProjectId, mcVersion, loader);
-                var depVer = versions.FirstOrDefault();
-                if (depVer == null) continue;
-
-                var depFile = depVer.Files.FirstOrDefault(f => f.Primary) ?? depVer.Files.FirstOrDefault();
-                if (depFile == null) continue;
-
-                var depDest = Path.Combine(modsDir, depFile.Filename);
-                if (!File.Exists(depDest))
-                {
-                    StatusChanged?.Invoke($"Dependency: {depFile.Filename}...");
-                    var bytes = await Http.GetByteArrayAsync(depFile.Url);
-                    await File.WriteAllBytesAsync(depDest, bytes);
-                }
+                var dest = FileDownloader.GetPath(modsDir, file.Filename);
+                if (await FileDownloader.IsValidAsync(dest, file.Hashes.GetValueOrDefault("sha1"), file.Size,
+                    cancellationToken, file.Hashes.GetValueOrDefault("sha512"))) continue;
+                StatusChanged?.Invoke(file.Filename);
+                await DownloadAsync(file, FileDownloader.GetPath(staging, file.Filename), cancellationToken);
             }
-            catch { }
+            cancellationToken.ThrowIfCancellationRequested();
+            foreach (var file in files)
+            {
+                var staged = FileDownloader.GetPath(staging, file.Filename);
+                if (File.Exists(staged)) File.Move(staged, FileDownloader.GetPath(modsDir, file.Filename), overwrite: true);
+            }
+        }
+        finally { if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true); }
+
+        async Task ResolveAsync(ModrinthVersion current)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var key = current.ProjectId ?? current.Id;
+            if (string.IsNullOrEmpty(key) || string.IsNullOrEmpty(current.Id)) throw new InvalidDataException("Mod version identity is missing.");
+            if (selected.TryGetValue(key, out var previous))
+            {
+                if (previous != current.Id) throw new InvalidDataException($"Required dependencies select conflicting versions of {key}.");
+                return;
+            }
+            selected.Add(key, current.Id);
+            if ((mcVersion != null && current.GameVersions.Count > 0 && !current.GameVersions.Contains(mcVersion)) ||
+                (loader != null && current.Loaders.Count > 0 && !current.Loaders.Contains(loader)))
+                throw new InvalidDataException($"Required mod version is incompatible: {current.Name} ({current.Id}).");
+            foreach (var dep in current.Dependencies.Where(d => d.DependencyType == "required"))
+            {
+                ModrinthVersion? dependency;
+                if (!string.IsNullOrEmpty(dep.VersionId))
+                    dependency = await _client.GetVersionAsync(dep.VersionId, cancellationToken);
+                else if (!string.IsNullOrEmpty(dep.ProjectId))
+                    dependency = (await _client.GetProjectVersionsAsync(dep.ProjectId, mcVersion, loader, cancellationToken)).FirstOrDefault();
+                else throw new InvalidDataException("Required dependency has no project or version ID.");
+                if (dependency == null) throw new InvalidDataException($"Required dependency is unavailable: {dep.VersionId ?? dep.ProjectId}.");
+                await ResolveAsync(dependency);
+            }
+            var file = SelectFile(current, extension);
+            if (Path.GetFileName(file.Filename) != file.Filename) throw new InvalidDataException("Mod filename must not contain a directory.");
+            files.Add(file);
         }
     }
 
-    public static List<InstalledMod> GetInstalledMods(string modsDir)
+    private Task DownloadAsync(ModrinthFile file, string path, CancellationToken cancellationToken) =>
+        FileDownloader.EnsureAsync(Http, file.Url, path, file.Hashes.GetValueOrDefault("sha1"), file.Size,
+            cancellationToken, file.Hashes.GetValueOrDefault("sha512"));
+
+    public static List<InstalledMod> GetInstalledMods(string modsDir, string extension = ".jar")
     {
         if (!Directory.Exists(modsDir)) return [];
 
         var result = new List<InstalledMod>();
-        foreach (var file in Directory.GetFiles(modsDir, "*.jar"))
+        foreach (var file in Directory.GetFiles(modsDir, "*" + extension))
         {
             result.Add(new InstalledMod
             {
@@ -84,7 +153,7 @@ public sealed class ModInstaller
                 SizeBytes = new FileInfo(file).Length
             });
         }
-        foreach (var file in Directory.GetFiles(modsDir, "*.jar.disabled"))
+        foreach (var file in Directory.GetFiles(modsDir, "*" + extension + ".disabled"))
         {
             result.Add(new InstalledMod
             {
@@ -99,9 +168,9 @@ public sealed class ModInstaller
 
     public static void ToggleMod(string modPath)
     {
-        if (modPath.EndsWith(".jar.disabled"))
+        if (modPath.EndsWith(".jar.disabled", StringComparison.OrdinalIgnoreCase) || modPath.EndsWith(".zip.disabled", StringComparison.OrdinalIgnoreCase))
             File.Move(modPath, modPath[..^".disabled".Length]);
-        else if (modPath.EndsWith(".jar"))
+        else if (modPath.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) || modPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             File.Move(modPath, modPath + ".disabled");
     }
 

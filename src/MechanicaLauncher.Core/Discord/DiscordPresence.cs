@@ -1,169 +1,296 @@
+using System.Diagnostics;
 using DiscordRPC;
-using DiscordRPC.Logging;
 using MechanicaLauncher.Core.Instances;
 using MechanicaLauncher.Core.Profiles;
 
 namespace MechanicaLauncher.Core.Discord;
 
+public enum DiscordConnectionStatus { Disabled, Connecting, WaitingForDiscord, Connected, Error }
+
+public sealed record DiscordPresenceSnapshot(DiscordConnectionStatus Status, string Details, string State,
+    DateTimeOffset? StartedAt, string? Error);
+
 public sealed class DiscordPresence : IDisposable
 {
-    private const string AppId = "1487742480236544060";
+    public const string ApplicationId = "1487742480236544060";
+    internal const string MinecraftImage = "https://raw.githubusercontent.com/Mojang/bedrock-samples/a3b394c507a6b11a3c6f61552e778ff5c4b89fd2/resource_pack/pack_icon.png";
+    private readonly object _sync = new();
+    private readonly TimeProvider _time;
+    private readonly Func<DiscordRpcClient> _createClient;
+    private readonly Timer? _timer;
+    private readonly Dictionary<Guid, Session> _sessions = new();
     private DiscordRpcClient? _client;
-    private readonly McStateMachine _sm = new();
-    private string _mcVersion = "";
-    private string _loaderName = "";
-    private LoaderType _loader = LoaderType.None;
-    private string _instanceName = "";
-    private int _modCount;
-    private DateTime? _sessionStart;
+    private PresenceOptions _options = new(false, true, true, true, true, "en");
+    private DiscordConnectionStatus _status;
+    private string? _error;
+    private PresenceActivity? _lastSent;
+    private DateTimeOffset _lastSentAt;
+    private long _sequence;
+    private bool _ready;
+    private bool _force;
+    private bool _disposed;
+    private bool _stopping;
+    private bool _clearConfirmed;
+    private DateTimeOffset _stopDeadline;
 
-    public void Init()
+    public DiscordPresence() : this(TimeProvider.System,
+        () => new DiscordRpcClient(ApplicationId, autoEvents: false), true) { }
+
+    internal DiscordPresence(TimeProvider time, Func<DiscordRpcClient> createClient, bool useTimer = false)
     {
-        try
+        _time = time;
+        _createClient = createClient;
+        if (useTimer) _timer = new Timer(_ => Tick(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    public DiscordPresenceSnapshot Snapshot
+    {
+        get
         {
-            _client = new DiscordRpcClient(AppId) { Logger = new ConsoleLogger(LogLevel.None) };
-            _client.Initialize();
-            SetLauncherPresence();
+            lock (_sync)
+            {
+                var activity = BuildActivity();
+                return new(_status, activity.Details, activity.State, activity.StartedAt, _error);
+            }
         }
-        catch { }
     }
 
-    public void SetInstance(GameInstance? inst, int modCount)
+    public void Configure(LauncherSettings settings, string language)
     {
-        if (inst == null) return;
-        _mcVersion = inst.McVersion;
-        _loader = inst.Loader;
-        _loaderName = inst.Loader != LoaderType.None ? inst.Loader.ToString() : "Vanilla";
-        _instanceName = inst.Name;
-        _modCount = modCount;
-        _sessionStart = DateTime.UtcNow;
+        lock (_sync)
+        {
+            if (_disposed) return;
+            var options = new PresenceOptions(settings.DiscordRpc, settings.DiscordShowServer,
+                settings.DiscordShowDimension, settings.DiscordShowAchievements, settings.DiscordShowMods, language);
+            var hideServer = _options.ShowServer && !options.ShowServer;
+            if (_options != options) _force = true;
+            _options = options;
+            if (!options.Enabled) StopConnection();
+            else if (hideServer && _client != null) StopConnection();
+            else if (_client == null) Connect();
+        }
+        Tick();
     }
 
-    public void ProcessLogLine(string line)
+    public void Reconnect()
     {
-        if (_sm.ProcessLine(line))
-            UpdatePresence();
+        lock (_sync)
+        {
+            if (_disposed || !_options.Enabled) return;
+            StopConnection();
+        }
+        Tick();
     }
 
-    public void SetLauncherPresence()
+    public Guid BeginPreparation(GameInstance instance)
     {
-        _sm.Reset();
-        UpdatePresence();
+        lock (_sync)
+        {
+            if (_disposed) return Guid.Empty;
+            var id = Guid.NewGuid();
+            _sessions[id] = new(instance.Name, instance.McVersion, instance.Loader, ++_sequence, new McStateMachine(_time));
+            _force = true;
+            return id;
+        }
     }
 
-    public void SetMenuPresence()
+    public void GameStarted(Guid sessionId, int enabledModFiles)
     {
-        _sm.Reset();
-        UpdatePresence();
+        lock (_sync)
+        {
+            if (!_sessions.TryGetValue(sessionId, out var session) || session.StartedAt.HasValue) return;
+            session.StartedAt = _time.GetUtcNow();
+            session.Order = ++_sequence;
+            session.ModCount = Math.Max(0, enabledModFiles);
+            _force = true;
+        }
     }
 
-    public void OnGameExit()
+    public void EndPreparation(Guid sessionId)
     {
-        _sm.Reset();
-        _sessionStart = null;
-        UpdatePresence();
+        lock (_sync)
+            if (_sessions.TryGetValue(sessionId, out var session) && session.StartedAt == null)
+                EndSession(sessionId);
     }
 
-    private void UpdatePresence()
+    public void EndSession(Guid sessionId)
     {
-        if (_client == null || !_client.IsInitialized) return;
+        lock (_sync)
+            if (_sessions.Remove(sessionId)) _force = true;
+    }
 
+    public void ProcessLogLine(Guid sessionId, string line)
+    {
+        lock (_sync)
+            if (_sessions.TryGetValue(sessionId, out var session) && session.StartedAt.HasValue)
+                session.State.ProcessLine(line);
+    }
+
+    internal void Tick()
+    {
+        lock (_sync)
+        {
+            if (_disposed || _client == null) return;
+            try
+            {
+                // SDK callbacks run under this lock; stdout only updates session state.
+                var activity = BuildActivity();
+                var now = _time.GetUtcNow();
+                if (!_ready && !_stopping && activity != _lastSent)
+                {
+                    _client.SetPresence(activity.ToPresence());
+                    _lastSent = activity;
+                }
+                _client.Invoke();
+                if (_stopping)
+                {
+                    if (_clearConfirmed || now >= _stopDeadline)
+                    {
+                        Disconnect();
+                        if (_options.Enabled) Connect();
+                    }
+                    return;
+                }
+                if (!_ready) return;
+                if (activity == _lastSent) { _force = false; return; }
+                if (!_force && now - _lastSentAt < TimeSpan.FromSeconds(5)) return;
+                _client.SetPresence(activity.ToPresence());
+                _lastSent = activity;
+                _lastSentAt = now;
+                _force = false;
+            }
+            catch (Exception ex)
+            {
+                _status = DiscordConnectionStatus.Error;
+                _error = PresenceActivity.Text(ex.Message, 300);
+                Debug.WriteLine(ex);
+            }
+        }
+    }
+
+    private void Connect()
+    {
         try
         {
-            var loaderKey = _loader switch
+            _status = DiscordConnectionStatus.Connecting;
+            _error = null;
+            var client = _createClient();
+            _client = client;
+            client.OnReady += (_, _) =>
             {
-                LoaderType.Fabric   => "fabric",
-                LoaderType.Quilt    => "quilt",
-                LoaderType.Forge    => "forge",
-                LoaderType.NeoForge => "neoforge",
-                _                   => "vanilla",
+                _ready = true;
+                if (!_stopping) _status = DiscordConnectionStatus.Connecting;
+                _error = null;
+                _lastSent = null;
+                _force = true;
             };
-
-            var presence = new RichPresence
+            client.OnPresenceUpdate += (_, message) =>
             {
-                Assets = new Assets
+                if (_stopping) { if (message.Presence == null) _clearConfirmed = true; return; }
+                if (message.Presence != null) { _status = DiscordConnectionStatus.Connected; _error = null; }
+            };
+            client.OnConnectionFailed += (_, _) => Waiting();
+            client.OnClose += (_, _) => Waiting();
+            client.OnError += (_, error) =>
+            {
+                if (!_stopping)
                 {
-                    LargeImageKey = "mechanica",
-                    LargeImageText = string.IsNullOrEmpty(_instanceName) ? "Mechanica Launcher" : _instanceName,
-                    SmallImageKey = loaderKey,
-                    SmallImageText = string.IsNullOrEmpty(_mcVersion) ? _loaderName : $"{_loaderName} · {_mcVersion}",
+                    _status = DiscordConnectionStatus.Error;
+                    _error = PresenceActivity.Text($"{error.Code}: {error.Message}", 300);
                 }
             };
-
-            // Elapsed playtime — set once on first state transition out of Launcher, kept across menu/world switches.
-            if (_sessionStart.HasValue)
-                presence.Timestamps = new Timestamps { Start = _sessionStart.Value };
-
-            var settings = LauncherSettings.Load();
-            var state = _sm.State;
-            var stateInfo = $"{_mcVersion} · {_loaderName}";
-            if (_modCount > 0 && settings.DiscordShowMods) stateInfo += $" · {_modCount} mods";
-
-            switch (state.Type)
-            {
-                case McStateType.Launcher:
-                    presence.Details = "In launcher";
-                    presence.State = string.IsNullOrEmpty(_instanceName) ? "Idle" : $"Preparing {_instanceName}";
-                    presence.Timestamps = null;
-                    break;
-
-                case McStateType.Menu:
-                    presence.Details = "Main menu";
-                    presence.State = stateInfo;
-                    break;
-
-                case McStateType.SinglePlayer:
-                    var spDetails = !string.IsNullOrEmpty(state.World) ? $"World: {state.World}" : "Singleplayer";
-                    if (state.Gamemode != null) spDetails += $" · {state.Gamemode}";
-                    if (state.Dimension != null && settings.DiscordShowDimension) spDetails += $" · {state.Dimension}";
-                    presence.Details = spDetails;
-                    presence.State = (state.Achievement != null && settings.DiscordShowAchievements)
-                        ? $"🏆 {state.Achievement}"
-                        : stateInfo;
-                    break;
-
-                case McStateType.MultiPlayer:
-                    presence.Details = settings.DiscordShowServer
-                        ? $"On {state.Server}"
-                        : "Multiplayer";
-                    var mpState = stateInfo;
-                    if (state.Dimension != null && settings.DiscordShowDimension) mpState += $" · {state.Dimension}";
-                    presence.State = mpState;
-                    presence.Buttons =
-                    [
-                        new Button
-                        {
-                            Label = "Join Server",
-                            Url = $"mechanica://connect?server={state.Server}&port={state.Port}&version={_mcVersion}"
-                        },
-                        new Button
-                        {
-                            Label = "Mechanica Launcher",
-                            Url = "https://github.com/Ytin24/MechanicaLauncher"
-                        }
-                    ];
-                    break;
-            }
-
-            if (state.Type != McStateType.MultiPlayer)
-            {
-                presence.Buttons =
-                [
-                    new Button
-                    {
-                        Label = "Mechanica Launcher",
-                        Url = "https://github.com/Ytin24/MechanicaLauncher"
-                    }
-                ];
-            }
-
-            _client.SetPresence(presence);
+            if (!client.Initialize()) throw new InvalidOperationException("Discord IPC initialization failed.");
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Disconnect();
+            _status = DiscordConnectionStatus.Error;
+            _error = PresenceActivity.Text(ex.Message, 300);
+            Debug.WriteLine(ex);
+        }
+    }
+
+    private void Waiting()
+    {
+        _ready = false;
+        if (!_stopping) _status = DiscordConnectionStatus.WaitingForDiscord;
+        _error = null;
+    }
+
+    private void StopConnection()
+    {
+        _status = _options.Enabled ? DiscordConnectionStatus.Connecting : DiscordConnectionStatus.Disabled;
+        _error = null;
+        if (_stopping) return;
+        if (_client == null || !_ready)
+        {
+            Disconnect();
+            if (_options.Enabled) Connect();
+            return;
+        }
+        _stopping = true;
+        _clearConfirmed = false;
+        _stopDeadline = _time.GetUtcNow().AddSeconds(3);
+        // The SDK can discard queued commands during disposal. Wait for the clear response first.
+        _client.ClearPresence();
+    }
+
+    private void Disconnect()
+    {
+        var client = _client;
+        _client = null;
+        _ready = false;
+        _stopping = false;
+        _lastSent = null;
+        _status = DiscordConnectionStatus.Disabled;
+        _error = null;
+        if (client == null) return;
+        try { if (client.IsInitialized) client.ClearPresence(); }
+        catch (Exception ex) { Debug.WriteLine(ex); }
+        finally
+        {
+            try { client.ShutdownOnly = false; client.Dispose(); }
+            catch (Exception ex) { Debug.WriteLine(ex); }
+        }
+    }
+
+    private PresenceActivity BuildActivity()
+    {
+        var session = _sessions.Values.OrderByDescending(s => s.StartedAt.HasValue).ThenByDescending(s => s.Order).FirstOrDefault();
+        var state = session == null ? new(McStateType.Launcher) : session.StartedAt == null ? new(McStateType.Preparing) : session.State.State;
+        if (state.Type == McStateType.Starting && _time.GetUtcNow() - session!.StartedAt >= TimeSpan.FromSeconds(30))
+            state = state with { Type = McStateType.Running };
+        return PresenceActivity.Create(session?.Name, session?.Version, session?.Loader ?? LoaderType.None,
+            session?.ModCount ?? 0, session?.StartedAt, state, _options);
+    }
+
+    internal RichPresence BuildPresence()
+    {
+        lock (_sync) return BuildActivity().ToPresence();
     }
 
     public void Dispose()
     {
-        try { _client?.Dispose(); } catch { }
+        lock (_sync)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            Disconnect();
+            _sessions.Clear();
+        }
+        _timer?.Dispose();
+    }
+
+    private sealed class Session(string name, string version, LoaderType loader, long order, McStateMachine state)
+    {
+        public string Name { get; } = name;
+        public string Version { get; } = version;
+        public LoaderType Loader { get; } = loader;
+        public long Order { get; set; } = order;
+        public McStateMachine State { get; } = state;
+        public DateTimeOffset? StartedAt { get; set; }
+        public int ModCount { get; set; }
     }
 }
+
+internal sealed record PresenceOptions(bool Enabled, bool ShowServer, bool ShowDimension, bool ShowAchievements, bool ShowMods, string Language);

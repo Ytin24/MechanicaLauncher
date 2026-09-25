@@ -1,175 +1,179 @@
+﻿using System.Net;
 using System.Net.Http.Headers;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using MechanicaLauncher.Core.Localization;
 
 namespace MechanicaLauncher.Core.Auth;
 
 public sealed class MicrosoftAuth
 {
-    private static readonly HttpClient Http = new();
+    private static readonly HttpClient SharedHttp = new() { Timeout = TimeSpan.FromSeconds(30) };
+    internal const string LegacyClientId = "00000000441cc96b";
+    private readonly HttpClient _http;
+    public string ClientId { get; }
+    private bool IsLegacy => ClientId == LegacyClientId;
+    private string Authority => IsLegacy ? "https://login.live.com/oauth20_" : "https://login.microsoftonline.com/consumers/oauth2/v2.0/";
+    private string TokenEndpoint => Authority + (IsLegacy ? "token.srf" : "token");
+    private string Scope => IsLegacy ? "service::user.auth.xboxlive.com::MBI_SSL" : "XboxLive.signin offline_access";
+    private string RedirectUri => IsLegacy ? "https://login.live.com/oauth20_desktop.srf" : "https://login.microsoftonline.com/common/oauth2/nativeclient";
 
-    // Legacy Mojang Launcher client_id — whitelisted by Minecraft Services.
-    // A custom Azure app registration would be rejected by api.minecraftservices.com with 403 "Invalid app registration".
-    private const string ClientId = "00000000441cc96b";
-    private const string AuthorizeEndpoint = "https://login.live.com/oauth20_authorize.srf";
-    private const string TokenEndpoint = "https://login.live.com/oauth20_token.srf";
-    public const string RedirectUri = "https://login.live.com/oauth20_desktop.srf";
-    private const string Scope = "service::user.auth.xboxlive.com::MBI_SSL";
+    public MicrosoftAuth(string? clientId = null) : this(SharedHttp, clientId) { }
 
-    public static string BuildAuthorizeUrl()
+    internal MicrosoftAuth(HttpClient http, string? clientId = null)
     {
-        return $"{AuthorizeEndpoint}?client_id={ClientId}" +
-               $"&response_type=code" +
-               $"&redirect_uri={Uri.EscapeDataString(RedirectUri)}" +
-               $"&scope={Uri.EscapeDataString(Scope)}" +
-               "&prompt=select_account";
+        _http = http;
+        ClientId = string.IsNullOrWhiteSpace(clientId) ? LegacyClientId : clientId.Trim();
+        if (ClientId != LegacyClientId && (!Guid.TryParse(ClientId, out var id) || id == Guid.Empty))
+            throw new InvalidOperationException(Locale.Get("acc.client_invalid"));
     }
 
-    public async Task<AuthResult> CompleteWithCodeAsync(string code, CancellationToken ct = default)
+    public static MicrosoftAuth CreateForSignIn()
     {
-        var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        var clientId = Environment.GetEnvironmentVariable("MECHANICA_MICROSOFT_CLIENT_ID");
+        if (string.IsNullOrWhiteSpace(clientId))
+            clientId = typeof(MicrosoftAuth).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+                .FirstOrDefault(attribute => attribute.Key == "MicrosoftClientId")?.Value;
+        return new MicrosoftAuth(clientId);
+    }
+
+    public MicrosoftSignInRequest BeginSignIn() => new(ClientId,
+        Authority + (IsLegacy ? "authorize.srf" : "authorize"), RedirectUri, Scope);
+
+    public async Task<AuthResult> CompleteAsync(MicrosoftSignInRequest signIn, string redirect, CancellationToken ct = default)
+    {
+        if (signIn.ClientId != ClientId) throw new InvalidOperationException(Locale.Get("acc.auth_response_invalid"));
+        var code = signIn.GetAuthorizationCode(redirect);
+        var data = await RequestTokenAsync(new()
         {
-            ["client_id"] = ClientId,
             ["code"] = code,
             ["grant_type"] = "authorization_code",
-            ["redirect_uri"] = RedirectUri,
-            ["scope"] = Scope,
-        });
-
-        var resp = await Http.PostAsync(TokenEndpoint, form, ct);
-        var json = await resp.Content.ReadAsStringAsync(ct);
-        if (!resp.IsSuccessStatusCode)
-            throw new Exception($"Token exchange failed: {json[..Math.Min(300, json.Length)]}");
-
-        var data = JsonSerializer.Deserialize<JsonElement>(json);
-        var msaToken = GetStr(data, "access_token");
-        var refreshToken = data.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
-
-        var result = await ExchangeForMinecraftAsync(msaToken);
-        result.RefreshToken = refreshToken;
+            ["code_verifier"] = signIn.CodeVerifier,
+        }, ct);
+        var result = await ExchangeForMinecraftAsync(GetStr(data, "access_token"), ct);
+        result.RefreshToken = OptionalString(data, "refresh_token");
         return result;
     }
 
     public async Task<AuthResult> RefreshAsync(string refreshToken, CancellationToken ct = default)
     {
-        var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        if (string.IsNullOrWhiteSpace(refreshToken)) throw new InvalidOperationException(Locale.Get("acc.session_expired"));
+        var data = await RequestTokenAsync(new()
         {
-            ["client_id"] = ClientId,
             ["refresh_token"] = refreshToken,
             ["grant_type"] = "refresh_token",
-            ["redirect_uri"] = RedirectUri,
-            ["scope"] = Scope,
-        });
-        var resp = await Http.PostAsync(TokenEndpoint, form, ct);
-        var json = await resp.Content.ReadAsStringAsync(ct);
-        if (!resp.IsSuccessStatusCode)
-            throw new Exception($"Refresh failed: {json[..Math.Min(300, json.Length)]}");
-
-        var data = JsonSerializer.Deserialize<JsonElement>(json);
-        var msaToken = GetStr(data, "access_token");
-        var newRefresh = data.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : refreshToken;
-
-        var result = await ExchangeForMinecraftAsync(msaToken);
-        result.RefreshToken = newRefresh;
+        }, ct);
+        var result = await ExchangeForMinecraftAsync(GetStr(data, "access_token"), ct);
+        result.RefreshToken = OptionalString(data, "refresh_token") ?? refreshToken;
         return result;
     }
 
-    private async Task<AuthResult> ExchangeForMinecraftAsync(string msaToken)
+    private async Task<JsonElement> RequestTokenAsync(Dictionary<string, string> fields, CancellationToken ct)
     {
-        // MBI_SSL scope => RpsTicket uses "t={token}".
-        var xblBody = new
+        fields["client_id"] = ClientId;
+        fields["redirect_uri"] = RedirectUri;
+        fields["scope"] = Scope;
+        using var form = new FormUrlEncodedContent(fields);
+        using var response = await _http.PostAsync(TokenEndpoint, form, ct);
+        return await ReadResponseAsync(response, "Microsoft", ct);
+    }
+
+    private async Task<AuthResult> ExchangeForMinecraftAsync(string msaToken, CancellationToken ct)
+    {
+        var xbl = await PostJsonAsync("https://user.auth.xboxlive.com/user/authenticate", new
         {
-            Properties = new
-            {
-                AuthMethod = "RPS",
-                SiteName = "user.auth.xboxlive.com",
-                RpsTicket = $"t={msaToken}"
-            },
-            RelyingParty = "http://auth.xboxlive.com",
-            TokenType = "JWT"
-        };
-        var xbl = await PostJsonAsync("https://user.auth.xboxlive.com/user/authenticate", xblBody);
-        var xblToken = GetStr(xbl, "Token");
-        var uhs = xbl.GetProperty("DisplayClaims").GetProperty("xui")[0].GetProperty("uhs").GetString()
-                  ?? throw new Exception("Missing user hash from Xbox Live");
+            Properties = new { AuthMethod = "RPS", SiteName = "user.auth.xboxlive.com", RpsTicket = $"{(IsLegacy ? "t" : "d")}={msaToken}" },
+            RelyingParty = "http://auth.xboxlive.com", TokenType = "JWT"
+        }, "Xbox Live", ct);
 
-        var xstsBody = new
+        var xsts = await PostJsonAsync("https://xsts.auth.xboxlive.com/xsts/authorize", new
         {
-            Properties = new
-            {
-                SandboxId = "RETAIL",
-                UserTokens = new[] { xblToken }
-            },
-            RelyingParty = "rp://api.minecraftservices.com/",
-            TokenType = "JWT"
-        };
-        var xsts = await PostJsonAsync("https://xsts.auth.xboxlive.com/xsts/authorize", xstsBody);
-
-        if (xsts.TryGetProperty("XErr", out var xErr))
-        {
-            var code = xErr.GetInt64();
-            throw new Exception(code switch
-            {
-                2148916233 => "No Xbox account found for this Microsoft account.\nSign up at xbox.com first.",
-                2148916235 => "Xbox Live is not available in your country/region.",
-                2148916238 => "This account belongs to a minor.\nAn adult needs to add it to a Microsoft Family.",
-                _ => $"Xbox error {code}"
-            });
-        }
-
-        var xstsToken = GetStr(xsts, "Token");
-
-        var mcBody = new { identityToken = $"XBL3.0 x={uhs};{xstsToken}" };
-        var mc = await PostJsonAsync("https://api.minecraftservices.com/authentication/login_with_xbox", mcBody);
+            Properties = new { SandboxId = "RETAIL", UserTokens = new[] { GetStr(xbl, "Token") } },
+            RelyingParty = "rp://api.minecraftservices.com/", TokenType = "JWT"
+        }, "Xbox Live", ct);
+        var uhs = GetStr(xsts.GetProperty("DisplayClaims").GetProperty("xui")[0], "uhs");
+        var mc = await PostJsonAsync("https://api.minecraftservices.com/authentication/login_with_xbox",
+            new { identityToken = $"XBL3.0 x={uhs};{GetStr(xsts, "Token")}" }, "Minecraft", ct);
         var mcToken = GetStr(mc, "access_token");
 
-        using var req = new HttpRequestMessage(HttpMethod.Get, "https://api.minecraftservices.com/minecraft/profile");
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", mcToken);
-        var profileResp = await Http.SendAsync(req);
-        var profileBody = await profileResp.Content.ReadAsStringAsync();
-
-        if (!profileResp.IsSuccessStatusCode)
-            throw new Exception("Could not load Minecraft profile.\nDo you own Minecraft Java Edition on this account?");
-
-        var profile = JsonSerializer.Deserialize<JsonElement>(profileBody);
+        using var request = ProfileRequest(mcToken);
+        using var response = await _http.SendAsync(request, ct);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            throw new InvalidOperationException(Locale.Get("acc.no_java_profile"));
+        var profile = await ReadResponseAsync(response, "Minecraft", ct);
+        ct.ThrowIfCancellationRequested();
         return new AuthResult
         {
-            Username = GetStr(profile, "name"),
-            Uuid = GetStr(profile, "id"),
-            AccessToken = mcToken,
-            UserType = "msa"
+            Username = GetStr(profile, "name"), Uuid = GetStr(profile, "id"),
+            AccessToken = mcToken, UserType = "msa"
         };
     }
 
-    public static async Task<bool> ValidateTokenAsync(string accessToken)
+    public static Task<bool> ValidateTokenAsync(string accessToken, CancellationToken ct = default) =>
+        new MicrosoftAuth().ValidateAsync(accessToken, ct);
+
+    internal async Task<bool> ValidateAsync(string accessToken, CancellationToken ct = default)
     {
-        try
+        using var request = ProfileRequest(accessToken);
+        using var response = await _http.SendAsync(request, ct);
+        if (response.StatusCode == HttpStatusCode.Unauthorized) return false;
+        await ReadResponseAsync(response, "Minecraft", ct);
+        return true;
+    }
+
+    private static HttpRequestMessage ProfileRequest(string accessToken)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.minecraftservices.com/minecraft/profile");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        return request;
+    }
+
+    private async Task<JsonElement> PostJsonAsync(string url, object payload, string service, CancellationToken ct)
+    {
+        using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        using var response = await _http.PostAsync(url, content, ct);
+        return await ReadResponseAsync(response, service, ct);
+    }
+
+    private static async Task<JsonElement> ReadResponseAsync(HttpResponseMessage response, string service, CancellationToken ct)
+    {
+        var body = await response.Content.ReadAsStringAsync(ct);
+        JsonElement data = default;
+        try { data = JsonSerializer.Deserialize<JsonElement>(body); }
+        catch (JsonException) { }
+
+        if (data.ValueKind == JsonValueKind.Object && data.TryGetProperty("XErr", out var xboxError)
+            && xboxError.ValueKind == JsonValueKind.Number && xboxError.TryGetInt64(out var code))
+            throw new InvalidOperationException(code switch
+            {
+                2148916233 => Locale.Get("acc.no_xbox_profile"),
+                2148916235 => Locale.Get("acc.xbox_region"),
+                2148916236 or 2148916237 or 2148916238 => Locale.Get("acc.xbox_family"),
+                _ => $"Xbox Live: {code}"
+            });
+
+        if (!response.IsSuccessStatusCode)
         {
-            using var req = new HttpRequestMessage(HttpMethod.Get, "https://api.minecraftservices.com/minecraft/profile");
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-            var resp = await Http.SendAsync(req);
-            return resp.IsSuccessStatusCode;
+            var error = OptionalString(data, "error");
+            if (OptionalString(data, "errorMessage") == "Invalid app registration") error = "Invalid app registration";
+            var message = error switch
+            {
+                "invalid_grant" or "interaction_required" => Locale.Get("acc.session_expired"),
+                "invalid_client" or "unauthorized_client" or "Invalid app registration" => Locale.Get("acc.client_rejected"),
+                _ => $"{service}: {Locale.Get("acc.service_unavailable")} (HTTP {(int)response.StatusCode})."
+            };
+            throw new HttpRequestException(message, null, response.StatusCode);
         }
-        catch { return false; }
+        if (data.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException(Locale.Get("acc.auth_response_invalid"));
+        return data;
     }
 
-    private static async Task<JsonElement> PostJsonAsync(string url, object payload)
-    {
-        var json = JsonSerializer.Serialize(payload);
-        using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var resp = await Http.PostAsync(url, content);
-        var body = await resp.Content.ReadAsStringAsync();
+    private static string? OptionalString(JsonElement data, string property) =>
+        data.ValueKind == JsonValueKind.Object && data.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(value.GetString()) ? value.GetString() : null;
 
-        if (!resp.IsSuccessStatusCode)
-            throw new Exception($"{new Uri(url).Host} returned {(int)resp.StatusCode}: {body[..Math.Min(200, body.Length)]}");
-
-        return JsonSerializer.Deserialize<JsonElement>(body);
-    }
-
-    private static string GetStr(JsonElement el, string prop)
-    {
-        if (!el.TryGetProperty(prop, out var val))
-            throw new Exception($"Missing '{prop}' in API response");
-        return val.GetString() ?? throw new Exception($"'{prop}' is null in API response");
-    }
+    private static string GetStr(JsonElement data, string property) =>
+        OptionalString(data, property) ?? throw new InvalidDataException(Locale.Get("acc.auth_response_invalid"));
 }

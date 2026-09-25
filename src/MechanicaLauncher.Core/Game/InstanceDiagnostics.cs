@@ -17,6 +17,21 @@ public sealed class DiagnosticReport
 
 public static class InstanceDiagnostics
 {
+    private static Task ReinstallLoaderAsync(GameInstance inst, InstanceManager im)
+    {
+        if (string.IsNullOrWhiteSpace(inst.LoaderVersion))
+            throw new InvalidOperationException("Select a loader version first.");
+        var gameDir = im.GetGameDir(inst.Id);
+        return inst.Loader switch
+        {
+            LoaderType.Fabric => new FabricInstaller(im.SharedDir, gameDir).InstallAsync(inst.McVersion, inst.LoaderVersion),
+            LoaderType.Quilt => new QuiltInstaller(im.SharedDir, gameDir).InstallAsync(inst.McVersion, inst.LoaderVersion),
+            LoaderType.Forge => new ForgeInstaller(im.SharedDir, gameDir).InstallAsync(inst.McVersion, inst.LoaderVersion, inst.JavaPath),
+            LoaderType.NeoForge => new NeoForgeInstaller(im.SharedDir, gameDir).InstallAsync(inst.McVersion, inst.LoaderVersion, inst.JavaPath),
+            _ => throw new InvalidOperationException("No loader selected.")
+        };
+    }
+
     public static async Task<List<DiagnosticReport>> RunAsync(
         GameInstance inst,
         InstanceManager im,
@@ -55,12 +70,11 @@ public static class InstanceDiagnostics
                 Severity = DiagnosticSeverity.Error,
                 Title = $"Vanilla {inst.McVersion} client.jar missing",
                 Detail = vanillaJar,
-                FixLabel = "Remove and redownload",
+                FixLabel = "Verify and redownload",
                 Fix = async () =>
                 {
-                    var dir = Path.GetDirectoryName(vanillaJar)!;
-                    if (Directory.Exists(dir)) try { Directory.Delete(dir, true); } catch { }
-                    await Task.CompletedTask;
+                    var meta = await vm.GetVersionMetaAsync(inst.McVersion);
+                    await new AssetDownloader(im.SharedDir, gameDir).DownloadVersionAsync(meta);
                 }
             });
         }
@@ -71,19 +85,15 @@ public static class InstanceDiagnostics
         if (inst.Loader != LoaderType.None)
         {
             versionJsonPath = Path.Combine(gameDir, "versions", versionId, $"{versionId}.json");
-            if (!File.Exists(versionJsonPath))
+            if (!File.Exists(versionJsonPath) || !File.Exists(Path.Combine(Path.GetDirectoryName(versionJsonPath)!, ".complete")))
             {
                 reports.Add(new()
                 {
                     Severity = DiagnosticSeverity.Error,
-                    Title = $"{inst.Loader} version.json missing",
-                    Detail = $"{versionJsonPath}\nInstance was built with an old/broken installer.",
-                    FixLabel = "Remove instance",
-                    Fix = async () =>
-                    {
-                        im.DeleteInstance(inst.Id);
-                        await Task.CompletedTask;
-                    }
+                    Title = $"{inst.Loader} installation incomplete",
+                    Detail = $"{versionJsonPath}\nRun the installer again to restore the loader files.",
+                    FixLabel = "Reinstall loader",
+                    Fix = () => ReinstallLoaderAsync(inst, im)
                 });
             }
             else
@@ -95,7 +105,11 @@ public static class InstanceDiagnostics
                 }
                 catch (Exception ex)
                 {
-                    reports.Add(new() { Severity = DiagnosticSeverity.Error, Title = $"{inst.Loader} version.json corrupt", Detail = ex.Message });
+                    reports.Add(new()
+                    {
+                        Severity = DiagnosticSeverity.Error, Title = $"{inst.Loader} version.json corrupt", Detail = ex.Message,
+                        FixLabel = "Reinstall loader", Fix = () => ReinstallLoaderAsync(inst, im)
+                    });
                 }
             }
         }
@@ -129,7 +143,7 @@ public static class InstanceDiagnostics
             foreach (var lib in loaderMeta.Libraries)
             {
                 if (!AssetDownloader.ShouldIncludeLibrary(lib)) continue;
-                if (lib.Downloads?.Artifact is not { } artifact) continue;
+                if (AssetDownloader.GetArtifact(lib) is not { } artifact) continue;
                 var p = Path.Combine(sharedLibs, artifact.Path.Replace('/', Path.DirectorySeparatorChar));
                 if (!File.Exists(p)) missing.Add(artifact.Path);
                 if (missing.Count >= 10) break;
@@ -150,30 +164,26 @@ public static class InstanceDiagnostics
         int requiredJava = 8;
         try
         {
-            var vanillaEntry = (await vm.GetManifestAsync()).Versions.FirstOrDefault(v => v.Id == inst.McVersion);
-            if (vanillaEntry != null)
-            {
-                var vmeta = await vm.GetVersionMetaAsync(vanillaEntry);
-                requiredJava = vmeta.JavaVersion?.MajorVersion ?? 8;
-            }
+            var vmeta = await vm.GetVersionMetaAsync(inst.McVersion);
+            requiredJava = vmeta.JavaVersion?.MajorVersion ?? 8;
         }
         catch { }
 
-        var javaPath = !string.IsNullOrEmpty(inst.JavaPath) && File.Exists(inst.JavaPath)
+        var javaPath = !string.IsNullOrWhiteSpace(inst.JavaPath)
             ? inst.JavaPath
-            : JavaFinder.FindJava();
+            : JavaFinder.FindJava(requiredMajor: requiredJava);
         if (javaPath == null)
-            reports.Add(new() { Severity = DiagnosticSeverity.Error, Title = "No Java installation found", Detail = $"Need Java {requiredJava}+" });
+            reports.Add(new() { Severity = DiagnosticSeverity.Error, Title = "No Java installation found", Detail = $"Need Java {requiredJava}" });
         else
         {
             var label = JavaFinder.GetVersionLabel(javaPath);
             var sev = DiagnosticSeverity.Ok;
             var detail = $"{label}\n{javaPath}";
-            var match = System.Text.RegularExpressions.Regex.Match(label, @"\d+");
-            if (match.Success && int.TryParse(match.Value, out var major) && major < requiredJava)
+            try { JavaFinder.ValidateJava(javaPath, requiredJava); }
+            catch (Exception ex) when (ex is InvalidOperationException or IOException)
             {
-                sev = DiagnosticSeverity.Warning;
-                detail = $"Found {label}, need Java {requiredJava}+. Launcher will auto-download on Play.";
+                sev = DiagnosticSeverity.Error;
+                detail = ex.Message;
             }
             reports.Add(new() { Severity = sev, Title = $"Java: {label}", Detail = detail });
         }

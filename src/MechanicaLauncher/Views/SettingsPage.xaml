@@ -7,6 +7,19 @@
     Background="Transparent"
     NavigationCacheMode="Enabled">
 
+    <Page.Resources>
+        <SolidColorBrush x:Key="SettingsCardBackground" Color="{ThemeResource LauncherCardColor}" />
+        <SolidColorBrush x:Key="SettingsCardBackgroundPointerOver" Color="{ThemeResource LauncherCardHoverColor}" />
+        <SolidColorBrush x:Key="SettingsCardBackgroundPressed" Color="{ThemeResource LauncherBackgroundColor}" />
+        <SolidColorBrush x:Key="SettingsCardBorderBrush" Color="{ThemeResource LauncherBorderColor}" />
+        <Style TargetType="tk:SettingsCard">
+            <Setter Property="CornerRadius" Value="10" />
+        </Style>
+        <Style TargetType="tk:SettingsExpander">
+            <Setter Property="CornerRadius" Value="10" />
+        </Style>
+    </Page.Resources>
+
     <ScrollViewer Padding="{StaticResource PagePadding}">
         <StackPanel Spacing="6" HorizontalAlignment="Stretch">
 
@@ -21,9 +34,9 @@
                     <FontIcon Glyph="&#xE771;" />
                 </tk:SettingsCard.HeaderIcon>
                 <ComboBox x:Name="ThemeSelector" SelectionChanged="Theme_Changed" MinWidth="160" SelectedIndex="0">
-                    <ComboBoxItem x:Name="ThemeDark" />
-                    <ComboBoxItem x:Name="ThemeLight" />
-                    <ComboBoxItem x:Name="ThemeSystem" />
+                    <ComboBoxItem x:Name="ThemeDark" Tag="Dark" />
+                    <ComboBoxItem x:Name="ThemeLight" Tag="Light" />
+                    <ComboBoxItem x:Name="ThemeSystem" Tag="System" />
                 </ComboBox>
             </tk:SettingsCard>
 
@@ -59,27 +72,52 @@
             <TextBlock Text="Discord" FontWeight="SemiBold" FontSize="14"
                        Foreground="{StaticResource DimBrush}" Margin="2,16,0,6" />
 
-            <tk:SettingsExpander Header="Discord Rich Presence"
-                                 Description="Share what you're playing on your Discord profile.">
+            <tk:SettingsExpander x:Name="DiscordCard" Header="Discord Rich Presence">
                 <tk:SettingsExpander.HeaderIcon>
                     <FontIcon Glyph="&#xE8BD;" />
                 </tk:SettingsExpander.HeaderIcon>
                 <ToggleSwitch x:Name="DiscordRpcToggle" Toggled="DiscordRpc_Toggled" />
                 <tk:SettingsExpander.Items>
-                    <tk:SettingsCard Header="Show server address" Description="Broadcast which server you're connected to.">
+                    <tk:SettingsCard x:Name="DiscordServerCard">
                         <ToggleSwitch x:Name="DiscordServerToggle" Toggled="DiscordSetting_Toggled" />
                     </tk:SettingsCard>
-                    <tk:SettingsCard Header="Show dimension" Description="Overworld, Nether, End, etc.">
+                    <tk:SettingsCard x:Name="DiscordDimensionCard">
                         <ToggleSwitch x:Name="DiscordDimensionToggle" Toggled="DiscordSetting_Toggled" />
                     </tk:SettingsCard>
-                    <tk:SettingsCard Header="Show achievements" Description="Broadcast earned advancements.">
+                    <tk:SettingsCard x:Name="DiscordAchievementCard">
                         <ToggleSwitch x:Name="DiscordAchievementToggle" Toggled="DiscordSetting_Toggled" />
                     </tk:SettingsCard>
-                    <tk:SettingsCard Header="Show mod count" Description="Include number of loaded mods in status.">
+                    <tk:SettingsCard x:Name="DiscordModsCard">
                         <ToggleSwitch x:Name="DiscordModsToggle" Toggled="DiscordSetting_Toggled" />
                     </tk:SettingsCard>
                 </tk:SettingsExpander.Items>
             </tk:SettingsExpander>
+
+            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}"
+                    BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,2,0,0">
+                <StackPanel Spacing="12">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="DiscordStatusText" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold"
+                                   TextWrapping="Wrap" VerticalAlignment="Center" />
+                        <Button x:Name="DiscordReconnectButton" Grid.Column="1" Click="DiscordReconnect_Click"
+                                Style="{StaticResource SmallButton}" />
+                    </Grid>
+                    <TextBlock x:Name="DiscordStatusHint" Foreground="{StaticResource SubtleBrush}" FontSize="12" TextWrapping="Wrap" />
+                    <Border x:Name="DiscordPreview" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="0,1,0,0" Padding="0,14,0,0">
+                        <StackPanel Spacing="5">
+                            <TextBlock x:Name="DiscordPreviewLabel" Foreground="{StaticResource DimBrush}" FontSize="12" />
+                            <TextBlock Text="Mechanica Launcher" Foreground="{StaticResource PrimaryBrush}" FontSize="16" FontWeight="SemiBold" />
+                            <TextBlock x:Name="DiscordDetailsText" Foreground="{StaticResource PrimaryBrush}" TextWrapping="Wrap" />
+                            <TextBlock x:Name="DiscordStateText" Foreground="{StaticResource SubtleBrush}" FontSize="12" TextWrapping="Wrap" />
+                            <TextBlock x:Name="DiscordTimeText" Foreground="{StaticResource SubtleBrush}" FontSize="12" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
 
             <!-- Event Mode -->
             <tk:SettingsCard x:Name="EventCard" Header="Event Mode"

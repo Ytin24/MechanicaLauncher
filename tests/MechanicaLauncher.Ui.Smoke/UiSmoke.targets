@@ -1,0 +1,10 @@
+<Project>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'MechanicaLauncher'">
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+    <StartupObject>MechanicaLauncher.UiSmoke</StartupObject>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'MechanicaLauncher'">
+    <Compile Include="$(MSBuildThisFileDirectory)UiSmoke.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)CatalogUiTests.cs" />
+  </ItemGroup>
+</Project>

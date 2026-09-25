@@ -48,6 +48,12 @@ public sealed class GameInstance
     [JsonPropertyName("iconPath")]
     public string? IconPath { get; set; }
 
+    [JsonPropertyName("coverPath")]
+    public string? CoverPath { get; set; }
+
+    [JsonPropertyName("accentColor")]
+    public string? AccentColor { get; set; }
+
     public string GetEffectiveVersionId() => Loader switch
     {
         LoaderType.Fabric when !string.IsNullOrEmpty(LoaderVersion)

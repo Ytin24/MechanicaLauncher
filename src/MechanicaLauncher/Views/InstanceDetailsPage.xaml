@@ -1,0 +1,100 @@
+<Page x:Class="MechanicaLauncher.Views.InstanceDetailsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="Transparent">
+    <Grid Padding="{StaticResource PagePadding}" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="16">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+            <Button x:Name="BackButton" Click="Back_Click" VerticalAlignment="Top"><FontIcon Glyph="&#xE72B;" FontSize="16" /></Button>
+            <StackPanel Grid.Column="1" Spacing="4">
+                <TextBlock x:Name="TitleText" FontSize="26" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="MetaText" Foreground="{StaticResource SubtleBrush}" />
+            </StackPanel>
+            <Button Grid.Column="2" x:Name="FolderButton" Click="Folder_Click" VerticalAlignment="Top" />
+        </Grid>
+        <StackPanel x:Name="Tabs" Grid.Row="1" Orientation="Horizontal" Spacing="6" />
+        <InfoBar x:Name="Notice" Grid.Row="2" IsOpen="False" IsClosable="True" />
+        <Grid x:Name="SettingsPanel" Grid.Row="3" RowDefinitions="*,Auto" RowSpacing="16" Visibility="Collapsed">
+            <ScrollViewer x:Name="SettingsScroll" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled">
+                <StackPanel Spacing="12" Padding="0,0,4,4">
+                    <Border Style="{StaticResource CardPanelWide}">
+                        <Grid ColumnDefinitions="*,168" ColumnSpacing="20">
+                            <StackPanel Spacing="6" VerticalAlignment="Center">
+                                <TextBlock x:Name="MemoryTitle" FontSize="16" FontWeight="SemiBold" />
+                                <TextBlock x:Name="MemoryHint" Foreground="{StaticResource SubtleBrush}" TextWrapping="Wrap" FontSize="12" />
+                            </StackPanel>
+                            <NumberBox x:Name="MaxMemoryBox" Grid.Column="1" SmallChange="512" LargeChange="1024"
+                                       SpinButtonPlacementMode="Inline" ValidationMode="Disabled" ValueChanged="MaxMemory_Changed" />
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource CardPanelWide}">
+                        <StackPanel Spacing="10">
+                            <TextBlock x:Name="WindowTitle" FontSize="16" FontWeight="SemiBold" />
+                            <Grid ColumnDefinitions="*,Auto,*" ColumnSpacing="12">
+                                <NumberBox x:Name="WindowWidthBox" SmallChange="1" LargeChange="100" ValidationMode="Disabled" />
+                                <TextBlock Grid.Column="1" Text="×" VerticalAlignment="Bottom" Margin="0,0,0,8" Foreground="{StaticResource SubtleBrush}" />
+                                <NumberBox x:Name="WindowHeightBox" Grid.Column="2" SmallChange="1" LargeChange="100" ValidationMode="Disabled" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                    <Button x:Name="InstanceModsButton" Click="InstanceMods_Click" HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Stretch" Padding="20,14" CornerRadius="10"
+                            Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                            <FontIcon Glyph="&#xEA86;" FontSize="20" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Spacing="4">
+                                <TextBlock x:Name="ModsTitle" FontWeight="SemiBold" />
+                                <TextBlock x:Name="ModsHint" Foreground="{StaticResource SubtleBrush}" FontSize="12" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="12" VerticalAlignment="Center" />
+                        </Grid>
+                    </Button>
+                    <TextBox x:Name="InstanceNameBox" />
+                    <Expander x:Name="AdvancedSettings" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="16">
+                            <TextBox x:Name="MinMemoryBox" InputScope="Number" Width="260" HorizontalAlignment="Left" />
+                            <StackPanel Spacing="8">
+                                <ToggleSwitch x:Name="AutomaticJavaToggle" Toggled="AutomaticJava_Toggled" />
+                                <TextBlock x:Name="JavaHint" TextWrapping="Wrap" Foreground="{StaticResource SubtleBrush}" FontSize="12" />
+                                <Grid x:Name="JavaPathPanel" ColumnDefinitions="*,Auto" ColumnSpacing="8" Visibility="Collapsed">
+                                    <TextBox x:Name="JavaPathBox" PlaceholderText="C:\Program Files\Java\bin\javaw.exe" />
+                                    <Button x:Name="PickJavaButton" Grid.Column="1" Click="PickJava_Click" VerticalAlignment="Bottom" />
+                                </Grid>
+                            </StackPanel>
+                            <TextBox x:Name="JvmArgsBox" PlaceholderText="-XX:+UseG1GC" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" />
+                        </StackPanel>
+                    </Expander>
+                </StackPanel>
+            </ScrollViewer>
+            <Grid Grid.Row="1" ColumnDefinitions="Auto,*" ColumnSpacing="16">
+                <Button x:Name="SaveSettingsButton" Style="{StaticResource AccentSmallButton}" Click="SaveSettings_Click" />
+                <TextBlock x:Name="SettingsSaveHint" Grid.Column="1" TextWrapping="Wrap" FontSize="12"
+                           Foreground="{StaticResource SubtleBrush}" VerticalAlignment="Center" />
+            </Grid>
+        </Grid>
+        <ScrollViewer x:Name="TextScroll" Grid.Row="3" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="TextContent" Spacing="12" Padding="0,0,4,16" />
+        </ScrollViewer>
+        <Grid x:Name="Gallery" Grid.Row="3" RowDefinitions="Auto,*" RowSpacing="12" Visibility="Collapsed">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <Button x:Name="RefreshGalleryButton" Click="RefreshGallery_Click" />
+                <TextBlock x:Name="GalleryCount" VerticalAlignment="Center" Foreground="{StaticResource SubtleBrush}" />
+            </StackPanel>
+            <GridView x:Name="Screenshots" Grid.Row="1" SelectionMode="None" IsItemClickEnabled="True" ItemClick="Screenshot_Click"
+                      HorizontalAlignment="Stretch">
+                <GridView.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,10,10" Width="230">
+                            <StackPanel>
+                                <Image Source="{Binding Thumbnail}" Height="130" Stretch="UniformToFill" ImageFailed="Thumbnail_Failed" />
+                                <StackPanel Padding="10" Spacing="4">
+                                    <TextBlock Text="{Binding File.Name}" TextTrimming="CharacterEllipsis" Foreground="{StaticResource PrimaryBrush}" />
+                                    <TextBlock Text="{Binding File.Time}" FontSize="11" Foreground="{StaticResource SubtleBrush}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </GridView.ItemTemplate>
+                <GridView.Footer><Button x:Name="MoreScreenshots" Click="MoreScreenshots_Click" Margin="0,8,0,16" /></GridView.Footer>
+            </GridView>
+        </Grid>
+    </Grid>
+</Page>

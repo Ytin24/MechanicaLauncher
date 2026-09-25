@@ -5,7 +5,8 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Mechanica Launcher">
 
-    <Grid AllowDrop="True" DragOver="Root_DragOver" Drop="Root_Drop">
+    <Grid AllowDrop="True" DragOver="Root_DragOver" Drop="Root_Drop"
+          Background="{StaticResource LauncherPaneBrush}">
         <NavigationView
             x:Name="NavView"
             IsBackButtonVisible="Collapsed"
@@ -15,6 +16,12 @@
             CompactPaneLength="48"
             OpenPaneLength="200"
             IsPaneToggleButtonVisible="False">
+
+            <NavigationView.Resources>
+                <SolidColorBrush x:Key="NavigationViewContentBackground" Color="{ThemeResource LauncherBackgroundColor}" />
+                <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="{ThemeResource LauncherPaneColor}" />
+                <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="{ThemeResource LauncherPaneColor}" />
+            </NavigationView.Resources>
 
             <NavigationView.MenuItems>
                 <NavigationViewItem x:Name="NavHome" Content="Home" Tag="Home" IsSelected="True">
@@ -35,6 +42,13 @@
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xEA86;" FontSize="16" />
                     </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Downloads" Tag="Downloads">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE896;" FontSize="16" /></NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge><InfoBadge x:Name="DownloadsBadge" Visibility="Collapsed" /></NavigationViewItem.InfoBadge>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Favorite servers" Tag="Servers">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE774;" FontSize="16" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
 

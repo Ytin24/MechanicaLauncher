@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0-windows7.0": {
+      "Microsoft.Web.WebView2": {
+        "type": "Direct",
+        "requested": "[1.0.4191.47, )",
+        "resolved": "1.0.4191.47",
+        "contentHash": "Snb6mlTpuz6ZFjWMwIdg28Xp6kAUMy3zaLUyGbFSaw+/AJKlwoX8EiaWJ1eUMfKyJHksPkFjJHl1LIB7kX+0AQ=="
+      },
+      "Nitidus.Native": {
+        "type": "Direct",
+        "requested": "[0.1.0-local.20260923.1, )",
+        "resolved": "0.1.0-local.20260923.1",
+        "contentHash": "AdFwGlNaAkbLffJJieL1qJdX4bwmKpWUj1CS3xnrjY8nO45n2IOn5xvixji3K3lXbYoGuqy1+2efgTMDorlC3Q==",
+        "dependencies": {
+          "Nitidus.Core": "[0.1.0-local.20260923.1]"
+        }
+      },
+      "Ordo.Build": {
+        "type": "Direct",
+        "requested": "[0.1.0-local.20260923.1, )",
+        "resolved": "0.1.0-local.20260923.1",
+        "contentHash": "4q5xqzQ+CnviuafzrU6FUtZSYf9xo5cq2CGBuVrkqnXbRCG5fz2E3b0XzGz81jc30wNH0l5XA4pviRADYZXeeg=="
+      },
+      "DiscordRichPresence": {
+        "type": "Transitive",
+        "resolved": "1.2.1.24",
+        "contentHash": "DVmmlFQ/oQmidNRmZhPzYjC7ryaT4beWcKaMKPVw6fhOzM/HOoY6NOL4KMOYEnD4M7SNsODjleYimvUNIZcbiA==",
+        "dependencies": {
+          "Newtonsoft.Json": "13.0.1"
+        }
+      },
+      "Markdig": {
+        "type": "Transitive",
+        "resolved": "1.4.0",
+        "contentHash": "lLhaiI/mNDTNzgLqnmknhf4LjgTqOAyjx5+GNz0X3AxYMxUhmFppF2WVMdER+SDqwhE5wUF1pzs/cuLwFxs7xA=="
+      },
+      "Newtonsoft.Json": {
+        "type": "Transitive",
+        "resolved": "13.0.1",
+        "contentHash": "ppPFpBcvxdsfUonNcvITKqLl3bqxWbDCZIzDWHzjpdAHRFfZe0Dw9HmA0+za13IdyrgJwpkDTDA9fHaxOrt20A=="
+      },
+      "Nitidus.Core": {
+        "type": "Transitive",
+        "resolved": "0.1.0-local.20260923.1",
+        "contentHash": "rTXlO9Re4aAZfT1TVBuHpQQ0YWGdVvOTLXQFvnfCkdla/z/GOArNLyNtEbD2l0c6UWY/c5W97DFigka2pgfm3A=="
+      },
+      "mechanicalauncher.core": {
+        "type": "Project",
+        "dependencies": {
+          "DiscordRichPresence": "[1.2.1.24, )",
+          "Markdig": "[1.4.0, )"
+        }
+      }
+    },
+    "net10.0-windows7.0/win-x64": {
+      "Microsoft.Web.WebView2": {
+        "type": "Direct",
+        "requested": "[1.0.4191.47, )",
+        "resolved": "1.0.4191.47",
+        "contentHash": "Snb6mlTpuz6ZFjWMwIdg28Xp6kAUMy3zaLUyGbFSaw+/AJKlwoX8EiaWJ1eUMfKyJHksPkFjJHl1LIB7kX+0AQ=="
+      },
+      "Nitidus.Native": {
+        "type": "Direct",
+        "requested": "[0.1.0-local.20260923.1, )",
+        "resolved": "0.1.0-local.20260923.1",
+        "contentHash": "AdFwGlNaAkbLffJJieL1qJdX4bwmKpWUj1CS3xnrjY8nO45n2IOn5xvixji3K3lXbYoGuqy1+2efgTMDorlC3Q==",
+        "dependencies": {
+          "Nitidus.Core": "[0.1.0-local.20260923.1]"
+        }
+      }
+    }
+  }
+}

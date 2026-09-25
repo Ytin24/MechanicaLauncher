@@ -1,0 +1,15 @@
+<Page x:Class="MechanicaLauncher.Views.ServersPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="Transparent">
+    <Grid Padding="{StaticResource PagePadding}" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="16">
+        <Grid ColumnDefinitions="*,Auto">
+            <TextBlock x:Name="TitleText" Style="{StaticResource PageHeader}" />
+            <Button x:Name="AddButton" Grid.Column="1" Click="Add_Click" Style="{StaticResource AccentSmallButton}" />
+        </Grid>
+        <TextBlock x:Name="HintText" Grid.Row="1" TextWrapping="Wrap" Foreground="{StaticResource SubtleBrush}" />
+        <InfoBar x:Name="Notice" Grid.Row="2" IsOpen="False" IsClosable="True" Severity="Error" />
+        <ScrollViewer Grid.Row="3" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="Rows" Spacing="12" />
+        </ScrollViewer>
+    </Grid>
+</Page>

@@ -3,95 +3,55 @@
     x:Class="MechanicaLauncher.Views.ModsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Background="Transparent"
-    NavigationCacheMode="Enabled">
-
-    <Grid Padding="{StaticResource PagePadding}" ColumnDefinitions="5*,16,7*" RowDefinitions="Auto,*">
-
-        <!-- Header -->
-        <Grid Grid.ColumnSpan="3" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
-            <StackPanel Spacing="4">
+    Background="Transparent" NavigationCacheMode="Enabled">
+    <Grid Padding="{StaticResource PagePadding}" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="14">
+        <Grid x:Name="HeaderGrid" ColumnDefinitions="*,300" RowDefinitions="Auto,Auto" ColumnSpacing="16" SizeChanged="Header_SizeChanged">
+            <StackPanel Spacing="3">
                 <TextBlock x:Name="PageTitle" Style="{StaticResource PageHeader}" Margin="0" />
-                <TextBlock x:Name="InstanceLabel" Text="No instance selected"
-                           Foreground="{StaticResource DimBrush}" FontSize="12" Height="18" />
+                <TextBlock x:Name="PageSubtitle" Foreground="{StaticResource SubtleBrush}" FontSize="12" TextWrapping="Wrap" />
             </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
-                <Button x:Name="OpenFolderBtn" Style="{StaticResource SmallButton}" Click="OpenFolder_Click"
-                        ToolTipService.ToolTip="Open mods folder">
+            <ComboBox x:Name="InstancePicker" Grid.Column="1" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                      SelectionChanged="Instance_Changed" />
+        </Grid>
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button x:Name="CatalogTab" Style="{StaticResource FilterChip}" Click="Catalog_Click" />
+                <Button x:Name="InstalledTab" Style="{StaticResource FilterChip}" Click="Installed_Click" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <Button x:Name="CheckModsButton" Style="{StaticResource SmallButton}" Click="CheckMods_Click" />
+                <Button x:Name="OpenFolderBtn" Style="{StaticResource SmallButton}" Click="OpenFolder_Click" Visibility="Collapsed">
                     <FontIcon Glyph="&#xE838;" FontSize="14" />
                 </Button>
-                <Button Style="{StaticResource SmallButton}" Click="RefreshMods_Click"
-                        ToolTipService.ToolTip="Refresh">
+                <Button x:Name="RefreshBtn" Style="{StaticResource SmallButton}" Click="Refresh_Click">
                     <FontIcon Glyph="&#xE72C;" FontSize="14" />
                 </Button>
             </StackPanel>
         </Grid>
-
-        <!-- Left: Installed Mods -->
-        <Grid Grid.Row="1" Grid.Column="0" RowDefinitions="Auto,*" MinHeight="300">
-            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,8">
-                <TextBlock x:Name="InstalledLabel" Style="{StaticResource SectionHeader}" Margin="0" />
-                <TextBlock x:Name="ModCountLabel" Grid.Column="1" Text="0" FontSize="12"
-                           Foreground="{StaticResource DimBrush}" VerticalAlignment="Center" />
+        <Grid x:Name="TypeTabs" Grid.Row="2" ColumnSpacing="6" RowSpacing="6" SizeChanged="TypeTabs_SizeChanged" />
+        <Grid x:Name="BrowsePanel" Grid.Row="3" RowDefinitions="Auto,Auto,*" RowSpacing="10">
+            <Grid ColumnDefinitions="*,180" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
+                <AutoSuggestBox x:Name="ModSearchBox" QueryIcon="Find" MinHeight="36"
+                                TextChanged="ModSearch_TextChanged" QuerySubmitted="ModSearch_QuerySubmitted" />
+                <ComboBox x:Name="SortFilter" Grid.Column="1" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="Filter_Changed">
+                    <ComboBoxItem Tag="relevance" />
+                    <ComboBoxItem Tag="downloads" />
+                    <ComboBoxItem Tag="newest" />
+                    <ComboBoxItem Tag="updated" />
+                </ComboBox>
+                <CheckBox x:Name="CompatibleOnly" Grid.Row="1" IsChecked="True" Checked="Compatibility_Changed" Unchecked="Compatibility_Changed" />
+                <ComboBox x:Name="CategoryFilter" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="Filter_Changed" />
             </Grid>
-
-            <ScrollViewer Grid.Row="1">
-                <StackPanel x:Name="InstalledModsPanel" Spacing="6" />
+            <TextBlock x:Name="ResultsInfo" Grid.Row="1" FontSize="12" Foreground="{StaticResource SubtleBrush}" TextWrapping="Wrap" />
+            <ScrollViewer x:Name="ResultsScroll" Grid.Row="2" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled">
+                <StackPanel x:Name="SearchResultsPanel" Spacing="8" Margin="0,0,4,6" />
             </ScrollViewer>
         </Grid>
-
-        <!-- Right: Browse Modrinth -->
-        <Grid Grid.Row="1" Grid.Column="2" RowDefinitions="Auto,Auto,Auto,*" MinHeight="300">
-
-            <!-- Search -->
-            <AutoSuggestBox PlaceholderText="Search mods, shaders, modpacks..." QueryIcon="Find"
-                            MinHeight="36" x:Name="ModSearchBox"
-                            TextChanged="ModSearch_TextChanged"
-                            QuerySubmitted="ModSearch_QuerySubmitted" />
-
-            <!-- Type tabs + sort/category -->
-            <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,10,0,0">
-                <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
-                              HorizontalScrollMode="Auto" VerticalScrollMode="Disabled">
-                    <StackPanel x:Name="TypeTabs" Orientation="Horizontal" Spacing="4" />
-                </ScrollViewer>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="12,0,0,0">
-                    <ComboBox x:Name="SortFilter" MinWidth="110" MinHeight="32" SelectedIndex="0"
-                              SelectionChanged="Filter_Changed">
-                        <ComboBoxItem Content="Relevance" Tag="relevance" />
-                        <ComboBoxItem Content="Downloads" Tag="downloads" />
-                        <ComboBoxItem Content="Newest" Tag="newest" />
-                        <ComboBoxItem Content="Updated" Tag="updated" />
-                    </ComboBox>
-                    <ComboBox x:Name="CategoryFilter" MinWidth="110" MinHeight="32" SelectedIndex="0"
-                              SelectionChanged="Filter_Changed">
-                        <ComboBoxItem Content="All" Tag="" />
-                        <ComboBoxItem Content="Optimization" Tag="optimization" />
-                        <ComboBoxItem Content="Utility" Tag="utility" />
-                        <ComboBoxItem Content="Library" Tag="library" />
-                        <ComboBoxItem Content="Decoration" Tag="decoration" />
-                        <ComboBoxItem Content="Adventure" Tag="adventure" />
-                        <ComboBoxItem Content="Technology" Tag="technology" />
-                        <ComboBoxItem Content="Magic" Tag="magic" />
-                        <ComboBoxItem Content="Storage" Tag="storage" />
-                        <ComboBoxItem Content="World Gen" Tag="worldgen" />
-                    </ComboBox>
-                </StackPanel>
-            </Grid>
-
-            <!-- Results count -->
-            <TextBlock Grid.Row="2" x:Name="ResultsInfo" Text="" FontSize="12"
-                       Foreground="{StaticResource DimBrush}" Margin="0,8,0,4" Height="18" />
-
-            <!-- Results -->
-            <ScrollViewer Grid.Row="3">
-                <StackPanel x:Name="SearchResultsPanel" Spacing="6">
-                    <Border Style="{StaticResource CardPanelWide}" Opacity="0.5" MinHeight="48">
-                        <TextBlock Text="Search or browse mods from Modrinth"
-                                   Foreground="{StaticResource DimBrush}" FontSize="13"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    </Border>
-                </StackPanel>
+        <Grid x:Name="InstalledPanel" Grid.Row="3" RowDefinitions="Auto,Auto,*" RowSpacing="10" Visibility="Collapsed">
+            <ComboBox x:Name="WorldPicker" HorizontalAlignment="Stretch" Visibility="Collapsed" SelectionChanged="World_Changed" />
+            <TextBlock x:Name="InstalledInfo" Grid.Row="1" FontSize="12" Foreground="{StaticResource SubtleBrush}" TextWrapping="Wrap" />
+            <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled">
+                <StackPanel x:Name="InstalledModsPanel" Spacing="8" Margin="0,0,4,6" />
             </ScrollViewer>
         </Grid>
     </Grid>

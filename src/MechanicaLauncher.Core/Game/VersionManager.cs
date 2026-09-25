@@ -1,79 +1,115 @@
-using System.Net.Http.Json;
 using System.Text.Json;
+using MechanicaLauncher.Core.IO;
 using MechanicaLauncher.Core.Models;
 
 namespace MechanicaLauncher.Core.Game;
 
 public sealed class VersionManager
 {
-    private static readonly HttpClient Http = new();
+    private static readonly HttpClient DefaultHttp = new() { Timeout = TimeSpan.FromSeconds(20) };
+    private readonly HttpClient Http;
     private const string ManifestUrl = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
     private readonly string _sharedDir;
 
-    public VersionManager(string sharedDir)
+    public VersionManager(string sharedDir, HttpClient? http = null)
     {
         _sharedDir = sharedDir;
+        Http = http ?? DefaultHttp;
     }
 
-    public async Task<VersionManifest> GetManifestAsync()
+    public async Task<VersionManifest> GetManifestAsync(CancellationToken cancellationToken = default)
     {
-        return await Http.GetFromJsonAsync<VersionManifest>(ManifestUrl) ?? new();
+        var cachePath = Path.Combine(_sharedDir, "version_manifest.json");
+        string json;
+        try
+        {
+            json = await Http.GetStringAsync(ManifestUrl, cancellationToken);
+        }
+        catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException) && !cancellationToken.IsCancellationRequested && File.Exists(cachePath))
+        {
+            json = await File.ReadAllTextAsync(cachePath, cancellationToken);
+        }
+        var manifest = JsonSerializer.Deserialize<VersionManifest>(json)
+            ?? throw new InvalidDataException("Minecraft version manifest is empty.");
+        if (manifest.Versions.Count == 0) throw new InvalidDataException("Minecraft version manifest has no versions.");
+        await AtomicFile.WriteTextAsync(cachePath, json, cancellationToken);
+        return manifest;
     }
 
-    public async Task<VersionMeta> GetVersionMetaAsync(VersionEntry entry)
+    public async Task<VersionMeta> GetVersionMetaAsync(VersionEntry entry, CancellationToken cancellationToken = default)
     {
-        var localPath = Path.Combine(_sharedDir, "versions", entry.Id, $"{entry.Id}.json");
+        var localPath = GetVersionPath(_sharedDir, entry.Id);
         if (File.Exists(localPath))
         {
-            var json = await File.ReadAllTextAsync(localPath);
-            return JsonSerializer.Deserialize<VersionMeta>(json) ?? new();
+            try
+            {
+                var cached = JsonSerializer.Deserialize<VersionMeta>(await File.ReadAllTextAsync(localPath, cancellationToken));
+                if (cached?.Id == entry.Id && !string.IsNullOrEmpty(cached.MainClass)) return cached;
+            }
+            catch (JsonException) { }
         }
 
-        var rawJson = await Http.GetStringAsync(entry.Url);
-        Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
-        await File.WriteAllTextAsync(localPath, rawJson);
-        return JsonSerializer.Deserialize<VersionMeta>(rawJson) ?? new();
+        var rawJson = await Http.GetStringAsync(entry.Url, cancellationToken);
+        var meta = JsonSerializer.Deserialize<VersionMeta>(rawJson)
+            ?? throw new InvalidDataException($"Version metadata is empty: {entry.Id}");
+        if (meta.Id != entry.Id || string.IsNullOrEmpty(meta.MainClass))
+            throw new InvalidDataException($"Invalid version metadata: {entry.Id}");
+        await AtomicFile.WriteTextAsync(localPath, rawJson, cancellationToken);
+        return meta;
     }
 
-    public async Task<VersionMeta> GetMergedMetaAsync(string versionId, string instanceGameDir)
+    public async Task<VersionMeta> GetMergedMetaAsync(string versionId, string instanceGameDir, CancellationToken cancellationToken = default)
     {
-        var instanceVersionPath = Path.Combine(instanceGameDir, "versions", versionId, $"{versionId}.json");
-        var sharedVersionPath = Path.Combine(_sharedDir, "versions", versionId, $"{versionId}.json");
+        var instanceVersionPath = GetVersionPath(instanceGameDir, versionId);
+        var sharedVersionPath = GetVersionPath(_sharedDir, versionId);
 
         string? json = null;
         if (File.Exists(instanceVersionPath))
-            json = await File.ReadAllTextAsync(instanceVersionPath);
+            json = await File.ReadAllTextAsync(instanceVersionPath, cancellationToken);
         else if (File.Exists(sharedVersionPath))
-            json = await File.ReadAllTextAsync(sharedVersionPath);
+            json = await File.ReadAllTextAsync(sharedVersionPath, cancellationToken);
 
         if (json == null)
             throw new FileNotFoundException($"Version JSON not found for {versionId}");
 
-        var meta = JsonSerializer.Deserialize<VersionMeta>(json) ?? new();
+        var meta = JsonSerializer.Deserialize<VersionMeta>(json)
+            ?? throw new InvalidDataException($"Version metadata is empty: {versionId}");
+        if (string.IsNullOrWhiteSpace(meta.MainClass)) throw new InvalidDataException($"Main class is missing: {versionId}");
 
         if (!string.IsNullOrEmpty(meta.InheritsFrom))
         {
-            var parentMeta = await LoadVersionMetaAsync(meta.InheritsFrom);
+            var parentMeta = await GetVersionMetaAsync(meta.InheritsFrom, cancellationToken);
             meta = MergeVersionMeta(parentMeta, meta);
         }
 
         return meta;
     }
 
-    private async Task<VersionMeta> LoadVersionMetaAsync(string versionId)
+    public async Task<VersionMeta> GetVersionMetaAsync(string versionId, CancellationToken cancellationToken = default)
     {
-        var path = Path.Combine(_sharedDir, "versions", versionId, $"{versionId}.json");
+        var path = GetVersionPath(_sharedDir, versionId);
         if (File.Exists(path))
         {
-            var json = await File.ReadAllTextAsync(path);
-            return JsonSerializer.Deserialize<VersionMeta>(json) ?? new();
+            try
+            {
+                var cached = JsonSerializer.Deserialize<VersionMeta>(await File.ReadAllTextAsync(path, cancellationToken));
+                if (cached?.Id == versionId && !string.IsNullOrEmpty(cached.MainClass)) return cached;
+            }
+            catch (JsonException) { }
         }
 
-        var manifest = await GetManifestAsync();
+        var manifest = await GetManifestAsync(cancellationToken);
         var entry = manifest.Versions.FirstOrDefault(v => v.Id == versionId)
             ?? throw new Exception($"Version {versionId} not found in manifest");
 
-        return await GetVersionMetaAsync(entry);
+        return await GetVersionMetaAsync(entry, cancellationToken);
+    }
+
+    private static string GetVersionPath(string root, string versionId)
+    {
+        if (string.IsNullOrWhiteSpace(versionId) || versionId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || versionId is "." or "..")
+            throw new InvalidDataException($"Invalid version ID: {versionId}");
+        return FileDownloader.GetPath(root, $"versions/{versionId}/{versionId}.json");
     }
 
     private static VersionMeta MergeVersionMeta(VersionMeta parent, VersionMeta child)
@@ -91,6 +127,7 @@ public sealed class VersionManager
             Arguments = MergeArguments(parent.Arguments, child.Arguments),
             MinecraftArguments = child.MinecraftArguments ?? parent.MinecraftArguments,
             JavaVersion = child.JavaVersion ?? parent.JavaVersion,
+            Logging = child.Logging.Count > 0 ? child.Logging : parent.Logging,
         };
     }
 

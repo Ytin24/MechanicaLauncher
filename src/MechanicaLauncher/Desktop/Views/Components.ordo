@@ -1,0 +1,72 @@
+namespace MechanicaLauncher.Desktop.Views
+using MechanicaLauncher.Desktop
+
+control Input : TextField {
+    defaults { ShowLabel=false; ShowError=false }
+}
+control NavButton : Button {
+    in Glyph: string = ""
+    in Caption: string = ""
+    in Hint: string = ""
+    in Stacked: bool = false
+    in Badge: string = ""
+    defaults { TextAlignment=Left; Padding=0 }
+}
+control Sidebar : Column {
+    in IndicatorY: float = 0
+    in IndicatorVisible: bool = false
+    in IndicatorHeight: float = 42
+}
+control FitImage : Canvas {
+    in Picture: ImageSource = none
+    in Cover: bool = false
+}
+template Entry(vm: ItemModel) {
+    Column Boundary=false Padding=0 Gap=0 {
+        Card .entry Selected=vm.Selected Padding=(vm.Compact ? 12 : 16) {
+            Row Gap=16 {
+                FitImage Picture=vm.Image Width=56 Height=56 Visible=vm.HasImage
+                Card .tile Width=56 Height=56 Padding=10 Visible=(!vm.HasImage) {
+                    Text Text=(vm.Title.Length > 0 ? vm.Title.Substring(0, 1) : "M") FontSize=25 FontWeight=600 TextAlignment=Center
+                }
+                Column Grow=1 Gap=4 {
+                    Text .entryTitle vm.Title Wrap=true
+                    Text .muted vm.Meta Wrap=true Visible=(vm.Meta.Length > 0)
+                    Text vm.Description Wrap=true Visible=(!vm.Compact && vm.Description.Length > 0)
+                }
+                Button .entryPrimary vm.Primary Width=136 Command=vm.Invoke Enabled=vm.Enabled Visible=(vm.Primary.Length > 0)
+            }
+            ProgressBar Progress=vm.Progress Visible=vm.HasProgress Height=4
+            Row Gap=8 Visible=(vm.Secondary.Length > 0 || vm.Tertiary.Length > 0) {
+                Spacer Width=64
+                Button .entrySecondary vm.Secondary Width=128 Command=vm.Invoke2 Visible=(vm.Secondary.Length > 0) Enabled=vm.Enabled
+                Button .entrySecondary vm.Tertiary Width=96 Command=vm.Invoke3 Visible=(vm.Tertiary.Length > 0) Enabled=vm.Enabled
+            }
+        }
+        Spacer Height=8
+    }
+}
+template Choice(vm: ItemModel) {
+    Column Boundary=false Padding=4 Gap=4 {
+        Button vm.Title TextAlignment=Left Command=vm.Invoke ControlHeight=42 Enabled=vm.Enabled Selected=vm.Selected
+        Text .muted vm.Meta Wrap=true Visible=(vm.Meta.Length > 0)
+    }
+}
+template Field(vm: FieldModel) {
+    Column Boundary=false Gap=6 Padding=4 {
+        Text .muted vm.Label
+        Input Value <=> vm.Value
+    }
+}
+template Article(vm: ItemModel) {
+    Column .article Boundary=false Padding=14 Gap=12 {
+        Text .entryTitle vm.Title Wrap=true Visible=(vm.Title.Length > 0)
+        FitImage Picture=vm.Image Height=320 Visible=vm.HasImage
+        Text vm.Description Wrap=true Visible=(vm.Description.Length > 0)
+        Text .muted vm.Meta Wrap=true Visible=(vm.Meta.Length > 0)
+        Row Gap=8 Visible=(vm.Primary.Length > 0 || vm.Secondary.Length > 0) {
+            Button vm.Primary Command=vm.Invoke Width=210 Visible=(vm.Primary.Length > 0)
+            Button vm.Secondary Command=vm.Invoke2 Width=180 Visible=(vm.Secondary.Length > 0)
+        }
+    }
+}

@@ -2,18 +2,35 @@ using System.IO.Compression;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using MechanicaLauncher.Core.Instances;
+using MechanicaLauncher.Core.IO;
 
 namespace MechanicaLauncher.Core.Mods;
 
 public sealed class ModpackInstaller
 {
-    private static readonly HttpClient Http = new();
+    private static readonly HttpClient DefaultHttp = new();
+    private readonly HttpClient Http;
+
+    public ModpackInstaller(HttpClient? http = null) => Http = http ?? DefaultHttp;
 
     public event Action<string, double>? ProgressChanged;
 
     // Exports an instance to a Modrinth .mrpack. Config/saves/mods all shipped as overrides —
     // files go in as-is without Modrinth hashes because the user may have mods from other sources.
     public static async Task ExportAsync(GameInstance inst, InstanceManager im, string outputPath)
+    {
+        outputPath = Path.GetFullPath(outputPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        var temporary = outputPath + "." + Guid.NewGuid().ToString("N") + ".part";
+        try
+        {
+            await ExportToFileAsync(inst, im, temporary, outputPath);
+            File.Move(temporary, outputPath, overwrite: true);
+        }
+        finally { AtomicFile.TryDelete(temporary); }
+    }
+
+    private static async Task ExportToFileAsync(GameInstance inst, InstanceManager im, string outputPath, string excludedPath)
     {
         var gameDir = im.GetGameDir(inst.Id);
         if (!Directory.Exists(gameDir))
@@ -42,7 +59,6 @@ public sealed class ModpackInstaller
         };
         var indexJson = JsonSerializer.Serialize(index, new JsonSerializerOptions { WriteIndented = true });
 
-        if (File.Exists(outputPath)) File.Delete(outputPath);
         using var archive = ZipFile.Open(outputPath, ZipArchiveMode.Create);
 
         // modrinth.index.json first
@@ -73,6 +89,8 @@ public sealed class ModpackInstaller
             {
                 foreach (var file in Directory.EnumerateFiles(abs, "*", SearchOption.AllDirectories))
                 {
+                    var fullPath = Path.GetFullPath(file);
+                    if (fullPath.Equals(outputPath, StringComparison.OrdinalIgnoreCase) || fullPath.Equals(excludedPath, StringComparison.OrdinalIgnoreCase)) continue;
                     var entryPath = "overrides/" + Path.GetRelativePath(gameDir, file).Replace('\\', '/');
                     archive.CreateEntryFromFile(file, entryPath, System.IO.Compression.CompressionLevel.Optimal);
                 }
@@ -80,7 +98,7 @@ public sealed class ModpackInstaller
         }
     }
 
-    public async Task<GameInstance> ImportAsync(string mrpackPath, InstanceManager im)
+    public async Task<GameInstance> ImportAsync(string mrpackPath, InstanceManager im, CancellationToken cancellationToken = default)
     {
         using var zip = ZipFile.OpenRead(mrpackPath);
         var indexEntry = zip.GetEntry("modrinth.index.json")
@@ -88,9 +106,10 @@ public sealed class ModpackInstaller
 
         MrpackIndex index;
         using (var stream = indexEntry.Open())
-            index = await JsonSerializer.DeserializeAsync<MrpackIndex>(stream)
+            index = await JsonSerializer.DeserializeAsync<MrpackIndex>(stream, cancellationToken: cancellationToken)
                 ?? throw new Exception("Invalid mrpack: empty index");
 
+        ValidateIndex(index);
         if (!index.Dependencies.TryGetValue("minecraft", out var mcVersion) || string.IsNullOrEmpty(mcVersion))
             throw new Exception("Modpack manifest missing minecraft dependency");
 
@@ -110,35 +129,70 @@ public sealed class ModpackInstaller
 
         var instanceName = !string.IsNullOrEmpty(index.Name) ? index.Name : Path.GetFileNameWithoutExtension(mrpackPath);
 
-        // Raise later — don't reveal the instance on Home until files are on disk.
-        var inst = im.CreateInstance(instanceName, mcVersion, loader, loaderVersion, raiseChangedEvent: false);
-        await InstallAsync(mrpackPath, im.GetGameDir(inst.Id));
-
-        // Pull icon if the mrpack ships one. Modrinth's packs commonly include pack.png / icon.png
-        // at archive root, or inside overrides/.
-        foreach (var candidate in new[] { "icon.png", "pack.png", "overrides/icon.png", "overrides/pack.png" })
+        var stagingRoot = Path.Combine(im.InstancesDir, ".imports", Guid.NewGuid().ToString("N"));
+        var staging = new InstanceManager(stagingRoot);
+        try
         {
-            var entry = zip.GetEntry(candidate);
-            if (entry == null) continue;
-            var ext = Path.GetExtension(candidate);
-            var iconDst = Path.Combine(im.GetInstanceDir(inst.Id), "icon" + ext);
-            try
+            var inst = staging.CreateInstance(instanceName, mcVersion, loader, loaderVersion, raiseChangedEvent: false);
+            await InstallAsync(mrpackPath, staging.GetGameDir(inst.Id), cancellationToken);
+
+            foreach (var candidate in new[] { "icon.png", "icon.jpg", "pack.png", "overrides/icon.png", "overrides/pack.png" })
             {
+                var entry = zip.GetEntry(candidate);
+                if (entry == null) continue;
+                var ext = Path.GetExtension(candidate);
+                var iconDst = Path.Combine(staging.GetInstanceDir(inst.Id), "icon" + ext);
                 using var src = entry.Open();
                 using var fs = File.Create(iconDst);
-                await src.CopyToAsync(fs);
+                await src.CopyToAsync(fs, cancellationToken);
                 inst.IconPath = Path.GetFileName(iconDst);
-                im.SaveInstance(inst);
+                break;
             }
-            catch { }
-            break;
-        }
 
-        im.NotifyChanged();
-        return inst;
+            var stagedDir = staging.GetInstanceDir(inst.Id);
+            if (Directory.Exists(im.GetInstanceDir(inst.Id))) inst.Id += "-" + Guid.NewGuid().ToString("N")[..8];
+            await File.WriteAllTextAsync(Path.Combine(stagedDir, "instance.json"),
+                JsonSerializer.Serialize(inst, new JsonSerializerOptions { WriteIndented = true }), cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            Directory.Move(stagedDir, im.GetInstanceDir(inst.Id));
+            im.NotifyChanged();
+            return inst;
+        }
+        finally
+        {
+            if (Directory.Exists(stagingRoot)) Directory.Delete(stagingRoot, recursive: true);
+        }
     }
 
-    public async Task InstallAsync(string mrpackPath, string gameDir)
+    public async Task InstallAsync(string mrpackPath, string gameDir, CancellationToken cancellationToken = default)
+    {
+        var staging = Path.Combine(gameDir, ".pack-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var index = await InstallToDirectoryAsync(mrpackPath, staging, cancellationToken);
+            var downloads = index.Files.Where(f => f.Env?.GetValueOrDefault("client") != "unsupported")
+                .ToDictionary(f => FileDownloader.GetPath(gameDir, f.Path), StringComparer.OrdinalIgnoreCase);
+            foreach (var source in Directory.EnumerateFiles(staging, "*", SearchOption.AllDirectories))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var dest = FileDownloader.GetPath(gameDir, Path.GetRelativePath(staging, source));
+                if (File.Exists(dest))
+                {
+                    if (!downloads.TryGetValue(dest, out var file)) continue;
+                    if (await FileDownloader.IsValidAsync(dest, file.Hashes["sha1"], file.FileSize, cancellationToken, file.Hashes["sha512"])) continue;
+                }
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.Move(source, dest, overwrite: true);
+            }
+            ProgressChanged?.Invoke("Modpack installed!", 100);
+        }
+        finally
+        {
+            if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+        }
+    }
+
+    private async Task<MrpackIndex> InstallToDirectoryAsync(string mrpackPath, string gameDir, CancellationToken cancellationToken)
     {
         using var zip = ZipFile.OpenRead(mrpackPath);
 
@@ -148,7 +202,28 @@ public sealed class ModpackInstaller
         MrpackIndex index;
         using (var stream = indexEntry.Open())
         {
-            index = await JsonSerializer.DeserializeAsync<MrpackIndex>(stream) ?? new();
+            index = await JsonSerializer.DeserializeAsync<MrpackIndex>(stream, cancellationToken: cancellationToken)
+                ?? throw new InvalidDataException("Modpack index is empty.");
+        }
+        ValidateIndex(index);
+        Directory.CreateDirectory(gameDir);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in index.Files)
+        {
+            var dest = FileDownloader.GetPath(gameDir, file.Path);
+            if (!seen.Add(dest)) throw new InvalidDataException($"Duplicate modpack file: {file.Path}");
+            if (file.Env?.GetValueOrDefault("client") == "unsupported") continue;
+            if (!file.Hashes.TryGetValue("sha1", out var sha1) || sha1.Length != 40 || !sha1.All(Uri.IsHexDigit) ||
+                !file.Hashes.TryGetValue("sha512", out var sha512) || sha512.Length != 128 || !sha512.All(Uri.IsHexDigit))
+                throw new InvalidDataException($"Modpack file has invalid hashes: {file.Path}");
+            if (file.Downloads.Count == 0 || file.Downloads.Any(url => !Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != "https"))
+                throw new InvalidDataException($"Modpack file requires an HTTPS download: {file.Path}");
+        }
+        foreach (var entry in zip.Entries.Where(e => !string.IsNullOrEmpty(e.Name)))
+        {
+            var prefix = entry.FullName.StartsWith("overrides/") ? "overrides/" :
+                entry.FullName.StartsWith("client-overrides/") ? "client-overrides/" : null;
+            if (prefix != null) _ = FileDownloader.GetPath(gameDir, entry.FullName[prefix.Length..]);
         }
 
         ProgressChanged?.Invoke($"Installing {index.Name}...", 0);
@@ -158,23 +233,29 @@ public sealed class ModpackInstaller
         for (int i = 0; i < total; i++)
         {
             var file = index.Files[i];
-            var dest = Path.Combine(gameDir, file.Path.Replace('/', Path.DirectorySeparatorChar));
-
-            if (File.Exists(dest)) continue;
-            if (file.Downloads.Count == 0) continue;
-
-            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            if (file.Env?.GetValueOrDefault("client") == "unsupported") continue;
+            var dest = FileDownloader.GetPath(gameDir, file.Path);
 
             var progress = (double)(i + 1) / total * 90;
             if (i % 10 == 0)
                 ProgressChanged?.Invoke($"Downloading ({i + 1}/{total}): {Path.GetFileName(file.Path)}", progress);
 
-            try
+            Exception? failure = null;
+            foreach (var url in file.Downloads)
             {
-                var bytes = await Http.GetByteArrayAsync(file.Downloads[0]);
-                await File.WriteAllBytesAsync(dest, bytes);
+                try
+                {
+                    await FileDownloader.EnsureAsync(Http, url, dest, file.Hashes["sha1"], file.FileSize,
+                        cancellationToken, file.Hashes["sha512"]);
+                    failure = null;
+                    break;
+                }
+                catch (Exception ex) when (ex is HttpRequestException or InvalidDataException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
+                {
+                    failure = ex;
+                }
             }
-            catch { }
+            if (failure != null) throw new IOException($"Could not install required modpack file: {file.Path}", failure);
         }
 
         // Extract overrides
@@ -185,11 +266,11 @@ public sealed class ModpackInstaller
                 continue;
 
             var relativePath = entry.FullName["overrides/".Length..];
-            var dest = Path.Combine(gameDir, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            var dest = FileDownloader.GetPath(gameDir, relativePath);
 
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            if (!File.Exists(dest))
-                entry.ExtractToFile(dest, false);
+            cancellationToken.ThrowIfCancellationRequested();
+            Extract(entry, dest);
         }
 
         // Also handle client-overrides
@@ -199,19 +280,45 @@ public sealed class ModpackInstaller
                 continue;
 
             var relativePath = entry.FullName["client-overrides/".Length..];
-            var dest = Path.Combine(gameDir, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            var dest = FileDownloader.GetPath(gameDir, relativePath);
 
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            if (!File.Exists(dest))
-                entry.ExtractToFile(dest, false);
+            cancellationToken.ThrowIfCancellationRequested();
+            Extract(entry, dest);
         }
 
-        ProgressChanged?.Invoke("Modpack installed!", 100);
+        return index;
+    }
+
+    private static void Extract(ZipArchiveEntry entry, string path)
+    {
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".part";
+        try
+        {
+            entry.ExtractToFile(temporary);
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally { AtomicFile.TryDelete(temporary); }
+    }
+
+    private static void ValidateIndex(MrpackIndex index)
+    {
+        if (index.FormatVersion != 1 || index.Game != "minecraft")
+            throw new InvalidDataException("Unsupported modpack format or game.");
+        var supported = new[] { "minecraft", "fabric-loader", "quilt-loader", "forge", "neoforge" };
+        if (!index.Dependencies.TryGetValue("minecraft", out var minecraft) || string.IsNullOrWhiteSpace(minecraft) ||
+            index.Dependencies.Any(d => !supported.Contains(d.Key) || string.IsNullOrWhiteSpace(d.Value)) || index.Dependencies.Count > 2)
+            throw new InvalidDataException("Modpack dependencies are missing, unsupported, or contain conflicting loaders.");
     }
 }
 
-file sealed class MrpackIndex
+internal sealed class MrpackIndex
 {
+    [JsonPropertyName("formatVersion")]
+    public int FormatVersion { get; set; }
+
+    [JsonPropertyName("game")]
+    public string Game { get; set; } = "";
     [JsonPropertyName("name")]
     public string Name { get; set; } = "";
 
@@ -225,8 +332,13 @@ file sealed class MrpackIndex
     public Dictionary<string, string> Dependencies { get; set; } = [];
 }
 
-file sealed class MrpackFile
+internal sealed class MrpackFile
 {
+    [JsonPropertyName("hashes")]
+    public Dictionary<string, string> Hashes { get; set; } = [];
+
+    [JsonPropertyName("env")]
+    public Dictionary<string, string>? Env { get; set; }
     [JsonPropertyName("path")]
     public string Path { get; set; } = "";
 

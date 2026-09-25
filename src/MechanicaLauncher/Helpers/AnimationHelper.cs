@@ -1,165 +1,116 @@
 using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Animation;
 using System.Numerics;
+using Windows.UI.ViewManagement;
 
 namespace MechanicaLauncher.Helpers;
 
 public static class AnimationHelper
 {
-    public static void SlideIn(UIElement el, int delayMs = 0)
+    private static readonly UISettings UiSettings = new();
+
+    public static void SlideIn(UIElement element, int delayMs = 0)
     {
-        el.RenderTransform = new TranslateTransform { Y = 14 };
-        el.Opacity = 0;
+        element.Opacity = 1;
+        if (!UiSettings.AnimationsEnabled) return;
 
-        var sb = new Storyboard();
+        ElementCompositionPreview.SetIsTranslationEnabled(element, true);
+        var visual = ElementCompositionPreview.GetElementVisual(element);
+        var compositor = visual.Compositor;
+        var ease = compositor.CreateCubicBezierEasingFunction(new Vector2(0.2f, 0), new Vector2(0.2f, 1));
+        var duration = TimeSpan.FromMilliseconds(180);
+        var delay = TimeSpan.FromMilliseconds(Math.Clamp(delayMs, 0, 45));
 
-        var fade = new DoubleAnimation
-        {
-            From = 0, To = 1,
-            Duration = new Duration(TimeSpan.FromMilliseconds(400)),
-            BeginTime = TimeSpan.FromMilliseconds(delayMs),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        };
-        Storyboard.SetTarget(fade, el);
-        Storyboard.SetTargetProperty(fade, "Opacity");
+        var fade = compositor.CreateScalarKeyFrameAnimation();
+        fade.InsertKeyFrame(0, 0.88f);
+        fade.InsertKeyFrame(1, 1, ease);
+        fade.Duration = duration;
+        fade.DelayTime = delay;
+        fade.DelayBehavior = AnimationDelayBehavior.SetInitialValueBeforeDelay;
+        visual.StartAnimation("Opacity", fade);
 
-        var slide = new DoubleAnimation
-        {
-            From = 14, To = 0,
-            Duration = new Duration(TimeSpan.FromMilliseconds(400)),
-            BeginTime = TimeSpan.FromMilliseconds(delayMs),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        };
-        Storyboard.SetTarget(slide, el.RenderTransform);
-        Storyboard.SetTargetProperty(slide, "Y");
-
-        sb.Children.Add(fade);
-        sb.Children.Add(slide);
-        sb.Begin();
+        var slide = compositor.CreateScalarKeyFrameAnimation();
+        slide.InsertKeyFrame(0, 3);
+        slide.InsertKeyFrame(1, 0, ease);
+        slide.Duration = duration;
+        slide.DelayTime = delay;
+        slide.DelayBehavior = AnimationDelayBehavior.SetInitialValueBeforeDelay;
+        visual.StartAnimation("Translation.Y", slide);
     }
 
     public static void AddCardHover(Border card)
     {
-        var normalBg = Windows.UI.Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF);
-        var hoverBg = Windows.UI.Color.FromArgb(0x2A, 0xFF, 0xFF, 0xFF);
-        var hoverBorder = Windows.UI.Color.FromArgb(0x40, 0x4C, 0xAF, 0x50);
-        var normalBorder = Windows.UI.Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF);
+        var background = card.Background;
+        var border = card.BorderBrush;
+        card.BackgroundTransition = new BrushTransition { Duration = TimeSpan.FromMilliseconds(120) };
 
-        card.RenderTransform = new TranslateTransform();
+        void Reset()
+        {
+            card.BackgroundTransition.Duration = TimeSpan.FromMilliseconds(UiSettings.AnimationsEnabled ? 120 : 0);
+            card.Background = background;
+            card.BorderBrush = border;
+            MoveTo(card, 0);
+        }
 
         card.PointerEntered += (_, _) =>
         {
-            card.Background = new SolidColorBrush(hoverBg);
-            card.BorderBrush = new SolidColorBrush(hoverBorder);
-
-            var sb = new Storyboard();
-            var lift = new DoubleAnimation
-            {
-                To = -2, Duration = new Duration(TimeSpan.FromMilliseconds(200)),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-            Storyboard.SetTarget(lift, card.RenderTransform);
-            Storyboard.SetTargetProperty(lift, "Y");
-            sb.Children.Add(lift);
-            sb.Begin();
+            card.BackgroundTransition.Duration = TimeSpan.FromMilliseconds(UiSettings.AnimationsEnabled ? 120 : 0);
+            card.Background = (Brush)Application.Current.Resources["CardHoverBrush"];
+            card.BorderBrush = (Brush)Application.Current.Resources["CardBorderBrush"];
+            MoveTo(card, -1);
         };
-
-        card.PointerExited += (_, _) =>
+        card.PointerExited += (_, _) => Reset();
+        card.Unloaded += (_, _) =>
         {
-            card.Background = new SolidColorBrush(normalBg);
-            card.BorderBrush = new SolidColorBrush(normalBorder);
-
-            var sb = new Storyboard();
-            var drop = new DoubleAnimation
-            {
-                To = 0, Duration = new Duration(TimeSpan.FromMilliseconds(200)),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-            Storyboard.SetTarget(drop, card.RenderTransform);
-            Storyboard.SetTargetProperty(drop, "Y");
-            sb.Children.Add(drop);
-            sb.Begin();
+            card.Background = background;
+            card.BorderBrush = border;
+            ResetPosition(card);
         };
     }
 
-    public static void AddButtonSpring(UIElement btn)
+    public static void AddButtonFeedback(ButtonBase button)
     {
-        var visual = ElementCompositionPreview.GetElementVisual(btn);
-        var compositor = visual.Compositor;
-
-        btn.PointerEntered += (_, _) =>
+        void Update()
         {
-            visual.CenterPoint = GetCenter(btn);
-            var spring = compositor.CreateSpringVector3Animation();
-            spring.FinalValue = new Vector3(1.06f, 1.06f, 1f);
-            spring.DampingRatio = 0.6f;
-            spring.Period = TimeSpan.FromMilliseconds(50);
-            visual.StartAnimation("Scale", spring);
-        };
+            if (!button.IsLoaded) return;
+            var offset = !button.IsEnabled ? 0 : button.IsPressed ? 1 : button.IsPointerOver ? -1 : 0;
+            MoveTo(button, offset, button.IsPressed ? 70 : 120);
+        }
 
-        btn.PointerExited += (_, _) =>
-        {
-            var spring = compositor.CreateSpringVector3Animation();
-            spring.FinalValue = Vector3.One;
-            spring.DampingRatio = 0.6f;
-            spring.Period = TimeSpan.FromMilliseconds(50);
-            visual.StartAnimation("Scale", spring);
-        };
-
-        btn.PointerPressed += (_, _) =>
-        {
-            visual.CenterPoint = GetCenter(btn);
-            var spring = compositor.CreateSpringVector3Animation();
-            spring.FinalValue = new Vector3(0.94f, 0.94f, 1f);
-            spring.DampingRatio = 0.5f;
-            spring.Period = TimeSpan.FromMilliseconds(40);
-            visual.StartAnimation("Scale", spring);
-        };
-
-        btn.PointerReleased += (_, _) =>
-        {
-            var spring = compositor.CreateSpringVector3Animation();
-            spring.FinalValue = new Vector3(1.06f, 1.06f, 1f);
-            spring.DampingRatio = 0.6f;
-            spring.Period = TimeSpan.FromMilliseconds(50);
-            visual.StartAnimation("Scale", spring);
-        };
+        button.PointerEntered += (_, _) => Update();
+        button.PointerExited += (_, _) => Update();
+        button.RegisterPropertyChangedCallback(ButtonBase.IsPressedProperty, (_, _) => Update());
+        button.IsEnabledChanged += (_, _) => Update();
+        button.Unloaded += (_, _) => ResetPosition(button);
     }
 
-    public static void StartBreathing(UIElement el)
+    private static void MoveTo(UIElement element, float offset, int durationMs = 120)
     {
-        var visual = ElementCompositionPreview.GetElementVisual(el);
-        var compositor = visual.Compositor;
+        if (!UiSettings.AnimationsEnabled)
+        {
+            ResetPosition(element);
+            return;
+        }
 
-        if (el is FrameworkElement fe)
-            fe.Loaded += (_, _) => visual.CenterPoint = GetCenter(el);
-
-        visual.CenterPoint = GetCenter(el);
-
-        var pulse = compositor.CreateVector3KeyFrameAnimation();
-        pulse.InsertKeyFrame(0f, Vector3.One);
-        pulse.InsertKeyFrame(0.5f, new Vector3(1.018f, 1.018f, 1f),
-            compositor.CreateCubicBezierEasingFunction(new Vector2(0.4f, 0f), new Vector2(0.6f, 1f)));
-        pulse.InsertKeyFrame(1f, Vector3.One,
-            compositor.CreateCubicBezierEasingFunction(new Vector2(0.4f, 0f), new Vector2(0.6f, 1f)));
-        pulse.Duration = TimeSpan.FromMilliseconds(3000);
-        pulse.IterationBehavior = AnimationIterationBehavior.Forever;
-        visual.StartAnimation("Scale", pulse);
+        ElementCompositionPreview.SetIsTranslationEnabled(element, true);
+        var visual = ElementCompositionPreview.GetElementVisual(element);
+        var animation = visual.Compositor.CreateScalarKeyFrameAnimation();
+        animation.InsertExpressionKeyFrame(0, "this.StartingValue");
+        animation.InsertKeyFrame(1, offset, visual.Compositor.CreateCubicBezierEasingFunction(
+            new Vector2(0.2f, 0), new Vector2(0.2f, 1)));
+        animation.Duration = TimeSpan.FromMilliseconds(durationMs);
+        visual.StartAnimation("Translation.Y", animation);
     }
 
-    public static void StopBreathing(UIElement el)
+    private static void ResetPosition(UIElement element)
     {
-        var visual = ElementCompositionPreview.GetElementVisual(el);
-        visual.StopAnimation("Scale");
-        visual.Scale = Vector3.One;
+        var visual = ElementCompositionPreview.GetElementVisual(element);
+        if (visual.Properties.TryGetVector3("Translation", out _) != CompositionGetValueStatus.Succeeded) return;
+        visual.StopAnimation("Translation.Y");
+        visual.Properties.InsertVector3("Translation", Vector3.Zero);
     }
-
-    private static Vector3 GetCenter(UIElement el) =>
-        el is FrameworkElement fe
-            ? new Vector3((float)fe.ActualWidth / 2, (float)fe.ActualHeight / 2, 0)
-            : new Vector3(120, 28, 0);
 }

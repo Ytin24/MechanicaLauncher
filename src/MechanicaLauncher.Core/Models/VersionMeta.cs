@@ -34,8 +34,35 @@ public sealed class VersionMeta
     [JsonPropertyName("javaVersion")]
     public JavaVersionInfo? JavaVersion { get; set; }
 
+    [JsonPropertyName("logging")]
+    public Dictionary<string, LoggingInfo> Logging { get; set; } = [];
+
     [JsonPropertyName("inheritsFrom")]
     public string? InheritsFrom { get; set; }
+}
+
+public sealed class LoggingInfo
+{
+    [JsonPropertyName("argument")]
+    public string Argument { get; set; } = "";
+
+    [JsonPropertyName("file")]
+    public LoggingFile File { get; set; } = new();
+}
+
+public sealed class LoggingFile
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = "";
+
+    [JsonPropertyName("url")]
+    public string Url { get; set; } = "";
+
+    [JsonPropertyName("sha1")]
+    public string Sha1 { get; set; } = "";
+
+    [JsonPropertyName("size")]
+    public long Size { get; set; }
 }
 
 public sealed class JavaVersionInfo
@@ -54,6 +81,12 @@ public sealed class AssetIndex
 
     [JsonPropertyName("url")]
     public string Url { get; set; } = "";
+
+    [JsonPropertyName("sha1")]
+    public string Sha1 { get; set; } = "";
+
+    [JsonPropertyName("size")]
+    public long Size { get; set; }
 
     [JsonPropertyName("totalSize")]
     public long TotalSize { get; set; }
@@ -81,12 +114,21 @@ public sealed class Library
 
     [JsonPropertyName("rules")]
     public List<Rule>? Rules { get; set; }
+
+    [JsonPropertyName("url")]
+    public string? Url { get; set; }
+
+    [JsonPropertyName("natives")]
+    public Dictionary<string, string>? Natives { get; set; }
 }
 
 public sealed class LibraryDownloads
 {
     [JsonPropertyName("artifact")]
     public LibraryArtifact? Artifact { get; set; }
+
+    [JsonPropertyName("classifiers")]
+    public Dictionary<string, LibraryArtifact>? Classifiers { get; set; }
 }
 
 public sealed class LibraryArtifact
@@ -111,12 +153,21 @@ public sealed class Rule
 
     [JsonPropertyName("os")]
     public OsRule? Os { get; set; }
+
+    [JsonPropertyName("features")]
+    public Dictionary<string, bool>? Features { get; set; }
 }
 
 public sealed class OsRule
 {
     [JsonPropertyName("name")]
     public string? Name { get; set; }
+
+    [JsonPropertyName("arch")]
+    public string? Arch { get; set; }
+
+    [JsonPropertyName("version")]
+    public string? Version { get; set; }
 }
 
 public sealed class GameArguments

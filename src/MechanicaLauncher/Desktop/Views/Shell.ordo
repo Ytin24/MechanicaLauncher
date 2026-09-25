@@ -1,0 +1,629 @@
+namespace MechanicaLauncher.Desktop.Views
+using MechanicaLauncher.Desktop
+
+view Shell(vm: LauncherModel) {
+    Column #window Container=true {
+        Row #caption Height=40 Padding=0 {
+            Spacer Width=14
+            FitImage #brandIcon Picture=vm.BrandImage Width=20 Height=20 VerticalAlign=Center
+            Spacer Width=8
+            Text "Mechanica" FontSize=12 Grow=1 VerticalAlign=Center
+            Text .muted vm.RuntimeStatus FontSize=11 VerticalAlign=Center
+            Spacer Width=14
+            Canvas #activityDot Width=6 Height=6 Background=vm.Palette.Accent CornerRadius=3 VerticalAlign=Center Visible=(vm.Busy || vm.Page == "catalog" && vm.CatalogLoading || vm.Page == "project" && vm.ProjectLoading || vm.LaunchPreparing)
+            Spacer Width=14
+            Button .caption "" Width=46 Command=vm.Minimize IsTabStop=(!vm.DialogOpen)
+            Button .caption "" Width=46 Command=vm.Maximize IsTabStop=(!vm.DialogOpen)
+            Button .captionClose "" Width=46 Command=vm.Close IsTabStop=(!vm.DialogOpen)
+        }
+        Grid #layers Grow=1 ColumnDefinitions="*" RowDefinitions="*" {
+            Row #body GridRow=0 GridColumn=0 Align=Stretch VerticalAlign=Stretch Visible=(!vm.TLauncherBlocked) Enabled=(!vm.DialogOpen && !vm.TLauncherBlocked) {
+                Sidebar #sidebar VerticalAlign=Stretch Gap=8 Enabled=(!vm.DialogOpen) {
+                    NavButton #navHome Glyph="" Caption=(vm.T("Играть", "Play")) Command=vm.Home Selected=(vm.Page == "home")
+                    NavButton #navLibrary Glyph="" Caption=(vm.T("Сборки", "Instances")) Command=vm.Library Selected=(vm.Page == "instances" || vm.Page == "instance" || vm.Page == "create") Visible=vm.ShowInstancesPage
+                    NavButton #navCatalog Glyph="" Caption=(vm.T("Каталог", "Discover")) Command=vm.Catalog Selected=(vm.Page == "catalog" || vm.Page == "project") Visible=vm.ShowCatalogPage
+                    NavButton #navDownloads Glyph="" Caption=(vm.T("Загрузки", "Downloads")) Badge=(vm.DownloadBadge == "0" ? "" : vm.DownloadBadge) Command=vm.Downloads Selected=(vm.Page == "downloads")
+                    NavButton #navServers Glyph="" Caption=(vm.T("Серверы", "Servers")) Command=vm.Servers Selected=(vm.Page == "servers")
+                    Spacer Grow=1
+                    Rule
+                    NavButton #navAccount Glyph="" Caption=(vm.T("Аккаунт", "Account")) Command=vm.Account Selected=(vm.Page == "account" || vm.Page == "skin") Visible=vm.ShowAccountPage
+                    NavButton #navSettings Glyph="" Caption=(vm.T("Настройки", "Settings")) Command=vm.Preferences Selected=(vm.Page == "settings") Visible=vm.ShowSettingsPage
+                }
+                Grid #workspaceStage Grow=1 VerticalAlign=Stretch ColumnDefinitions="*" RowDefinitions="*" ClipToBounds=true {
+                Column #workspace GridRow=0 GridColumn=0 Align=Stretch VerticalAlign=Stretch Gap=(vm.Page == "home" ? 0 : 16) {
+                    Row #header Gap=16 Enabled=(!vm.DialogOpen) Visible=(vm.Page != "home") {
+                        Column Grow=1 Gap=6 {
+                            Text #pageTitle vm.Title FontWeight=650 Wrap=true
+                            Text .muted vm.Subtitle Wrap=true Visible=(vm.Subtitle.Length > 0)
+                        }
+                        Column #instanceContext Gap=4 Visible=(vm.Page == "catalog" || vm.Page == "project" || vm.Page == "servers") {
+                            Text .muted Text=(vm.T("Для сборки", "For instance"))
+                            Button #contextInstance Text=vm.InstanceName Command=vm.SelectInstance Enabled=(vm.SelectedInstance != null || vm.ShowInstancesPage)
+                        }
+                        Row #libraryActions Width=256 Gap=8 Visible=(vm.Page == "instances") {
+                            Button Text=(vm.T("Импорт .mrpack", "Import .mrpack")) Width=136 Command=vm.ImportPack Enabled=vm.AllowCreate
+                            Button .primary #newInstance Text=(vm.T("Создать", "Create")) Width=112 Command=vm.NewInstance Enabled=vm.AllowCreate
+                        }
+                    }
+                    Row #notice Gap=12 Padding=12 Visible=(vm.Message.Length > 0) {
+                        Text vm.Message Grow=1 Wrap=true Foreground=(vm.Error ? vm.Palette.Error : vm.Palette.Foreground)
+                        Button "×" Width=34 Command=vm.DismissMessage
+                    }
+                    Grid #home Grow=1 ColumnDefinitions="*" RowDefinitions="*" ClipToBounds=true Visible=(vm.Page == "home") {
+                        Grid #homeSelected GridRow=0 GridColumn=0 Align=Stretch VerticalAlign=Stretch ColumnDefinitions="*" RowDefinitions=(GridTracks.Parse(vm.HasHeroImage || vm.ShowLog || vm.SessionStatus.Length > 0 || vm.Message.Length > 0 ? "*,Auto" : "Auto,Auto,*")) Visible=(vm.SelectedInstance != null) {
+                            Grid #hero GridRow=0 GridColumn=0 Align=Stretch VerticalAlign=Stretch ColumnDefinitions="*" RowDefinitions=(GridTracks.Parse(vm.HasHeroImage || vm.ShowLog || vm.SessionStatus.Length > 0 || vm.Message.Length > 0 ? "*" : "Auto")) ClipToBounds=true {
+                                FitImage #heroCover GridRow=0 GridColumn=0 Align=Stretch VerticalAlign=Stretch Picture=vm.HeroImage Cover=true Visible=vm.HasHeroImage
+                                Canvas #coverShade GridRow=0 GridColumn=0 Align=Stretch VerticalAlign=Stretch Visible=vm.HasHeroImage
+                                ScrollViewer #heroTextScroll GridRow=0 GridColumn=0 Align=Stretch VerticalAlign=Stretch VerticalScrollBarVisibility=Auto {
+                                Column #heroContent Grow=1 Gap=24 {
+                                    Row #homeToolbar Gap=8 {
+                                        Button .coverTool #instancePicker Text=(vm.T("Сменить сборку", "Switch instance")) Width=176 ControlHeight=38 Command=vm.SelectInstance Enabled=(!vm.LaunchPreparing) Visible=vm.ShowInstancesPage
+                                        Spacer Grow=1
+                                        Button .coverTool #homeCreate Text=(vm.T("Создать сборку", "Create instance")) Width=154 ControlHeight=38 Command=vm.NewInstance Enabled=vm.AllowCreate Visible=vm.ShowInstancesPage
+                                    }
+                                    Spacer Grow=1 Visible=vm.HasHeroImage
+                                    Canvas #worldBlock Width=78 Height=78 Visible=(!vm.HasHeroImage)
+                                    Column #homeDetails Gap=12 {
+                                        Text #heroTitle vm.InstanceName FontWeight=650 Wrap=true
+                                        Text #heroMeta vm.InstanceMeta Wrap=true
+                                        Text #homeSessionStatus vm.SessionStatus Wrap=true Visible=(!vm.LaunchPreparing && vm.SessionStatus.Length > 0)
+                                        Column #launchProgress Gap=8 Visible=vm.LaunchPreparing {
+                                            Text #launchStatus vm.SessionStatus Wrap=true
+                                            ProgressBar Progress=vm.LaunchProgress Height=4 MaxWidth=320
+                                        }
+                                    }
+                                }
+                                }
+                            }
+                            Column #homeLaunchPanel GridRow=1 GridColumn=0 Align=Stretch Gap=0 {
+                                Rule
+                                Row #launchActions Gap=8 {
+                                    Button .primary #play Text=vm.PlayLabel Width=208 ControlHeight=48 FontSize=15 Command=vm.Play
+                                    Spacer Grow=1
+                                    Button .homeTool #homeSettings Text=(vm.T("Настроить", "Settings")) Width=112 ControlHeight=44 Command=vm.SelectedDetails Visible=vm.ShowInstancesPage
+                                    Button .homeTool #homeFolder Text=(vm.T("Папка", "Folder")) Width=80 ControlHeight=44 Command=vm.OpenSelectedFolder
+                                    Button .homeTool #homeLog Text=(vm.T("Журнал", "Game log")) Width=88 ControlHeight=44 Command=vm.ToggleLog Visible=vm.AllowLog
+                                }
+                                TextArea #gameLog Value=vm.GameLog ReadOnly=true ControlHeight=170 ShowLabel=false ShowError=false Visible=(vm.ShowLog && vm.AllowLog) FontFamily="Cascadia Mono" FontSize=12
+                            }
+                        }
+                        Column #homeEmpty GridRow=0 GridColumn=0 Align=Stretch VerticalAlign=Stretch Gap=22 Visible=(vm.SelectedInstance == null) {
+                            Spacer Grow=1
+                            Text #homeEmptyIcon "" FontFamily="Segoe MDL2 Assets" FontSize=28 Width=60 Height=60 TextAlignment=Center
+                            Text #homeEmptyTitle Text=(vm.T("Сборок пока нет", "No instances yet")) FontSize=30 FontWeight=650 Wrap=true
+                            Row #emptyActions Gap=10 Visible=vm.ShowInstancesPage {
+                                Button .primary #createFirst Text=(vm.T("Создать сборку", "Create instance")) Width=184 ControlHeight=44 Command=vm.NewInstance Enabled=vm.AllowCreate
+                                Button #importFirst Text=(vm.T("Импорт .mrpack", "Import .mrpack")) Width=164 ControlHeight=44 Command=vm.ImportPack Enabled=vm.AllowCreate
+                            }
+                            Button .homeTool #browseModpacks Text=(vm.T("Найти модпак", "Find a modpack")) Width=154 TextAlignment=Left Command=vm.BrowseModpacks Visible=vm.ShowCatalogPage
+                            Spacer Grow=1
+                        }
+                    }
+                    ScrollViewer #pageScroll Grow=1 Visible=(vm.Page != "home") VerticalScrollBarVisibility=(vm.Page == "settings" || vm.Page == "account" || vm.Page == "create" || vm.Page == "skin" || vm.Page == "instance" && (vm.InstanceTab == "settings" || vm.InstanceTab == "appearance") ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled) {
+                        Column #pages Grow=1 Gap=16 {
+                            Column #library Grow=1 Gap=16 Visible=(vm.Page == "instances") {
+                                Card .toolbar {
+                                    Row Gap=8 {
+                                        Input #librarySearch Value <=> vm.LibraryQuery Placeholder=(vm.T("Найти сборку…", "Find an instance…")) Grow=1
+                                        Button #resetLibrary Text=(vm.T("Сбросить", "Clear")) Width=100 Command=vm.ClearLibraryFilters Visible=vm.HasLibraryFilters
+                                    }
+                                    Row Gap=8 {
+                                        Button Text=vm.LibrarySort Width=180 Command=vm.SortLibrary
+                                        Button Text=vm.LibraryFilter Width=175 Command=vm.FilterLibrary
+                                        ToggleButton Text=(vm.T("Компактно", "Compact")) Width=126 IsChecked <=> vm.CompactInstances
+                                        Text .muted vm.LibraryCount Grow=1 TextAlignment=Right
+                                    }
+                                }
+                                Card .emptyState #libraryEmpty Visible=(vm.LibraryItems.Count == 0) {
+                                    Text .emptyTitle vm.LibraryEmptyTitle Wrap=true
+                                    Text .muted vm.LibraryEmptyHint Wrap=true
+                                }
+                                VirtualList #instanceList Items=vm.LibraryItems ItemTemplate=Entry ItemKey=Id Grow=1 EstimatedItemHeight=176 Visible=(vm.LibraryItems.Count > 0)
+                            }
+                            Column #create Grow=1 Gap=18 Visible=(vm.Page == "create") {
+                                Card Gap=16 {
+                                    TextField #newName Text=(vm.T("Название", "Name")) Value <=> vm.NewName ShowError=false MaxLength=80
+                                    Form Columns=2 Gap=16 {
+                                        Column Gap=8 {
+                                            Text .muted "Minecraft"
+                                            Button #newVersion Text=vm.NewVersionLabel Command=vm.ChooseMinecraft
+                                        }
+                                        Column Gap=8 {
+                                            Text .muted Text=(vm.T("Загрузчик модов", "Mod loader"))
+                                            Button #newLoader Text=vm.NewLoader Command=vm.ChooseLoader
+                                        }
+                                    }
+                                    Text .muted Text=(vm.T("Java и файлы игры установятся при первом запуске. Vanilla — для игры без модов.", "Java and game files install on first launch. Choose Vanilla to play without mods.")) Wrap=true
+                                    Text vm.CreateStatus Wrap=true Visible=(vm.CreateStatus.Length > 0)
+                                    Row Gap=8 {
+                                        Button .primary #createInstance Text=(vm.T("Создать сборку", "Create instance")) Width=190 Command=vm.CreateInstance Enabled=(!vm.Busy)
+                                        Button Text=(vm.T("Обновить версии", "Reload versions")) Width=175 Command=vm.LoadMinecraftVersions Enabled=(!vm.Busy)
+                                        Spacer Grow=1
+                                        Button Text=(vm.T("Назад", "Back")) Width=100 Command=vm.Library
+                                    }
+                                }
+                            }
+                            Column #catalog Grow=1 Gap=12 Visible=(vm.Page == "catalog") {
+                                Card .toolbar {
+                                    Row Gap=8 {
+                                        Input #catalogSearch Value <=> vm.Query Placeholder=(vm.T("Название мода, шейдера или сборки…", "Search mods, shaders and modpacks…")) Grow=1
+                                        Button #resetCatalog Text=(vm.T("Сбросить", "Clear")) Width=100 Command=vm.ClearCatalogFilters Visible=vm.HasCatalogFilters
+                                        Button .primary #search Text=(vm.T("Найти", "Search")) Width=96 Command=vm.Search
+                                    }
+                                    Form .tabs #contentTypes Gap=4 {
+                                        Button Text=(vm.T("Моды", "Mods")) Selected=(vm.ContentType == "mod") Command=(() => vm.SetContentType("mod"))
+                                        Button Text=(vm.T("Модпаки", "Modpacks")) Selected=(vm.ContentType == "modpack") Command=(() => vm.SetContentType("modpack"))
+                                        Button Text=(vm.T("Шейдеры", "Shaders")) Selected=(vm.ContentType == "shader") Command=(() => vm.SetContentType("shader"))
+                                        Button Text=(vm.T("Ресурсы", "Resources")) Selected=(vm.ContentType == "resourcepack") Command=(() => vm.SetContentType("resourcepack"))
+                                        Button Text=(vm.T("Датапаки", "Datapacks")) Selected=(vm.ContentType == "datapack") Command=(() => vm.SetContentType("datapack"))
+                                    }
+                                    Row Gap=8 {
+                                        Button .tab Text=(vm.T("Каталог", "Discover")) Width=110 Selected=(!vm.InstalledOnly) Command=vm.ShowCatalog
+                                        Button .tab Text=(vm.T("Установлено", "Installed")) Width=135 Selected=vm.InstalledOnly Command=vm.ShowInstalled Visible=(vm.ContentType != "modpack")
+                                        Spacer Grow=1
+                                        Button Text=vm.SortLabel Width=158 Command=vm.ChooseSort Visible=(!vm.InstalledOnly)
+                                        Button Text=vm.CategoryLabel Width=140 Command=vm.ChooseCategory Visible=(!vm.InstalledOnly)
+                                    }
+                                    Row Gap=8 {
+                                        CheckBox #compatible Text=vm.CompatibilityLabel IsChecked <=> vm.CompatibleOnly Grow=1 Enabled=(vm.SelectedInstance != null) Visible=(!vm.InstalledOnly)
+                                        Button Text=vm.WorldLabel Width=180 Command=vm.ChooseWorld Visible=vm.NeedsWorld
+                                        Button Text=(vm.T("Папка", "Folder")) Width=94 Command=vm.CatalogFolder Visible=vm.InstalledOnly
+                                    }
+                                }
+                                Text .muted vm.CatalogStatus Wrap=true Visible=(vm.CatalogItems.Count > 0)
+                                Card .emptyState #catalogEmpty Visible=(vm.CatalogItems.Count == 0) {
+                                    Text .emptyTitle vm.CatalogEmptyTitle Wrap=true
+                                    Text .muted vm.CatalogEmptyHint Wrap=true
+                                    Button #catalogEmptyAction Text=vm.CatalogEmptyAction Width=185 Command=vm.ResolveCatalogEmpty Visible=(vm.CatalogEmptyAction.Length > 0)
+                                }
+                                Card #catalogRetry Padding=14 Visible=(vm.CatalogFailed && vm.CatalogItems.Count > 0) {
+                                    Row Gap=14 {
+                                        Column Grow=1 Gap=6 {
+                                            Text Text=(vm.T("Не удалось загрузить ещё", "Could not load more")) Wrap=true
+                                            Text .muted Text=(vm.T("Уже загруженные результаты сохранены.", "Your loaded results are still here.")) Wrap=true
+                                        }
+                                        Button #retryCatalog Text=(vm.T("Повторить", "Retry")) Width=112 Command=vm.RetryCatalog
+                                    }
+                                }
+                                VirtualList #catalogList Items=vm.CatalogItems ItemTemplate=Entry ItemKey=Id Grow=1 EstimatedItemHeight=190 Visible=(vm.CatalogItems.Count > 0)
+                                Button #moreCatalog Text=(vm.CatalogLoading ? vm.T("Загружаю…", "Loading…") : vm.T("Показать ещё", "Load more")) Width=190 Align=Center Command=vm.LoadMoreCatalog Visible=(vm.MoreCatalog && !vm.CatalogFailed) Enabled=(!vm.CatalogLoading)
+                            }
+                            Column #project Grow=1 Gap=14 Visible=(vm.Page == "project") {
+                                Row Gap=8 {
+                                    Button #backToCatalog Text=(vm.T("← Каталог", "← Discover")) Width=128 Command=vm.Catalog
+                                    Spacer Grow=1
+                                    Button Text=(vm.T("На Modrinth", "Modrinth")) Width=112 Command=vm.ProjectWebsite
+                                }
+                                Row Gap=14 {
+                                    FitImage Picture=vm.ProjectIcon Width=58 Height=58 Visible=(vm.ProjectIcon != ImageSource.Empty)
+                                    Column Grow=1 Gap=6 {
+                                        Text vm.ProjectDescription Wrap=true
+                                        Text .muted vm.ProjectMeta Wrap=true
+                                    }
+                                }
+                                Card Padding=16 Gap=12 {
+                                    Text .muted vm.ProjectTarget Wrap=true
+                                    Row Gap=8 {
+                                        Button #projectVersion Text=vm.ProjectVersionLabel Grow=1 Command=vm.ChooseProjectVersion Enabled=vm.HasProjectVersions
+                                        Button Text=vm.WorldLabel Width=155 Command=vm.ChooseWorld Visible=(vm.NeedsWorld && vm.World != null)
+                                        Button .primary #install Text=vm.InstallLabel Width=180 Command=vm.InstallProject Enabled=vm.CanInstall
+                                    }
+                                    Row Gap=14 Visible=(vm.InstallHint.Length > 0) {
+                                        Text .muted #installHint vm.InstallHint Wrap=true Grow=1
+                                        Button #installHelp Text=vm.InstallHelpLabel Width=170 Command=vm.ResolveInstallRequirement Visible=(vm.InstallHelpLabel.Length > 0)
+                                    }
+                                    Text .muted vm.ProjectStatus Wrap=true Visible=(vm.ProjectStatus.Length > 0 && vm.CanInstall)
+                                }
+                                Row .tabs Gap=4 {
+                                    Button Text=(vm.T("Описание", "Description")) Width=128 Selected=(vm.ProjectTab == "description") Command=vm.ShowProjectDescription
+                                    Button Text=vm.ProjectGalleryLabel Width=170 Selected=(vm.ProjectTab == "gallery") Command=vm.ShowProjectGallery
+                                }
+                                VirtualList #article Items=vm.DescriptionItems ItemTemplate=Article ItemKey=Id Grow=1 EstimatedItemHeight=140
+                            }
+                            Column #instance Grow=1 Gap=14 Visible=(vm.Page == "instance") {
+                                Form .tabs #instanceTabs Gap=4 {
+                                    Button Text=(vm.T("Параметры", "Settings")) Selected=(vm.InstanceTab == "settings") Command=(() => vm.SelectInstanceTab("settings"))
+                                    Button Text=(vm.T("Моды", "Mods")) Selected=(vm.InstanceTab == "compatibility") Command=(() => vm.SelectInstanceTab("compatibility"))
+                                    Button Text=(vm.T("Скриншоты", "Screenshots")) Selected=(vm.InstanceTab == "screenshots") Command=(() => vm.SelectInstanceTab("screenshots"))
+                                    Button Text=(vm.T("Вылеты", "Crashes")) Selected=(vm.InstanceTab == "crashes") Command=(() => vm.SelectInstanceTab("crashes"))
+                                    Button Text=(vm.T("Оформление", "Appearance")) Selected=(vm.InstanceTab == "appearance") Command=(() => vm.SelectInstanceTab("appearance"))
+                                }
+                                Column Gap=14 Visible=(vm.InstanceTab == "settings") {
+                                    Card Gap=14 {
+                                        TextField #editName Text=(vm.T("Название сборки", "Instance name")) Value <=> vm.EditName ShowError=false MaxLength=80
+                                        Form Columns=3 Gap=14 {
+                                            TextField #maxMemory Text=(vm.T("Память, MB", "Memory, MB")) Value <=> vm.EditMaxMemory ShowError=false
+                                            TextField #windowWidth Text=(vm.T("Ширина окна", "Window width")) Value <=> vm.EditWidth ShowError=false
+                                            TextField #windowHeight Text=(vm.T("Высота окна", "Window height")) Value <=> vm.EditHeight ShowError=false
+                                        }
+                                        Button Text=(vm.T("Дополнительно", "Advanced")) Width=190 Command=vm.ToggleAdvanced
+                                        Column #advanced Gap=12 Visible=vm.Advanced {
+                                            Form Columns=2 Gap=12 {
+                                                TextField #minMemory Text=(vm.T("Минимум памяти, MB", "Minimum memory, MB")) Value <=> vm.EditMinMemory ShowError=false
+                                                CheckBox Text=(vm.T("Автовыбор Java", "Automatic Java")) IsChecked <=> vm.AutoJava
+                                            }
+                                            Row Gap=8 Visible=(!vm.AutoJava) {
+                                                Input #javaPath Value <=> vm.EditJava Grow=1
+                                                Button Text=(vm.T("Обзор", "Browse")) Width=104 Command=vm.PickJava
+                                            }
+                                            TextField #jvmArgs "JVM" Value <=> vm.EditJvm ShowError=false
+                                        }
+                                        Rule
+                                        Row Gap=8 {
+                                            Button .primary #saveInstance Text=(vm.T("Сохранить", "Save")) Width=150 Command=vm.SaveInstanceSettings
+                                            Spacer Grow=1
+                                            Button Text=(vm.T("Добавить моды", "Add mods")) Width=150 Command=vm.InstanceMods
+                                            Button Text=(vm.T("Папка", "Folder")) Width=90 Command=vm.InstanceFolder
+                                        }
+                                    }
+                                }
+                                Column Gap=14 Visible=(vm.InstanceTab == "appearance") {
+                                    Form Columns=2 Gap=14 {
+                                        Card Gap=10 {
+                                            Text .entryTitle Text=(vm.T("Обложка", "Cover"))
+                                            FitImage Picture=vm.CoverPreview Height=170
+                                            Row Gap=8 {
+                                                Button Text=(vm.T("Выбрать", "Choose")) Grow=1 Command=vm.PickCover
+                                                Button Text=(vm.T("Убрать", "Clear")) Grow=1 Command=vm.ClearCover
+                                            }
+                                        }
+                                        Card Gap=10 {
+                                            Text .entryTitle Text=(vm.T("Иконка", "Icon"))
+                                            FitImage Picture=vm.IconPreview Height=170
+                                            Row Gap=8 {
+                                                Button Text=(vm.T("Выбрать", "Choose")) Grow=1 Command=vm.PickIcon
+                                                Button Text=(vm.T("Убрать", "Clear")) Grow=1 Command=vm.ClearIcon
+                                            }
+                                        }
+                                    }
+                                    Card .toolbar {
+                                        Row Gap=16 {
+                                            TextField Text=(vm.T("Акцент, #RRGGBB", "Accent, #RRGGBB")) Value <=> vm.EditAccent ShowError=false Grow=1
+                                            Button .primary Text=(vm.T("Сохранить оформление", "Save appearance")) Width=224 Command=vm.SaveAppearance VerticalAlign=Bottom
+                                        }
+                                    }
+                                }
+                                Column Grow=1 Gap=10 Visible=(vm.InstanceTab != "settings" && vm.InstanceTab != "appearance") {
+                                    Text .muted vm.DetailStatus Wrap=true
+                                    Row Gap=8 {
+                                        Button Text=(vm.T("Проверить моды", "Check mods")) Width=165 Command=vm.CheckCompatibility Visible=(vm.InstanceTab == "compatibility")
+                                        Button Text=(vm.T("Проверить игру", "Check game")) Width=165 Command=vm.Diagnose Visible=(vm.InstanceTab == "compatibility" || vm.InstanceTab == "crashes")
+                                        Button Text=(vm.T("Обновить", "Refresh")) Width=128 Command=vm.LoadScreenshots Visible=(vm.InstanceTab == "screenshots")
+                                        Button Text=(vm.T("Показать ещё", "Load more")) Width=150 Command=vm.MoreScreenshots Visible=(vm.InstanceTab == "screenshots")
+                                        Spacer Grow=1
+                                        Button Text=(vm.T("Папка", "Folder")) Width=94 Command=vm.InstanceFolder
+                                    }
+                                    VirtualList #detailsList Items=vm.DetailItems ItemTemplate=Article ItemKey=Id Grow=1 EstimatedItemHeight=200
+                                }
+                            }
+                            Column #downloads Grow=1 Gap=12 Visible=(vm.Page == "downloads") {
+                                Card .toolbar {
+                                    Row Gap=8 {
+                                        Button .tab Text=(vm.T("Все", "All")) Width=85 Command=(() => vm.FilterDownloads("all")) Selected=(vm.DownloadFilter == "all")
+                                        Button .tab Text=(vm.T("Активные", "Active")) Width=128 Command=(() => vm.FilterDownloads("active")) Selected=(vm.DownloadFilter == "active")
+                                        Button .tab Text=(vm.T("Прерванные", "Interrupted")) Width=145 Command=(() => vm.FilterDownloads("failed")) Selected=(vm.DownloadFilter == "failed")
+                                        Spacer Grow=1
+                                        Button Text=(vm.T("Отменить все", "Cancel all")) Width=150 Command=vm.CancelDownloads
+                                    }
+                                    Text .muted vm.DownloadsStatus Wrap=true
+                                }
+                                VirtualList #downloadList Items=vm.DownloadItems ItemTemplate=Entry ItemKey=Id Grow=1 EstimatedItemHeight=180
+                            }
+                            Column #servers Grow=1 Gap=14 Visible=(vm.Page == "servers") {
+                                Card .toolbar {
+                                    Row Gap=8 {
+                                        Button .primary Text=(vm.T("Добавить сервер", "Add server")) Width=188 Command=vm.AddServer
+                                        Button Text=(vm.T("Проверить статус", "Check status")) Width=190 Command=vm.CheckServers Enabled=(!vm.Busy)
+                                    }
+                                    Text .muted Text=(vm.T("Новый сервер будет привязан к выбранной сборке.", "New servers are linked to the selected instance.")) Wrap=true
+                                }
+                                Card .emptyState Visible=(vm.ServerItems.Count == 0) {
+                                    Text .emptyTitle Text=(vm.T("Твои серверы будут здесь", "Your servers will appear here")) Wrap=true
+                                    Text .muted Text=(vm.T("Добавь любимый сервер по адресу host:port.", "Add your favorite server by its host:port address.")) Wrap=true
+                                }
+                                VirtualList #serverList Items=vm.ServerItems ItemTemplate=Entry ItemKey=Id Grow=1 EstimatedItemHeight=180 Visible=(vm.ServerItems.Count > 0)
+                            }
+                            Column #account Grow=1 Gap=18 Visible=(vm.Page == "account") {
+                                Card Gap=18 {
+                                    Row Gap=18 {
+                                        FitImage Picture=vm.Avatar Width=72 Height=72 Visible=(vm.Avatar != ImageSource.Empty)
+                                        Card .tile Width=72 Height=72 Padding=20 Visible=(vm.Avatar == ImageSource.Empty) {
+                                            Text "" FontFamily="Segoe MDL2 Assets" FontSize=28 TextAlignment=Center
+                                        }
+                                        Column Grow=1 Gap=6 {
+                                            Text vm.Username FontSize=26 FontWeight=650
+                                            Text .muted vm.AccountKind
+                                        }
+                                        Button Text=(vm.T("Выйти", "Sign out")) Width=112 Command=vm.SignOut Visible=vm.MicrosoftAccount
+                                    }
+                                    Row Gap=8 Visible=(!vm.MicrosoftAccount) {
+                                        Input #offlineName Value <=> vm.OfflineName MaxLength=16 Placeholder=(vm.T("Ник Minecraft", "Minecraft name")) Grow=1
+                                        Button Text=(vm.T("Сохранить ник", "Save name")) Width=160 Command=vm.SaveOffline
+                                    }
+                                    Rule Visible=(!vm.MicrosoftAccount)
+                                    Row Gap=16 Visible=(!vm.MicrosoftAccount) {
+                                        Column Grow=1 Gap=4 {
+                                            Text Text=(vm.T("Аккаунт Microsoft", "Microsoft account")) FontWeight=600
+                                            Text .muted Text=(vm.T("Вход для лицензионной версии Minecraft.", "Sign in with your Minecraft account.")) Wrap=true
+                                        }
+                                        Button .primary #microsoftLogin Text=(vm.T("Войти", "Sign in")) Width=155 Command=vm.SignIn Enabled=(!vm.Busy)
+                                    }
+                                    Button Text=(vm.T("Войти в другой аккаунт Microsoft", "Switch Microsoft account")) MaxWidth=310 Command=vm.SignIn Enabled=(!vm.Busy) Visible=vm.MicrosoftAccount
+                                }
+                                Card Visible=vm.MicrosoftAccount {
+                                    Row Gap=20 {
+                                        FitImage Picture=vm.SkinPreview Width=130 Height=240
+                                        Column Gap=16 Grow=1 {
+                                            Text .entryTitle Text=(vm.T("Твой скин", "Your skin"))
+                                            Text .muted Text=(vm.T("PNG, 64×64 или 64×32. Изменение сохраняется в профиле Minecraft.", "PNG, 64×64 or 64×32. Changes are saved to your Minecraft profile.")) Wrap=true
+                                            Button Text=vm.SkinVariant Width=180 Command=vm.ToggleSkinVariant
+                                            Button .primary Text=(vm.T("Загрузить PNG", "Upload PNG")) Width=190 Command=vm.UploadSkin Enabled=(!vm.Busy)
+                                            Button Text=(vm.T("Открыть редактор", "Open editor")) Width=190 Command=vm.OpenSkinEditor
+                                        }
+                                    }
+                                }
+                            }
+                            Column #settings Grow=1 Gap=14 Visible=(vm.Page == "settings") {
+                                Card Gap=14 {
+                                    Text .entryTitle Text=(vm.T("Окно и трей", "Window and tray"))
+                                    Form Columns=2 Gap=16 {
+                                        Column Gap=6 {
+                                            ToggleSwitch #closeToTray Text=(vm.T("При закрытии — в трей", "Close to tray")) IsChecked <=> vm.CloseToTray
+                                            Text .muted Text=(vm.T("Крестик и Alt+F4 скроют окно. Лаунчер останется у часов Windows.", "The close button and Alt+F4 hide the window. Find the launcher near the Windows clock.")) Wrap=true
+                                        }
+                                        Column Gap=6 {
+                                            ToggleSwitch #minimizeToTray Text=(vm.T("При сворачивании — в трей", "Minimize to tray")) IsChecked <=> vm.MinimizeToTray
+                                            Text .muted Text=(vm.T("Убирать свёрнутое окно с панели задач. Клик по значку вернёт его.", "Hide the minimized window from the taskbar. Click the tray icon to restore it.")) Wrap=true
+                                        }
+                                    }
+                                    ToggleSwitch #closeOnLaunch Text=(vm.T("Скрывать при запуске Minecraft", "Hide when Minecraft starts")) IsChecked <=> vm.CloseOnLaunch
+                                    Rule
+                                    Row Gap=16 {
+                                        Text .muted Text=(vm.T("Игра и загрузки продолжаются в трее. Полный выход — этой кнопкой или через меню значка.", "Games and downloads continue in the tray. Quit using this button or the tray menu.")) Wrap=true Grow=1
+                                        Button #exitLauncher Text=(vm.T("Выйти из лаунчера", "Quit launcher")) Width=182 Command=vm.Exit
+                                    }
+                                }
+                                Form #preferencesColumns Gap=14 {
+                                    Card Gap=14 {
+                                        Text .entryTitle Text=(vm.T("Интерфейс", "Interface"))
+                                        ToggleSwitch #lightTheme Text=(vm.T("Светлая тема", "Light theme")) IsChecked <=> vm.LightTheme
+                                        ToggleSwitch #animations Text=(vm.T("Плавные переходы", "Smooth transitions")) IsChecked <=> vm.Animations
+                                        Button Text=vm.LanguageLabel Command=vm.ChooseLanguage
+                                        Rule
+                                        Text .entryTitle "Minecraft"
+                                        ToggleSwitch Text=(vm.T("Показывать снапшоты", "Show snapshots")) IsChecked <=> vm.ShowSnapshots
+                                    }
+                                    Card Gap=12 {
+                                        Row Gap=10 {
+                                            Text .entryTitle "Discord" Grow=1
+                                            Text .muted vm.DiscordStatus
+                                        }
+                                        ToggleSwitch #discord Text=(vm.T("Показывать активность", "Show activity")) IsChecked <=> vm.DiscordEnabled
+                                        Column Gap=8 Enabled=vm.DiscordEnabled {
+                                            CheckBox Text=(vm.T("Сервер", "Server")) IsChecked <=> vm.DiscordServer
+                                            CheckBox Text=(vm.T("Измерение", "Dimension")) IsChecked <=> vm.DiscordDimension
+                                            CheckBox Text=(vm.T("Достижения", "Achievements")) IsChecked <=> vm.DiscordAchievements
+                                            CheckBox Text=(vm.T("Количество модов", "Mod count")) IsChecked <=> vm.DiscordMods
+                                        }
+                                        Text .muted vm.DiscordPreview Wrap=true Visible=vm.DiscordEnabled
+                                        Button Text=(vm.T("Переподключить", "Reconnect")) Command=vm.ReconnectDiscord Enabled=vm.DiscordEnabled
+                                    }
+                                }
+                                Card .toolbar #tlauncherSettings {
+                                    Row Gap=16 {
+                                        Text .entryTitle "TLauncher" Grow=1
+                                        Button #scanTLauncher Text=(vm.T("Проверить", "Scan")) Width=160 Command=vm.CheckTLauncher Enabled=(!vm.ScanningTLauncher)
+                                    }
+                                    Text vm.TLauncherStatus Wrap=true
+                                    Row Gap=8 {
+                                        Button #selectTLauncherFolder Text=(vm.T("Выбрать папку", "Choose folder")) Width=160 Command=vm.SelectTLauncherFolder Enabled=(!vm.ScanningTLauncher)
+                                        Button #reviewTLauncher Text=(vm.T("Файлы для очистки", "Review cleanup")) Width=176 Command=vm.ReviewTLauncher Visible=vm.TLauncherDetected Enabled=(!vm.ScanningTLauncher)
+                                        Button #tlauncherReport Text=(vm.T("Отчёт", "Report")) Width=112 Command=vm.ShowTLauncherReport Visible=vm.HasTLauncherReport
+                                    }
+                                    Row Gap=8 Visible=(vm.HasTLauncherBackup || vm.HasTLauncherRegistration) {
+                                        Button Text=(vm.T("Резервная копия", "Backup folder")) Width=176 Command=vm.OpenTLauncherBackup Visible=vm.HasTLauncherBackup
+                                        Button Text=(vm.T("Приложения Windows", "Windows apps")) Width=200 Command=vm.OpenInstalledApps Visible=vm.HasTLauncherRegistration
+                                    }
+                                }
+                                Card .toolbar {
+                                    Row Gap=16 {
+                                        Text .entryTitle Text=(vm.T("Лаунчер", "Launcher")) Grow=1
+                                        Text .muted vm.VersionLabel FontSize=12
+                                    }
+                                    Row Gap=8 {
+                                        Button #checkUpdates Text=(vm.T("Проверить обновления", "Check updates")) Width=190 Command=vm.CheckUpdates Enabled=(!vm.Busy)
+                                        Button #launcherData Text=(vm.T("Данные лаунчера", "Launcher data")) Width=168 Command=vm.OpenDataFolder
+                                        Button .primary Text=(vm.T("Скачать обновление", "Download update")) Width=190 Command=vm.OpenUpdate Visible=vm.HasUpdate
+                                    }
+                                    Text .muted vm.UpdateStatus Wrap=true Visible=(vm.UpdateStatus.Length > 0)
+                                    Row Gap=12 Visible=vm.EventActive {
+                                        Text vm.EventName Grow=1
+                                        Button Text=(vm.T("Выйти из события", "Leave event")) Width=200 Command=vm.LeaveEvent
+                                    }
+                                }
+                            }
+                            Column #skin Grow=1 Gap=12 Visible=(vm.Page == "skin") {
+                                Row Gap=12 {
+                                    Column Grow=1 Gap=12 {
+                                        Canvas #skinCanvas
+                                    }
+                                    Column Width=180 Gap=12 {
+                                        TextField "HEX" Value <=> vm.SkinColor ShowError=false
+                                        ToggleButton Text=(vm.T("Ластик", "Eraser")) IsChecked <=> vm.SkinEraser
+                                        ToggleButton Text=(vm.T("Заливка", "Fill")) IsChecked <=> vm.SkinFill
+                                        ToggleButton Text=(vm.T("Пипетка", "Pick color")) IsChecked <=> vm.SkinPicker
+                                        Button #undoSkin Text=(vm.T("Отменить", "Undo")) Command=vm.UndoSkin Enabled=vm.CanUndoSkin
+                                        Button Text=(vm.T("Текущий скин", "Current skin")) Command=vm.LoadCurrentSkin
+                                        Button Text=(vm.T("Открыть PNG", "Open PNG")) Command=vm.LoadSkinFile
+                                        Button Text=(vm.T("Сохранить PNG", "Save PNG")) Command=vm.SaveSkinFile
+                                        Button .primary Text=(vm.T("Применить", "Upload")) Command=vm.UploadEditedSkin Enabled=(!vm.Busy)
+                                        Button Text=(vm.T("Назад", "Back")) Command=vm.Account
+                                        Text .muted Text=(vm.T("64×64 · клик или перетаскивание для рисования.", "64×64 · click or drag to paint.")) Wrap=true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Canvas #pageExit GridRow=0 GridColumn=0 Align=Stretch VerticalAlign=Stretch Visible=false Enabled=false
+                }
+            }
+            Grid #tlauncherGate GridRow=0 GridColumn=0 Align=Stretch VerticalAlign=Stretch ColumnDefinitions="*" RowDefinitions="*" Padding=24 Visible=vm.TLauncherBlocked Enabled=(!vm.DialogOpen) Background=vm.Palette.Background {
+                Card #tlauncherGateCard Width=680 Align=Center VerticalAlign=Center Padding=28 Gap=20 {
+                    Row Gap=16 {
+                        Text "" FontFamily="Segoe MDL2 Assets" FontSize=32 Foreground=vm.Palette.Error
+                        Column Grow=1 Gap=6 {
+                            Text vm.TLauncherGateTitle FontSize=28 FontWeight=650 Wrap=true
+                        }
+                    }
+                    Text vm.TLauncherGateDescription Wrap=true Visible=(vm.TLauncherGateDescription.Length > 0)
+                    Text .muted vm.TLauncherStatus Wrap=true Visible=(!vm.TLauncherDetected || vm.TLauncherStatus != vm.T("TLauncher найден", "TLauncher found"))
+                    Column Gap=10 {
+                        Row Gap=10 {
+                            Button .primary #tlauncherGateReview Text=(vm.T("Удалить TLauncher", "Remove TLauncher")) Grow=1 Command=vm.ReviewTLauncher Enabled=(vm.HasTLauncherFiles && !vm.ScanningTLauncher)
+                            Button #tlauncherGateRetry Text=(vm.T("Проверить снова", "Check again")) Grow=1 Command=vm.CheckTLauncher Enabled=(!vm.ScanningTLauncher)
+                        }
+                        Row Gap=10 {
+                            Button #tlauncherGateReport Text=(vm.T("Отчёт", "Report")) Width=100 Command=vm.ShowTLauncherReport Enabled=vm.HasTLauncherReport
+                            Button #tlauncherGateWindows Text=(vm.T("Приложения Windows", "Windows apps")) Width=196 Command=vm.OpenInstalledApps Visible=vm.HasTLauncherRegistration
+                            Button #tlauncherGateBackup Text=(vm.T("Резервная копия", "Backup folder")) Width=160 Command=vm.OpenTLauncherBackup Visible=vm.HasTLauncherBackup
+                            Spacer Grow=1
+                            Button #tlauncherGateExit Text=(vm.T("Выйти", "Quit")) Width=100 Command=vm.Exit
+                        }
+                    }
+                }
+            }
+            Grid #modalLayer GridRow=0 GridColumn=0 Align=Stretch VerticalAlign=Stretch ColumnDefinitions="*" RowDefinitions="*" Padding=24 Visible=vm.DialogOpen Background=(new Color(0, 0, 0, vm.LightTheme ? 0.32f : 0.56f)) {
+                Card #dialog GridRow=0 GridColumn=0 Width=(vm.HasDialogImage || vm.DialogText.Length > 0 ? 920 : 620) MaxHeight=(vm.HasDialogImage || vm.DialogText.Length > 0 ? 680 : vm.DialogSearch ? 600 : vm.DialogFields.Count > 0 ? Math.Min(600, 250 + vm.DialogFields.Count * 88 + (vm.DialogChoices.Count > 0 ? 184 : 0) + (vm.DialogError.Length > 0 ? 76 : 0)) : vm.DialogChoices.Count > 0 ? Math.Min(600, 220 + vm.DialogChoices.Count * 80 + (vm.DialogError.Length > 0 ? 76 : 0)) : 300) Align=Center VerticalAlign=Center Padding=0 Gap=0 {
+                    Row #dialogHeader Padding=20 Gap=16 {
+                        Text #dialogTitle vm.DialogTitle FontSize=22 FontWeight=650 Grow=1 Wrap=true VerticalAlign=Center
+                        Button .iconButton #dialogClose "" Width=38 Command=vm.CloseDialog Enabled=(!vm.DialogBusy)
+                    }
+                    Rule
+                    Column Padding=20 Visible=vm.DialogSearch {
+                        Input #choiceSearch Value <=> vm.DialogQuery Placeholder=(vm.T("Найти…", "Search…")) Enabled=(!vm.DialogBusy)
+                    }
+                    ScrollViewer #dialogScroll Grow=1 VerticalScrollBarVisibility=(vm.DialogSearch || vm.DialogChoices.Count > 0 || vm.HasDialogImage || vm.DialogText.Length > 0 ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto) {
+                        Column #dialogContent Grow=1 Padding=20 Gap=16 Enabled=(!vm.DialogBusy) {
+                            Text #dialogBody vm.DialogBody Wrap=true Visible=(vm.DialogBody.Length > 0)
+                            VirtualList #dialogFields Items=vm.DialogFields ItemTemplate=Field ItemKey=Id Height=(vm.DialogFields.Count * 88) Visible=(vm.DialogFields.Count > 0)
+                            FitImage #dialogImage Picture=vm.DialogImage Grow=1 Visible=(vm.DialogImage != ImageSource.Empty)
+                            TextArea #dialogText Value=vm.DialogText Grow=1 ControlHeight=320 ReadOnly=true ShowLabel=false ShowError=false Visible=(vm.DialogText.Length > 0)
+                            VirtualList #choices Items=vm.DialogChoices ItemTemplate=Choice ItemKey=Id Grow=1 Height=(vm.DialogFields.Count > 0 ? 168f : float.NaN) EstimatedItemHeight=65 Visible=(vm.DialogChoices.Count > 0)
+                            Column Gap=8 Padding=16 Visible=(vm.DialogSearch && vm.DialogChoices.Count == 0) {
+                                Text Text=(vm.T("Ничего не найдено", "No matches")) FontSize=17 FontWeight=600
+                                Text .muted Text=(vm.T("Попробуй изменить запрос.", "Try a different search.")) Wrap=true
+                            }
+                        }
+                    }
+                    Rule
+                    Column #dialogFooter Padding=20 Gap=12 {
+                        ScrollViewer #dialogError MaxHeight=64 Visible=(vm.DialogError.Length > 0) VerticalScrollBarVisibility=Auto Padding=12 {
+                            Text .error vm.DialogError Wrap=true
+                        }
+                        Row Gap=8 {
+                            Button #openDialogImage Text=(vm.T("Оригинал", "Original")) Width=130 Command=vm.OpenOriginalImage Visible=vm.HasDialogImage
+                            Button #saveDialogImage Text=(vm.T("Сохранить копию", "Save a copy")) Width=160 Command=vm.SaveImageCopy Visible=vm.HasDialogImage
+                            Text .muted Text=(vm.T("Выполняю…", "Working…")) Visible=vm.DialogBusy VerticalAlign=Center
+                            Spacer Grow=1
+                            Button #dialogCancel Text=(vm.DialogPrimary.Length > 0 ? vm.T("Отмена", "Cancel") : vm.T("Закрыть", "Close")) Width=112 Command=vm.CloseDialog Enabled=(!vm.DialogBusy)
+                            Button .primary #dialogAccept Text=vm.DialogPrimary Width=176 Command=vm.AcceptDialog Visible=(vm.DialogPrimary.Length > 0) Enabled=(!vm.DialogBusy)
+                        }
+                    }
+                }
+            }
+            Grid #dialogExit GridRow=0 GridColumn=0 Align=Stretch VerticalAlign=Stretch ColumnDefinitions="*" RowDefinitions="*" Visible=false Enabled=false {
+                Canvas #dialogGhost GridRow=0 GridColumn=0 Align=Stretch VerticalAlign=Stretch
+            }
+        }
+    }
+}
+
+styles Shell {
+    #window { Background=vm.Palette.Background; Foreground=vm.Palette.Foreground; FontFamily="Segoe UI"; FontSize=14 }
+    #caption, #sidebar { Background=vm.Palette.Pane }
+    #sidebar { Width=86; Padding=8 }
+    #workspace { Padding=(vm.Page == "home" ? 0 : 24) }
+    #header, #pageScroll, #notice { MaxWidth=1040; Align=Center }
+    ScrollViewer, VirtualList, ListItem, Button, TextField { FocusRing=(new Color(0, 0, 0, 0)) }
+    #pageScroll { Background=vm.Palette.Background; BorderThickness=0; CornerRadius=0; Padding=0; ScrollStep=20 }
+    #dialog { Background=vm.Palette.Surface; BorderColor=vm.Palette.Border; BorderThickness=1; CornerRadius=14 }
+    #dialogScroll { Background=vm.Palette.Surface; BorderThickness=0; CornerRadius=0; Padding=0; ScrollStep=20 }
+    #dialogFields, #choices { Background=vm.Palette.Surface }
+    #dialogError { Background=vm.Palette.Background; BorderColor=vm.Palette.Error; BorderThickness=1; CornerRadius=8 }
+    #dialogAccept { Background=(vm.DialogDanger ? vm.Palette.Error : vm.Palette.Accent); Foreground=(vm.DialogDanger ? vm.Palette.Background : vm.Palette.OnAccent) }
+    .iconButton { FontFamily="Segoe MDL2 Assets"; FontSize=12; Padding=0 }
+    #instanceContext { Width=220 }
+    #pageTitle { FontSize=30 }
+    #heroContent { Padding=36 }
+    #heroTextScroll { Background=(new Color(0, 0, 0, 0)); BorderThickness=0; CornerRadius=0; Padding=0; ScrollStep=20 }
+    #heroTitle { FontSize=(vm.HasHeroImage ? 40 : 32); Foreground=(vm.HasHeroImage ? Color.Hex(0xecf0ec) : vm.Palette.Foreground) }
+    #heroMeta { FontSize=14; Foreground=(vm.HasHeroImage ? Color.Hex(0xdbe6de) : vm.Palette.Muted) }
+    #homeSessionStatus, #launchStatus { FontSize=12; Foreground=(vm.HasHeroImage ? Color.Hex(0xdbe6de) : vm.Palette.Muted) }
+    #worldBlock { Background=vm.HeroColor; CornerRadius=12 }
+    #homeLaunchPanel { Background=vm.Palette.Pane }
+    #launchActions { Padding=26 }
+    #gameLog { CornerRadius=0; BorderThickness=0 }
+    #homeEmpty { Padding=64 }
+    #homeEmptyIcon { Background=vm.Palette.Surface; Foreground=vm.Palette.Muted; CornerRadius=12; Padding=16 }
+    .toolbar { Padding=16; Gap=12; CornerRadius=12; BorderThickness=1; BorderColor=vm.Palette.Border }
+    .tabs > Button, .tab { Background=vm.Palette.Pane; BorderThickness=0; CornerRadius=6; ControlHeight=36; FontSize=12 }
+    .tabs > Button:selected, .tab:selected { Background=vm.Palette.Hero; Foreground=vm.Palette.Foreground }
+    .tabs > Button:pointerover, .tab:pointerover { Background=vm.Palette.Hover }
+    .homeTool { Background=vm.Palette.Pane; BorderThickness=0; Foreground=vm.Palette.Foreground; FontSize=13 }
+    #browseModpacks { Background=vm.Palette.Background }
+    .homeTool:pointerover { Background=vm.Palette.Hover; Foreground=vm.Palette.Foreground }
+    .coverTool { Background=(vm.HasHeroImage ? Color.Hex(0x1b2920) : vm.Palette.Surface); Foreground=(vm.HasHeroImage ? Color.Hex(0xecf0ec) : vm.Palette.Foreground); BorderColor=(vm.HasHeroImage ? Color.Hex(0x53665b) : vm.Palette.Border); BorderThickness=1; CornerRadius=6; FontSize=13 }
+    .coverTool:pointerover { Background=(vm.HasHeroImage ? Color.Hex(0x314136) : vm.Palette.Hover) }
+    .entryPrimary { Background=vm.Palette.Hero }
+    .entryPrimary:pointerover { Background=vm.Palette.Hover }
+    .entryPrimary:pressed, .homeTool:pressed { Background=vm.Palette.Border }
+    .entrySecondary { ControlHeight=32; FontSize=12 }
+    #preferencesColumns { Columns=2 }
+    #contentTypes, #instanceTabs { Columns=5 }
+    #skinCanvas { Width=512; Height=512 }
+    #caption { Foreground=vm.Palette.Muted }
+    .caption, .captionClose { Background=vm.Palette.Pane; BorderThickness=0; CornerRadius=0; ControlHeight=40; Padding=0; FontFamily="Segoe MDL2 Assets"; FontSize=10 }
+    .caption:pointerover { Background=vm.Palette.Hover }
+    .captionClose:pointerover { Background=#b43737; Foreground=#ffffff }
+    NavButton { Background=vm.Palette.Pane; BorderThickness=0; ControlHeight=42 }
+    NavButton:selected, Button:selected { Background=vm.Palette.Hero; BorderColor=vm.Palette.Accent; Foreground=vm.Palette.Foreground }
+    #sidebar NavButton { Stacked=true; ControlHeight=64; CornerRadius=6 }
+    #sidebar NavButton, #sidebar NavButton:selected { Background=(new Color(0, 0, 0, 0)) }
+    #sidebar NavButton:pointerover { Background=(new Color(vm.Palette.Hover.R, vm.Palette.Hover.G, vm.Palette.Hover.B, 0.55f)) }
+    #sidebar NavButton:focus { Background=vm.Palette.Hover; Foreground=vm.Palette.Foreground }
+    Button:pointerover { BorderColor=vm.Palette.Border }
+    .primary:pointerover { BorderColor=vm.Palette.Accent }
+    Button:focus { BorderThickness=1; BorderColor=vm.Palette.Accent }
+    .primary:focus { BorderColor=vm.Palette.OnAccent }
+    .muted { Foreground=vm.Palette.Muted; FontSize=12 }
+    .entryTitle { FontSize=18; FontWeight=600 }
+    .emptyState { Padding=24; Gap=12; CornerRadius=12; BorderThickness=1; BorderColor=vm.Palette.Border }
+    .emptyTitle { FontSize=20; FontWeight=600 }
+    .eyebrow { FontSize=11; FontWeight=650; Foreground=vm.Palette.Muted }
+    .error { Foreground=vm.Palette.Error }
+    #notice { Background=vm.Palette.Hero; CornerRadius=9 }
+    .entry { Gap=8; CornerRadius=12; BorderThickness=1; BorderColor=vm.Palette.Border }
+    .entry:selected { BorderColor=vm.Palette.Accent }
+    .tile { Background=vm.Palette.Hero; Foreground=vm.Palette.Accent }
+    VirtualList { Background=vm.Palette.Background; BorderThickness=0; CornerRadius=0 }
+    ListItem { Padding=0 }
+    ListItem:selected { Background=vm.Palette.Background }
+    when container.Width < 1050 {
+        #workspace { Padding=(vm.Page == "home" ? 0 : 20) }
+        #instanceContext { Width=200 }
+        #preferencesColumns { Columns=1 }
+        #skinCanvas { Width=360; Height=360 }
+    }
+    when container.Width < 900 {
+        #instanceContext { Width=180 }
+        #sidebar { Width=76; Padding=6; Gap=4 }
+        #sidebar NavButton { ControlHeight=58 }
+        #workspace { Padding=(vm.Page == "home" ? 0 : 16) }
+        #pageTitle { FontSize=26 }
+        #heroContent, #launchActions { Padding=26 }
+        #heroTitle { FontSize=(vm.HasHeroImage ? 34 : 30) }
+        #homeEmpty { Padding=40 }
+        #homeEmptyTitle { FontSize=28 }
+    }
+}

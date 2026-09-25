@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using MechanicaLauncher.Core.Instances;
 using MechanicaLauncher.Core.Security;
+using MechanicaLauncher.Helpers;
 using MechanicaLauncher.Views;
 using System.Numerics;
 using WinRT.Interop;
@@ -17,11 +18,20 @@ namespace MechanicaLauncher;
 public sealed partial class MainWindow : Window
 {
     private TLauncherScanResult? _scanResult;
+    private bool _closeWhenIdle;
 
     public MainWindow()
     {
         this.Closed += (_, args) =>
         {
+            if (App.LaunchPreparationGate.CurrentCount == 0 || App.Downloads.HasPending)
+            {
+                args.Handled = true;
+                _closeWhenIdle = true;
+                App.Downloads.CancelAll();
+                App.PreparationCancellation?.Cancel();
+                return;
+            }
             if (App.HasRunningInstances())
             {
                 args.Handled = true;
@@ -30,6 +40,7 @@ public sealed partial class MainWindow : Window
         };
 
         this.InitializeComponent();
+        ApplyLocale();
         this.SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
         this.ExtendsContentIntoTitleBar = true;
 
@@ -58,18 +69,50 @@ public sealed partial class MainWindow : Window
 
         if (Content is FrameworkElement root)
         {
+            void UpdateTitleBar()
+            {
+                var foreground = root.ActualTheme == ElementTheme.Light ? Colors.Black : Colors.White;
+                appWindow.TitleBar.ButtonForegroundColor = foreground;
+                appWindow.TitleBar.ButtonHoverForegroundColor = foreground;
+                appWindow.TitleBar.ButtonPressedForegroundColor = foreground;
+                appWindow.TitleBar.ButtonInactiveForegroundColor = Windows.UI.Color.FromArgb(0x80, foreground.R, foreground.G, foreground.B);
+                appWindow.TitleBar.ButtonBackgroundColor = Colors.Transparent;
+                appWindow.TitleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
+                appWindow.TitleBar.ButtonHoverBackgroundColor = Windows.UI.Color.FromArgb(0x18, foreground.R, foreground.G, foreground.B);
+                appWindow.TitleBar.ButtonPressedBackgroundColor = Windows.UI.Color.FromArgb(0x28, foreground.R, foreground.G, foreground.B);
+            }
+
+            root.ActualThemeChanged += (_, _) => UpdateTitleBar();
             root.RequestedTheme = App.Settings.Theme switch
             {
-                "Light" => ElementTheme.Light,
-                "Dark" => ElementTheme.Dark,
+                "Light" or "Светлая" => ElementTheme.Light,
+                "Dark" or "Тёмная" => ElementTheme.Dark,
                 _ => ElementTheme.Default
             };
+            UpdateTitleBar();
         }
 
         ContentFrame.CacheSize = 5;
+        ContentFrame.ContentTransitions = new TransitionCollection
+        {
+            new NavigationThemeTransition { DefaultNavigationTransitionInfo = new SuppressNavigationTransitionInfo() }
+        };
+        ContentFrame.Navigated += (_, _) =>
+        {
+            if (ContentFrame.Content is UIElement page) AnimationHelper.SlideIn(page);
+        };
 
         App.RunningInstancesChanged += OnRunningChanged;
-        this.Closed += (_, _) => App.RunningInstancesChanged -= OnRunningChanged;
+        App.Downloads.Changed += OnRunningChanged;
+        this.Closed += (_, args) =>
+        {
+            if (!args.Handled)
+            {
+                App.RunningInstancesChanged -= OnRunningChanged;
+                App.Downloads.Changed -= OnRunningChanged;
+                App.Discord.Dispose();
+            }
+        };
 
         _scanResult = TLauncherDetector.Scan();
         if (_scanResult.IsDetected)
@@ -90,7 +133,27 @@ public sealed partial class MainWindow : Window
     }
 
     public void HandlePendingConnect() => _ = HandlePendingConnectAsync();
+    public void LaunchServer(string instanceId, string? host, int port)
+    {
+        NavigateToTag("Home");
+        if (ContentFrame.Content is not HomePage) ContentFrame.Navigate(typeof(HomePage));
+        if (ContentFrame.Content is HomePage home) home.LaunchWithServer(instanceId, host, port);
+    }
+    internal void ShowInstanceDetails(string instanceId, string tab = "settings")
+    {
+        NavigateToTag("Instances");
+        ContentFrame.Navigate(typeof(InstanceDetailsPage), new InstanceDetailsRequest(instanceId, tab));
+    }
     public Task HandlePendingEventPublicAsync() => HandlePendingEventAsync();
+
+    public void ApplyLocale()
+    {
+        foreach (var item in NavView.MenuItems.Concat(NavView.FooterMenuItems).OfType<NavigationViewItem>())
+        {
+            if (item.Tag is string tag)
+                item.Content = App.L("nav." + tag.ToLowerInvariant());
+        }
+    }
 
     public void NavigateToTag(string tag)
     {
@@ -104,6 +167,15 @@ public sealed partial class MainWindow : Window
     {
         DispatcherQueue.TryEnqueue(() =>
         {
+            var downloads = App.Downloads.Jobs.Count(j => j.State is Core.IO.DownloadState.Queued or Core.IO.DownloadState.Running);
+            DownloadsBadge.Value = downloads;
+            DownloadsBadge.Visibility = downloads > 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (_closeWhenIdle && App.LaunchPreparationGate.CurrentCount > 0 && !App.Downloads.HasPending)
+            {
+                _closeWhenIdle = false;
+                Close();
+                return;
+            }
             var count = App.RunningInstances.Count(kv => !kv.Value.HasExited);
             RunningBadge.Value = count;
             RunningBadge.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -131,64 +203,33 @@ public sealed partial class MainWindow : Window
 
     public async Task ImportMrpackAsync(string mrpackPath)
     {
-        var im = new InstanceManager();
-        var importer = new MechanicaLauncher.Core.Mods.ModpackInstaller();
-
-        var statusText = new TextBlock { Text = "Reading modpack...", TextWrapping = TextWrapping.Wrap };
-        var progress = new ProgressBar { Minimum = 0, Maximum = 100, IsIndeterminate = true, Width = 360 };
-        importer.ProgressChanged += (s, p) =>
+        App.PendingMrpack = null;
+        var job = App.Downloads.Enqueue(App.L("inst.import") + ": " + Path.GetFileName(mrpackPath), null, async token =>
         {
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                statusText.Text = s;
-                if (p >= 0) { progress.IsIndeterminate = false; progress.Value = p; }
-            });
-        };
-
-        var dialog = new ContentDialog
-        {
-            Title = "Importing Modpack",
-            Content = new StackPanel { Spacing = 10, Children = { statusText, progress } },
-            XamlRoot = Content.XamlRoot
-        };
-        var dialogTask = dialog.ShowAsync().AsTask();
-
-        try
-        {
-            var inst = await importer.ImportAsync(mrpackPath, im);
-            App.Settings.SelectedInstanceId = inst.Id;
-            App.Settings.Save();
-            try { dialog.Hide(); } catch { }
-            await Task.Delay(200);
-
-            await new ContentDialog
-            {
-                Title = "Modpack imported",
-                Content = new TextBlock { Text = $"Created instance '{inst.Name}' ({inst.McVersion} · {inst.Loader}). Press Play to install the loader and launch.", TextWrapping = TextWrapping.Wrap, MaxWidth = 400 },
-                CloseButtonText = "OK",
-                XamlRoot = Content.XamlRoot
-            }.ShowAsync();
-        }
-        catch (Exception ex)
-        {
-            try { dialog.Hide(); } catch { }
-            await Task.Delay(200);
+            await App.LaunchPreparationGate.WaitAsync(token);
+            var cancellation = Core.IO.DownloadQueue.CurrentCancellation!;
             try
             {
-                await new ContentDialog
-                {
-                    Title = "Modpack import failed",
-                    Content = new TextBlock { Text = ex.Message, TextWrapping = TextWrapping.Wrap, MaxWidth = 500 },
-                    CloseButtonText = "OK",
-                    XamlRoot = Content.XamlRoot
-                }.ShowAsync();
+                if (App.EventConfig?.Ui?.AllowModInstall == false) throw new InvalidOperationException(App.L("catalog.install_locked"));
+                App.PreparationCancellation = cancellation;
+                App.PreparingInstanceId = "modpack-import-" + Guid.NewGuid().ToString("N");
+                App.NotifyRunningChanged();
+                var created = await new Core.Mods.ModpackInstaller().ImportAsync(mrpackPath, new InstanceManager(), token);
+                Core.IO.DownloadQueue.Current!.ResultInstanceId = created.Id;
             }
-            catch { }
-        }
-        finally
-        {
-            App.PendingMrpack = null;
-        }
+            finally
+            {
+                if (ReferenceEquals(App.PreparationCancellation, cancellation))
+                {
+                    App.PreparationCancellation = null;
+                    App.PreparingInstanceId = null;
+                }
+                App.LaunchPreparationGate.Release();
+                App.NotifyRunningChanged();
+            }
+        });
+        NavigateToTag("Downloads");
+        await job.Completion;
     }
 
     public void ApplyEventNavigation()
@@ -457,14 +498,13 @@ public sealed partial class MainWindow : Window
                 "Home" => typeof(HomePage),
                 "Instances" => typeof(InstancesPage),
                 "Mods" => typeof(ModsPage),
+                "Downloads" => typeof(DownloadsPage),
+                "Servers" => typeof(ServersPage),
                 "Account" => typeof(AccountPage),
                 "Settings" => typeof(SettingsPage),
                 _ => typeof(HomePage)
             };
-            ContentFrame.Navigate(pageType, null, new SlideNavigationTransitionInfo
-            {
-                Effect = SlideNavigationTransitionEffect.FromRight
-            });
+            ContentFrame.Navigate(pageType);
         }
     }
 }

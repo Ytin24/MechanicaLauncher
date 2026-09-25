@@ -10,7 +10,6 @@ using Microsoft.UI.Xaml.Navigation;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
 using Windows.UI;
-using Microsoft.Web.WebView2.Core;
 using MechanicaLauncher.Core.Auth;
 
 namespace MechanicaLauncher.Views;
@@ -21,6 +20,7 @@ public sealed partial class AccountPage : Page
     private static readonly HttpClient SkinHttp = new();
     private string _skinVariant = "classic";
     private long _skinCacheBuster;
+    private bool _signingIn;
 
     public AccountPage()
     {
@@ -46,11 +46,12 @@ public sealed partial class AccountPage : Page
         NicknameBox.PlaceholderText = App.L("acc.nickname");
         SaveBtn.Content = App.L("acc.save");
         SignOutBtn.Content = App.L("acc.signout");
+        SignInAgainBtn.Content = App.L("acc.signin_again");
     }
 
     private void SyncUi()
     {
-        var loggedIn = S.AuthMode != "offline" && S.Username != "Player";
+        var loggedIn = S.AuthMode == "microsoft" && !string.IsNullOrEmpty(S.AccessToken) && S.AccessToken != "0";
 
         LoggedInPanel.Visibility = loggedIn ? Visibility.Visible : Visibility.Collapsed;
         LoginPanel.Visibility = loggedIn ? Visibility.Collapsed : Visibility.Visible;
@@ -281,6 +282,8 @@ public sealed partial class AccountPage : Page
         S.AuthMode = "offline";
         S.Uuid = Guid.NewGuid().ToString("N");
         S.AccessToken = "0";
+        S.MsRefreshToken = "";
+        S.MsClientId = "";
         S.Save();
         SyncUi();
     }
@@ -292,6 +295,7 @@ public sealed partial class AccountPage : Page
         S.Uuid = "0";
         S.AccessToken = "0";
         S.MsRefreshToken = "";
+        S.MsClientId = "";
         S.Save();
         NicknameBox.Text = "";
         SyncUi();
@@ -299,71 +303,103 @@ public sealed partial class AccountPage : Page
 
     private async void MsLogin_Click(object sender, RoutedEventArgs e)
     {
-        var codeTcs = new TaskCompletionSource<string?>();
-        var webView = new WebView2 { Width = 520, Height = 640 };
-
-        var dialog = new ContentDialog
-        {
-            Title = "Sign in with Microsoft",
-            Content = webView,
-            CloseButtonText = "Cancel",
-            XamlRoot = this.XamlRoot
-        };
-        dialog.CloseButtonClick += (_, _) => codeTcs.TrySetResult(null);
-
+        if (_signingIn) return;
+        _signingIn = true;
+        MsSignInBtn.IsEnabled = false;
+        SignInAgainBtn.IsEnabled = false;
+        SaveBtn.IsEnabled = false;
+        string? error = null;
         try
         {
-            await webView.EnsureCoreWebView2Async();
-            // Force a fresh login session so "select_account" actually offers a choice after sign-out.
-            webView.CoreWebView2.CookieManager.DeleteAllCookies();
-
-            webView.CoreWebView2.NavigationStarting += (s, args) =>
+            var auth = MicrosoftAuth.CreateForSignIn();
+            var signIn = auth.BeginSignIn();
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            var ct = cancellation.Token;
+            var redirect = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var registration = ct.Register(() => redirect.TrySetCanceled(ct));
+            var webView = new WebView2
             {
-                if (!args.Uri.StartsWith(MicrosoftAuth.RedirectUri, StringComparison.OrdinalIgnoreCase)) return;
-                var q = new Uri(args.Uri).Query;
-                var parsed = System.Web.HttpUtility.ParseQueryString(q);
-                var code = parsed["code"];
-                var err = parsed["error"];
-                args.Cancel = true;
-                if (!string.IsNullOrEmpty(code)) codeTcs.TrySetResult(code);
-                else codeTcs.TrySetException(new Exception($"OAuth error: {err ?? "no code"} — {parsed["error_description"]}"));
+                Width = Math.Max(240, Math.Min(520, XamlRoot.Size.Width - 100)),
+                Height = Math.Max(220, Math.Min(560, XamlRoot.Size.Height - 220))
+            };
+            var dialog = new ContentDialog
+            {
+                Title = App.L("acc.ms_signin"), Content = webView,
+                CloseButtonText = App.L("inst.cancel"), XamlRoot = XamlRoot,
+                RequestedTheme = ActualTheme
+            };
+            dialog.Resources["ContentDialogMaxWidth"] = 640d;
+            var userCancelled = false;
+            dialog.CloseButtonClick += (_, _) => { userCancelled = true; cancellation.Cancel(); };
+            dialog.Closed += (_, _) => { userCancelled = true; cancellation.Cancel(); };
+            dialog.Opened += async (_, _) =>
+            {
+                try
+                {
+                    await webView.EnsureCoreWebView2Async();
+                    ct.ThrowIfCancellationRequested();
+                    webView.CoreWebView2.NavigationStarting += (_, args) =>
+                    {
+                        if (!signIn.IsRedirect(args.Uri)) return;
+                        args.Cancel = true;
+                        redirect.TrySetResult(args.Uri);
+                    };
+                    webView.CoreWebView2.NavigationCompleted += (_, args) =>
+                    {
+                        if (!args.IsSuccess && !redirect.Task.IsCompleted && !cancellation.IsCancellationRequested)
+                            redirect.TrySetException(new HttpRequestException(App.L("acc.login_page_failed")));
+                    };
+                    webView.CoreWebView2.Navigate(signIn.AuthorizeUrl);
+                }
+                catch (Exception ex) { redirect.TrySetException(ex); }
             };
 
-            webView.CoreWebView2.Navigate(MicrosoftAuth.BuildAuthorizeUrl());
+            var shown = dialog.ShowAsync().AsTask();
+            try
+            {
+                var address = await redirect.Task;
+                dialog.Content = new StackPanel
+                {
+                    Spacing = 16, Padding = new Thickness(24),
+                    Children =
+                    {
+                        new ProgressRing { IsActive = true, Width = 32, Height = 32 },
+                        new TextBlock { Text = App.L("acc.signing_in"), TextWrapping = TextWrapping.Wrap }
+                    }
+                };
+                var result = await auth.CompleteAsync(signIn, address, ct);
+                ct.ThrowIfCancellationRequested();
+                S.Username = result.Username;
+                S.Uuid = result.Uuid;
+                S.AccessToken = result.AccessToken;
+                S.MsRefreshToken = result.RefreshToken ?? "";
+                S.MsClientId = auth.ClientId;
+                S.AuthMode = "microsoft";
+                S.Save();
+                SyncUi();
+            }
+            catch (TaskCanceledException) when (!userCancelled) { error = App.L("acc.auth_timeout"); }
+            catch (OperationCanceledException)
+            {
+                if (!userCancelled && cancellation.IsCancellationRequested) error = App.L("acc.auth_timeout");
+            }
+            finally
+            {
+                dialog.Hide();
+                await shown;
+                webView.Close();
+            }
         }
-        catch (Exception ex)
+        catch (HttpRequestException ex) { error = ex.StatusCode.HasValue ? ex.Message : App.L("acc.login_page_failed"); }
+        catch (Exception ex) { error = ex.Message; }
+        finally
         {
-            await ShowAuthErrorAsync($"WebView2 init failed: {ex.Message}");
-            return;
+            _signingIn = false;
+            MsSignInBtn.IsEnabled = true;
+            SignInAgainBtn.IsEnabled = true;
+            SaveBtn.IsEnabled = true;
         }
-
-        var showTask = dialog.ShowAsync().AsTask();
-        var winner = await Task.WhenAny(showTask, codeTcs.Task);
-
-        try { dialog.Hide(); } catch { }
-        await Task.Delay(150);
-
-        string? code;
-        try { code = winner == codeTcs.Task ? await codeTcs.Task : null; }
-        catch (Exception ex) { await ShowAuthErrorAsync(ex.Message); return; }
-
-        if (string.IsNullOrEmpty(code)) return;
-
-        try
-        {
-            var result = await new MicrosoftAuth().CompleteWithCodeAsync(code);
-            S.Username = result.Username;
-            S.Uuid = result.Uuid;
-            S.AccessToken = result.AccessToken;
-            S.MsRefreshToken = result.RefreshToken ?? "";
-            S.AuthMode = "microsoft";
-            S.Save();
-            SyncUi();
-        }
-        catch (Exception ex)
-        {
-            await ShowAuthErrorAsync(ex.Message);
-        }
+        if (error != null) await ShowAuthErrorAsync(error);
     }
 
     private async Task ShowAuthErrorAsync(string message)
@@ -372,9 +408,9 @@ public sealed partial class AccountPage : Page
         {
             await new ContentDialog
             {
-                Title = "Authorization Failed",
+                Title = App.L("acc.auth_failed"),
                 Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, MaxWidth = 400 },
-                CloseButtonText = "OK",
+                CloseButtonText = App.L("acc.ok"),
                 XamlRoot = this.XamlRoot
             }.ShowAsync();
         }

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using MechanicaLauncher.Core.IO;
 
 namespace MechanicaLauncher.Core.Instances;
 
@@ -15,9 +16,7 @@ public sealed partial class InstanceManager
 
     public InstanceManager(string? baseDir = null)
     {
-        _baseDir = baseDir ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "MechanicaLauncher");
+        _baseDir = baseDir ?? LauncherPaths.DataDirectory;
     }
 
     public string InstancesDir => Path.Combine(_baseDir, "instances");
@@ -26,8 +25,44 @@ public sealed partial class InstanceManager
     public string SharedAssetsDir => Path.Combine(SharedDir, "assets");
     public string SharedRuntimeDir => Path.Combine(SharedDir, "runtime");
 
-    public string GetInstanceDir(string instanceId) => Path.Combine(InstancesDir, instanceId);
-    public string GetGameDir(string instanceId) => Path.Combine(InstancesDir, instanceId, ".minecraft");
+    public string GetInstanceDir(string instanceId) => FileDownloader.GetPath(InstancesDir, instanceId);
+    public string GetGameDir(string instanceId) => Path.Combine(GetInstanceDir(instanceId), ".minecraft");
+
+    public string? GetCoverAbsolutePath(GameInstance instance)
+    {
+        if (string.IsNullOrEmpty(instance.CoverPath)) return null;
+        try
+        {
+            var path = FileDownloader.GetPath(GetInstanceDir(instance.Id), instance.CoverPath);
+            return File.Exists(path) ? path : null;
+        }
+        catch (InvalidDataException) { return null; }
+    }
+
+    public void SaveAppearance(GameInstance instance, string? coverSource, string? accent)
+    {
+        if (accent != null && !InstanceMedia.IsAccent(accent)) throw new InvalidDataException("Invalid accent color.");
+        var cover = instance.CoverPath;
+        if (coverSource == null) cover = null;
+        else if (!string.Equals(GetCoverAbsolutePath(instance), Path.GetFullPath(coverSource), StringComparison.OrdinalIgnoreCase))
+        {
+            if (!InstanceMedia.IsImage(coverSource) || new FileInfo(coverSource).Length > 20 * 1024 * 1024)
+                throw new InvalidDataException("Choose a PNG or JPEG image smaller than 20 MB.");
+            using (var stream = File.OpenRead(coverSource))
+            {
+                Span<byte> signature = stackalloc byte[8];
+                var count = stream.Read(signature);
+                bool png = count == 8 && signature.SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
+                bool jpeg = count >= 3 && signature[0] == 255 && signature[1] == 216 && signature[2] == 255;
+                if (!png && !jpeg) throw new InvalidDataException("The file is not a PNG or JPEG image.");
+            }
+            cover = "cover-" + Guid.NewGuid().ToString("N") + Path.GetExtension(coverSource).ToLowerInvariant();
+            File.Copy(coverSource, FileDownloader.GetPath(GetInstanceDir(instance.Id), cover));
+        }
+        instance.CoverPath = cover;
+        instance.AccentColor = accent;
+        SaveInstance(instance);
+    }
 
     // Resolved absolute path to the instance's custom icon, or null if not set / missing.
     public string? GetIconAbsolutePath(GameInstance inst)
@@ -39,20 +74,18 @@ public sealed partial class InstanceManager
         return File.Exists(p) ? p : null;
     }
 
-    // Copies an external image into the instance directory and returns the relative filename written
-    // to instance.json. Keeps only one active icon — overwrites previous.
-    public string SetIconFromFile(GameInstance inst, string sourcePath)
+    public string SetIconFromFile(GameInstance inst, string sourcePath, bool save = true)
     {
         if (!File.Exists(sourcePath))
             throw new FileNotFoundException("Icon source missing", sourcePath);
         var ext = Path.GetExtension(sourcePath);
         if (string.IsNullOrEmpty(ext)) ext = ".png";
-        var dstName = "icon" + ext.ToLowerInvariant();
+        var dstName = "icon-" + Guid.NewGuid().ToString("N") + ext.ToLowerInvariant();
         var dst = Path.Combine(GetInstanceDir(inst.Id), dstName);
         Directory.CreateDirectory(GetInstanceDir(inst.Id));
-        File.Copy(sourcePath, dst, overwrite: true);
+        File.Copy(sourcePath, dst);
         inst.IconPath = dstName;
-        SaveInstance(inst);
+        if (save) SaveInstance(inst);
         return dstName;
     }
 
@@ -106,6 +139,9 @@ public sealed partial class InstanceManager
             JvmArgs = src.JvmArgs,
             WindowWidth = src.WindowWidth,
             WindowHeight = src.WindowHeight,
+            IconPath = src.IconPath,
+            CoverPath = src.CoverPath,
+            AccentColor = src.AccentColor,
             CreatedAt = DateTime.UtcNow,
         };
         var newId = Slugify(clone.Name);
@@ -142,9 +178,20 @@ public sealed partial class InstanceManager
     public GameInstance? GetInstance(string instanceId)
     {
         var path = Path.Combine(GetInstanceDir(instanceId), "instance.json");
-        if (!File.Exists(path)) return null;
-        var json = File.ReadAllText(path);
-        return JsonSerializer.Deserialize<GameInstance>(json);
+        foreach (var candidate in new[] { path, path + ".bak" })
+        {
+            try
+            {
+                if (!File.Exists(candidate)) continue;
+                var instance = JsonSerializer.Deserialize<GameInstance>(File.ReadAllText(candidate));
+                if (instance?.Id == instanceId) return instance;
+            }
+            catch (Exception ex) when (ex is IOException or JsonException)
+            {
+                Debug.WriteLine($"Could not read {candidate}: {ex.Message}");
+            }
+        }
+        return null;
     }
 
     public List<GameInstance> GetAllInstances()
@@ -154,12 +201,9 @@ public sealed partial class InstanceManager
         var result = new List<GameInstance>();
         foreach (var dir in Directory.GetDirectories(InstancesDir))
         {
-            var configPath = Path.Combine(dir, "instance.json");
-            if (!File.Exists(configPath)) continue;
             try
             {
-                var json = File.ReadAllText(configPath);
-                var inst = JsonSerializer.Deserialize<GameInstance>(json);
+                var inst = GetInstance(Path.GetFileName(dir));
                 if (inst != null) result.Add(inst);
             }
             catch (Exception ex)
@@ -176,7 +220,7 @@ public sealed partial class InstanceManager
         var dir = GetInstanceDir(instance.Id);
         Directory.CreateDirectory(dir);
         var json = JsonSerializer.Serialize(instance, JsonOpts);
-        File.WriteAllText(Path.Combine(dir, "instance.json"), json);
+        AtomicFile.WriteText(Path.Combine(dir, "instance.json"), json, keepBackup: true);
         if (raiseChangedEvent) Raise();
     }
 

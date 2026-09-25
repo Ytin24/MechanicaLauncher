@@ -37,6 +37,12 @@ public sealed class ModrinthProject
     [JsonPropertyName("project_type")]
     public string ProjectType { get; set; } = "";
 
+    [JsonPropertyName("author")]
+    public string Author { get; set; } = "";
+
+    [JsonPropertyName("featured_gallery")]
+    public string? FeaturedGallery { get; set; }
+
     public string DownloadsFormatted => Downloads switch
     {
         >= 1_000_000 => $"{Downloads / 1_000_000.0:0.#}M",
@@ -59,6 +65,12 @@ public sealed class ModrinthVersion
     [JsonPropertyName("version_number")]
     public string VersionNumber { get; set; } = "";
 
+    [JsonPropertyName("version_type")]
+    public string VersionType { get; set; } = "release";
+
+    [JsonPropertyName("date_published")]
+    public DateTimeOffset? DatePublished { get; set; }
+
     [JsonPropertyName("game_versions")]
     public List<string> GameVersions { get; set; } = [];
 
@@ -74,6 +86,8 @@ public sealed class ModrinthVersion
 
 public sealed class ModrinthFile
 {
+    [JsonPropertyName("hashes")]
+    public Dictionary<string, string> Hashes { get; set; } = [];
     [JsonPropertyName("url")]
     public string Url { get; set; } = "";
 
@@ -85,6 +99,31 @@ public sealed class ModrinthFile
 
     [JsonPropertyName("size")]
     public long Size { get; set; }
+
+    public string SizeFormatted => Size switch
+    {
+        >= 1_048_576 => $"{Size / 1_048_576.0:0.#} MB",
+        >= 1024 => $"{Size / 1024.0:0.#} KB",
+        _ => $"{Size} B"
+    };
+}
+
+public sealed class ModrinthGalleryImage
+{
+    [JsonPropertyName("url")]
+    public string Url { get; set; } = "";
+
+    [JsonPropertyName("featured")]
+    public bool Featured { get; set; }
+
+    [JsonPropertyName("title")]
+    public string? Title { get; set; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("ordering")]
+    public int? Ordering { get; set; }
 }
 
 public sealed class ModrinthDependency

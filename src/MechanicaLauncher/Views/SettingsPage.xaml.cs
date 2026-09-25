@@ -3,29 +3,21 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using MechanicaLauncher.Core.Localization;
 using MechanicaLauncher.Core.Updates;
+using MechanicaLauncher.Core.Discord;
 
 namespace MechanicaLauncher.Views;
 
 public sealed partial class SettingsPage : Page
 {
     private static Core.Profiles.LauncherSettings S => App.Settings;
-    private bool _loading;
+    private bool _loading = true;
     private UpdateInfo? _updateInfo;
-
-    private static readonly string[] Splashes =
-    [
-        "Also try Terraria!", "Woo, /give!", "Reticulating splines...",
-        "Now with extra cats!", "Contains 100% recycled pixels",
-        "Blocks all the way down", "sudo rm -rf /boredom",
-        "git push --force-with-cats", "async all the things!",
-        "Powered by mass caffeine consumption", "Mass production of fun!",
-        "Now with Mica!", "42 is the answer", "Hello from .NET 9!",
-        "Compiled with love", "Not a Prism!",
-    ];
+    private readonly DispatcherTimer _discordTimer = new() { Interval = TimeSpan.FromSeconds(1) };
 
     public SettingsPage()
     {
         this.InitializeComponent();
+        _discordTimer.Tick += (_, _) => RefreshDiscord();
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -35,7 +27,7 @@ public sealed partial class SettingsPage : Page
 
         ApplyLocale();
 
-        ThemeSelector.SelectedIndex = S.Theme switch { "Dark" => 0, "Light" => 1, _ => 2 };
+        ThemeSelector.SelectedIndex = S.Theme switch { "Dark" or "Тёмная" => 0, "Light" or "Светлая" => 1, _ => 2 };
         CloseOnLaunchToggle.IsOn = S.CloseOnLaunch;
         ShowSnapshotsToggle.IsOn = S.ShowSnapshots;
         DiscordRpcToggle.IsOn = S.DiscordRpc;
@@ -43,10 +35,6 @@ public sealed partial class SettingsPage : Page
         DiscordDimensionToggle.IsOn = S.DiscordShowDimension;
         DiscordAchievementToggle.IsOn = S.DiscordShowAchievements;
         DiscordModsToggle.IsOn = S.DiscordShowMods;
-        // SettingsCard hosts the label/description now; clear the ToggleSwitch's own header so it
-        // doesn't render on top of the card.
-        // SettingsCard hosts the label/description now; clear the ToggleSwitch's own header + the
-        // default "Вкл/Выкл" captions so it doesn't render on top of the card.
         foreach (var t in new[] { DiscordRpcToggle, DiscordServerToggle, DiscordDimensionToggle,
                                   DiscordAchievementToggle, DiscordModsToggle,
                                   CloseOnLaunchToggle, ShowSnapshotsToggle })
@@ -71,8 +59,16 @@ public sealed partial class SettingsPage : Page
         }
 
         _loading = false;
+        RefreshDiscord();
+        _discordTimer.Start();
 
         _ = CheckUpdatesAsync();
+    }
+
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        _discordTimer.Stop();
+        base.OnNavigatedFrom(e);
     }
 
     private async Task CheckUpdatesAsync()
@@ -112,26 +108,38 @@ public sealed partial class SettingsPage : Page
 
     private void ApplyLocale()
     {
-        try
-        {
-            PageTitle.Text = App.L("set.title");
-            AppearanceLabel.Text = App.L("set.appearance");
-            LauncherLabel.Text = App.L("set.launcher");
-            ThemeCard.Header = App.L("set.theme");
-            LangCard.Header = App.L("set.language");
-            ThemeDark.Content = App.L("set.dark");
-            ThemeLight.Content = App.L("set.light");
-            ThemeSystem.Content = App.L("set.system");
-            CloseOnLaunchCard.Header = App.L("set.close_on_launch");
-            ShowSnapshotsCard.Header = App.L("set.show_snapshots");
-        }
-        catch { }
+        PageTitle.Text = App.L("set.title");
+        AppearanceLabel.Text = App.L("set.appearance");
+        LauncherLabel.Text = App.L("set.launcher");
+        ThemeCard.Header = App.L("set.theme");
+        ThemeCard.Description = App.L("set.theme_desc");
+        LangCard.Header = App.L("set.language");
+        LangCard.Description = App.L("set.language_desc");
+        ThemeDark.Content = App.L("set.dark");
+        ThemeLight.Content = App.L("set.light");
+        ThemeSystem.Content = App.L("set.system");
+        CloseOnLaunchCard.Header = App.L("set.close_on_launch");
+        CloseOnLaunchCard.Description = App.L("set.close_on_launch_desc");
+        ShowSnapshotsCard.Header = App.L("set.show_snapshots");
+        ShowSnapshotsCard.Description = App.L("set.show_snapshots_desc");
+        DiscordCard.Description = App.L("discord.description");
+        DiscordServerCard.Header = App.L("discord.server");
+        DiscordServerCard.Description = App.L("discord.server_hint");
+        DiscordDimensionCard.Header = App.L("discord.dimension");
+        DiscordDimensionCard.Description = App.L("discord.dimension_hint");
+        DiscordAchievementCard.Header = App.L("discord.achievement");
+        DiscordAchievementCard.Description = App.L("discord.achievement_hint");
+        DiscordModsCard.Header = App.L("discord.mods");
+        DiscordModsCard.Description = App.L("discord.mods_hint");
+        DiscordReconnectButton.Content = App.L("discord.reconnect");
+        DiscordPreviewLabel.Text = App.L("discord.preview");
+        RefreshDiscord();
     }
 
     private void Theme_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || ThemeSelector?.SelectedItem is not ComboBoxItem item) return;
-        var theme = item.Content?.ToString() ?? "Dark";
+        var theme = item.Tag?.ToString() ?? "Dark";
         S.Theme = theme;
         S.Save();
 
@@ -153,7 +161,9 @@ public sealed partial class SettingsPage : Page
         S.Language = lang;
         S.Save();
         Locale.Init(lang);
+        App.Discord.Configure(S, Locale.CurrentLanguage);
         ApplyLocale();
+        if (App.MainWindow is MainWindow mainWindow) mainWindow.ApplyLocale();
     }
 
     private void CloseOnLaunch_Toggled(object sender, RoutedEventArgs e)
@@ -175,8 +185,8 @@ public sealed partial class SettingsPage : Page
         if (_loading) return;
         S.DiscordRpc = DiscordRpcToggle.IsOn;
         S.Save();
-        if (S.DiscordRpc) App.Discord.Init();
-        else App.Discord.Dispose();
+        App.Discord.Configure(S, Locale.CurrentLanguage);
+        RefreshDiscord();
     }
 
     private void DiscordSetting_Toggled(object sender, RoutedEventArgs e)
@@ -187,6 +197,44 @@ public sealed partial class SettingsPage : Page
         S.DiscordShowAchievements = DiscordAchievementToggle.IsOn;
         S.DiscordShowMods = DiscordModsToggle.IsOn;
         S.Save();
+        App.Discord.Configure(S, Locale.CurrentLanguage);
+        RefreshDiscord();
+    }
+
+    private void DiscordReconnect_Click(object sender, RoutedEventArgs e)
+    {
+        App.Discord.Reconnect();
+        RefreshDiscord();
+    }
+
+    private void RefreshDiscord()
+    {
+        var status = App.Discord.Snapshot;
+        var key = status.Status switch
+        {
+            DiscordConnectionStatus.Connected => "connected",
+            DiscordConnectionStatus.Connecting => "connecting",
+            DiscordConnectionStatus.WaitingForDiscord => "waiting",
+            DiscordConnectionStatus.Error => "error",
+            _ => "disabled"
+        };
+        DiscordStatusText.Text = App.L("discord." + key);
+        DiscordStatusHint.Text = App.L("discord." + key + "_hint");
+        if (status.Status == DiscordConnectionStatus.Error && status.Error != null)
+            DiscordStatusHint.Text += "\n" + status.Error;
+        DiscordReconnectButton.IsEnabled = S.DiscordRpc && status.Status != DiscordConnectionStatus.Connecting;
+        foreach (var toggle in new[] { DiscordServerToggle, DiscordDimensionToggle, DiscordAchievementToggle, DiscordModsToggle })
+            toggle.IsEnabled = S.DiscordRpc;
+        DiscordPreview.Visibility = S.DiscordRpc ? Visibility.Visible : Visibility.Collapsed;
+        DiscordDetailsText.Text = status.Details;
+        DiscordStateText.Text = status.State;
+        DiscordTimeText.Visibility = status.StartedAt.HasValue ? Visibility.Visible : Visibility.Collapsed;
+        if (status.StartedAt is { } start)
+        {
+            var elapsed = DateTimeOffset.UtcNow - start;
+            if (elapsed < TimeSpan.Zero) elapsed = TimeSpan.Zero;
+            DiscordTimeText.Text = App.L("discord.elapsed", $"{Math.Max(0, (int)elapsed.TotalHours):00}:{elapsed.Minutes:00}:{elapsed.Seconds:00}");
+        }
     }
 
     private void ExitEvent_Click(object sender, RoutedEventArgs e)
@@ -197,5 +245,4 @@ public sealed partial class SettingsPage : Page
             mw.ApplyEventNavigation();
     }
 
-    public static string GetRandomSplash() => Splashes[Random.Shared.Next(Splashes.Length)];
 }

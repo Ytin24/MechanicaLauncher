@@ -8,7 +8,7 @@
 
     <ScrollViewer Padding="{StaticResource PagePadding}">
         <StackPanel Spacing="16" HorizontalAlignment="Stretch">
-            <TextBlock x:Name="PageTitle" Style="{StaticResource PageHeader}" HorizontalAlignment="Center" />
+            <TextBlock x:Name="PageTitle" Style="{StaticResource PageHeader}" />
 
             <StackPanel x:Name="LoggedInPanel" Visibility="Collapsed" Spacing="8">
 
@@ -16,7 +16,7 @@
                 <Border x:Name="SkinPanel" Background="{StaticResource CardBrush}" CornerRadius="10" Padding="20" MinHeight="220" Visibility="Collapsed">
                     <Grid ColumnDefinitions="Auto,*">
                         <Border Width="128" Height="192" CornerRadius="10" VerticalAlignment="Center" Margin="0,0,20,0"
-                                Background="#0AFFFFFF">
+                                Background="{StaticResource CardHoverBrush}">
                             <Grid>
                                 <FontIcon x:Name="SkinPlaceholder" Glyph="&#xE77B;" FontSize="48"
                                           Foreground="{StaticResource SubtleBrush}"
@@ -78,16 +78,19 @@
                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="6">
                             <TextBlock x:Name="UsernameText" Text="" FontSize="20" FontWeight="Bold" />
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Border Background="{StaticResource AccentBrush}" CornerRadius="4" Padding="8,2" VerticalAlignment="Center">
-                                    <TextBlock x:Name="AccountBadge" Text="" FontSize="10" Foreground="White" FontWeight="SemiBold" />
+                                <Border Background="{StaticResource SelectionBrush}" CornerRadius="4" Padding="8,2" VerticalAlignment="Center">
+                                    <TextBlock x:Name="AccountBadge" Text="" FontSize="11" Foreground="{StaticResource SelectionTextBrush}" FontWeight="SemiBold" />
                                 </Border>
                                 <TextBlock x:Name="UuidShortText" Text="" FontSize="11" Foreground="{StaticResource DimBrush}"
                                            VerticalAlignment="Center" FontFamily="Cascadia Mono,Consolas,monospace" />
                             </StackPanel>
                         </StackPanel>
-                        <Button x:Name="SignOutBtn" Grid.Column="2" Click="SignOut_Click"
-                                Style="{StaticResource SmallButton}" VerticalAlignment="Center"
-                                Foreground="#FF6B6B" MinWidth="96" MinHeight="36" />
+                        <StackPanel Grid.Column="2" Spacing="8" VerticalAlignment="Center" Margin="16,0,0,0">
+                            <Button x:Name="SignInAgainBtn" Click="MsLogin_Click" Style="{StaticResource AccentSmallButton}"
+                                    HorizontalAlignment="Stretch" />
+                            <Button x:Name="SignOutBtn" Click="SignOut_Click" Style="{StaticResource SmallButton}"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" MinHeight="36" />
+                        </StackPanel>
                     </Grid>
                 </Border>
             </StackPanel>
@@ -106,7 +109,7 @@
                             <TextBlock x:Name="MsTitle" FontSize="17" FontWeight="SemiBold" />
                             <TextBlock x:Name="MsDesc" Foreground="{StaticResource DimBrush}" FontSize="12" TextWrapping="Wrap" />
                         </StackPanel>
-                        <Button Grid.Column="2" Style="{StaticResource AccentSmallButton}" MinHeight="40" MinWidth="130"
+                        <Button x:Name="MsSignInBtn" Grid.Column="2" Style="{StaticResource AccentSmallButton}" MinHeight="40" MinWidth="130"
                                 VerticalAlignment="Center" Click="MsLogin_Click">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <FontIcon Glyph="&#xE72E;" FontSize="13" Foreground="White" />
@@ -120,7 +123,7 @@
                 <Border Background="{StaticResource CardBrush}" CornerRadius="10" Padding="24" MinHeight="110">
                     <Grid ColumnDefinitions="Auto,*">
                         <Border Width="40" Height="40" CornerRadius="8" VerticalAlignment="Center" Margin="0,0,16,0"
-                                Background="#14FFFFFF">
+                                Background="{StaticResource CardHoverBrush}">
                             <FontIcon Glyph="&#xE77B;" FontSize="18" Foreground="{StaticResource SubtleBrush}"
                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>

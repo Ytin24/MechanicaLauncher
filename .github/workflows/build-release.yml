@@ -6,6 +6,7 @@ on:
     tags: ['v*']
   pull_request:
     branches: [master]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,12 +14,17 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: |
+            9.0.x
+            10.0.x
           dotnet-quality: 'ga'
 
       - name: Set version
@@ -32,36 +38,97 @@ jobs:
           echo "VERSION=$ver" >> $env:GITHUB_OUTPUT
 
       - name: Restore
-        run: dotnet restore -p:Platform=x64
+        run: |
+          foreach ($project in @(
+            'tests/MechanicaLauncher.Core.Tests/MechanicaLauncher.Core.Tests.csproj',
+            'tests/MechanicaLauncher.Desktop.Tests/MechanicaLauncher.Desktop.Tests.csproj'
+          )) {
+            dotnet restore $project --locked-mode
+            if ($LASTEXITCODE -ne 0) { throw "Restore failed: $project" }
+          }
+
+      - name: Build checks
+        run: |
+          foreach ($project in @(
+            'tests/MechanicaLauncher.Core.Tests/MechanicaLauncher.Core.Tests.csproj',
+            'tests/MechanicaLauncher.Desktop.Tests/MechanicaLauncher.Desktop.Tests.csproj'
+          )) {
+            dotnet build $project -c Release --no-restore
+            if ($LASTEXITCODE -ne 0) { throw "Build failed: $project" }
+          }
+
+      - name: Regression checks
+        run: |
+          dotnet run --project tests/MechanicaLauncher.Core.Tests -c Release --no-build --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'Core regression checks failed' }
+
+      - name: Nitidus UI and process checks
+        run: |
+          dotnet run --project tests/MechanicaLauncher.Desktop.Tests -c Release --no-build --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop regression checks failed' }
 
       - name: Publish
+        env:
+          MICROSOFT_CLIENT_ID: ${{ vars.MICROSOFT_CLIENT_ID }}
+          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
+          $clientId = [guid]::Empty
+          if (-not [string]::IsNullOrWhiteSpace($env:MICROSOFT_CLIENT_ID) -and
+              (-not [guid]::TryParse($env:MICROSOFT_CLIENT_ID, [ref]$clientId) -or $clientId -eq [guid]::Empty)) {
+            throw 'MICROSOFT_CLIENT_ID must be the Application (client) ID of Mechanica.'
+          }
+          if ($env:GITHUB_REF -like 'refs/tags/v*' -and [string]::IsNullOrWhiteSpace($env:MICROSOFT_CLIENT_ID)) {
+            throw 'Set the approved Mechanica application ID in repository variable MICROSOFT_CLIENT_ID before releasing.'
+          }
+          dotnet restore src/MechanicaLauncher/MechanicaLauncher.csproj `
+            --locked-mode -p:Platform=x64 -p:SelfContained=true
+          if ($LASTEXITCODE -ne 0) { throw 'Publish restore failed' }
           dotnet publish src/MechanicaLauncher/MechanicaLauncher.csproj `
-            -c Release `
+            -c Release --no-restore `
             -p:Platform=x64 `
-            -p:Version=${{ steps.version.outputs.VERSION }} `
+            "-p:Version=$env:BUILD_VERSION" `
+            "-p:MicrosoftClientId=$env:MICROSOFT_CLIENT_ID" `
             -p:SelfContained=true `
-            -p:WindowsAppSDKSelfContained=true `
-            -p:WindowsPackageType=None `
             -p:PublishTrimmed=false `
+            -p:DebugType=None -p:DebugSymbols=false `
             -r win-x64 `
             --output ./publish
-
-      - name: Download WindowsAppRuntime
-        run: |
-          Invoke-WebRequest -Uri "https://aka.ms/windowsappsdk/1.7/latest/windowsappruntimeinstall-x64.exe" -OutFile ./publish/WindowsAppRuntimeInstall.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Publish failed' }
+          if (-not (Test-Path -LiteralPath ./publish/MechanicaLauncher.exe)) { throw 'Published launcher is missing' }
 
       - name: Build Installer
         run: |
+          if (Test-Path -LiteralPath ./publish/portable.flag) { throw 'Installer output must not contain portable.flag' }
           $version = if ($env:GITHUB_REF -match 'refs/tags/v(.+)') { $matches[1] } else { "dev" }
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=$version installer\setup.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
+          if (-not (Test-Path -LiteralPath "./output/MechanicaLauncher-$version-setup.exe")) { throw 'Installer executable is missing' }
 
       - name: Zip portable
-        run: Compress-Archive -Path ./publish/* -DestinationPath MechanicaLauncher-x64-portable.zip
+        run: |
+          $package = Join-Path $env:RUNNER_TEMP ('mechanica-package-' + [Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $package | Out-Null
+          $portable = Join-Path $package 'MechanicaLauncher'
+          Copy-Item -LiteralPath ./publish -Destination $portable -Recurse
+          [IO.File]::WriteAllText((Join-Path $portable 'portable.flag'), '')
+          $privateFiles = @(Get-ChildItem -LiteralPath $portable -File -Recurse | Where-Object {
+            $_.Name -in @('settings.json', 'settings.json.bak', 'accounts.json', 'pending_connect.txt') -or $_.Extension -eq '.pdb' -or
+            $_.FullName.StartsWith((Join-Path $portable 'data') + '\', [StringComparison]::OrdinalIgnoreCase)
+          })
+          if ($privateFiles.Count -gt 0) { throw 'Unexpected personal data or debugging symbols in portable output' }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [IO.Compression.ZipFile]::CreateFromDirectory($package, (Join-Path $PWD 'MechanicaLauncher-x64-portable.zip'))
+
+      - name: Smoke extracted portable
+        run: |
+          $smoke = Join-Path $env:RUNNER_TEMP ('mechanica-smoke-' + [Guid]::NewGuid().ToString('N'))
+          Expand-Archive -LiteralPath ./MechanicaLauncher-x64-portable.zip -DestinationPath $smoke
+          & ./scripts/Test-DesktopPortable.ps1 -PortableDirectory (Join-Path $smoke 'MechanicaLauncher') -PortableData
 
       - uses: actions/upload-artifact@v4
         with:
           name: MechanicaLauncher-x64
+          if-no-files-found: error
           path: |
             MechanicaLauncher-x64-portable.zip
             output/MechanicaLauncher-*-setup.exe

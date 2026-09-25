@@ -12,6 +12,7 @@ SolidCompression=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\MechanicaLauncher.exe
+SetupIconFile=..\src\MechanicaLauncher\Assets\Mechanica.ico
 WizardStyle=modern
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -35,5 +36,4 @@ Root: HKA; Subkey: "Software\Classes\MechanicaLauncher.Modpack\DefaultIcon"; Val
 Root: HKA; Subkey: "Software\Classes\MechanicaLauncher.Modpack\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\MechanicaLauncher.exe"" ""%1"""; Flags: uninsdeletekey; Tasks: associatemrpack
 
 [Run]
-Filename: "{app}\WindowsAppRuntimeInstall.exe"; Parameters: "--quiet"; StatusMsg: "Installing Windows App Runtime..."; Flags: waituntilterminated skipifdoesntexist
 Filename: "{app}\MechanicaLauncher.exe"; Description: "Launch Mechanica Launcher"; Flags: nowait postinstall skipifsilent

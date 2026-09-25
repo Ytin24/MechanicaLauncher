@@ -4,141 +4,123 @@ namespace MechanicaLauncher.Core.Discord;
 
 public record McState(McStateType Type, string? Server = null, int? Port = null, string? Gamemode = null, string? Dimension = null, string? Achievement = null, string? World = null, string? Player = null);
 
-public enum McStateType { Launcher, Menu, SinglePlayer, MultiPlayer }
+public enum McStateType { Launcher, Preparing, Starting, Running, Menu, Connecting, SinglePlayer, MultiPlayer }
 
 public sealed partial class McStateMachine
 {
-    private McStateType _current = McStateType.Launcher;
-    private string? _server;
-    private int _port = 25565;
-    private string? _gamemode;
-    private string? _dimension;
-    private string? _achievement;
-    private bool _inWorld;
-    private string? _world;
-    private string? _player;
+    private readonly TimeProvider _time;
+    private McState _state = new(McStateType.Starting);
+    private DateTimeOffset _achievementUntil;
 
-    public McState State => new(_current, _server, _port, _gamemode, _dimension, _achievement, _world, _player);
+    public McStateMachine(TimeProvider? time = null) => _time = time ?? TimeProvider.System;
+
+    public McState State => _state.Achievement != null && _time.GetUtcNow() >= _achievementUntil
+        ? _state with { Achievement = null } : _state;
 
     public bool ProcessLine(string line)
     {
-        if (string.IsNullOrEmpty(line)) return false;
-
-        // Server connect — always transitions to MultiPlayer
-        var connectMatch = ConnectRegex().Match(line);
-        if (connectMatch.Success)
+        if (string.IsNullOrWhiteSpace(line) || line.Length > 8192) return false;
+        var match = LogRegex().Match(line);
+        if (!match.Success) return false;
+        var message = match.Groups["message"].Value.Trim();
+        var thread = match.Groups["thread"].Value;
+        var serverThread = thread.Equals("Server thread", StringComparison.Ordinal);
+        var clientThread = thread is "Render thread" or "Client thread" or "main";
+        var connectionThread = clientThread || thread.StartsWith("Server Connector", StringComparison.Ordinal);
+        var previous = State;
+        _state = previous;
+        if (connectionThread && IsDisconnect(message))
         {
-            _server = connectMatch.Groups[1].Value;
-            _port = int.TryParse(connectMatch.Groups[2].Value, out var p) ? p : 25565;
-            _current = McStateType.MultiPlayer;
-            _inWorld = true;
-            return true;
+            _state = new(McStateType.Menu, Player: _state.Player);
+            return State != previous;
+        }
+        if (match.Groups["level"].Value != "INFO") return false;
+
+        var chat = message.IndexOf("[CHAT]", StringComparison.Ordinal);
+        if (chat >= 0)
+        {
+            if (!clientThread || _state.Type is not (McStateType.SinglePlayer or McStateType.MultiPlayer or McStateType.Connecting)) return false;
+            if (_state.Type == McStateType.Connecting) _state = _state with { Type = McStateType.MultiPlayer };
+            ProcessChat(message[(chat + 6)..].Trim());
+            return State != previous;
         }
 
-        // World name — vanilla prints `Preparing level "<worldname>"` right before start-region load.
-        var worldMatch = WorldRegex().Match(line);
-        if (worldMatch.Success)
-        {
-            _world = worldMatch.Groups[1].Value;
-        }
+        if (clientThread && message.StartsWith("Setting user: ", StringComparison.Ordinal))
+            _state = _state with { Player = message["Setting user: ".Length..].Trim() };
 
-        // Entered world (singleplayer)
-        if (line.Contains("joined the game") || line.Contains("Preparing start region"))
+        var connect = ConnectRegex().Match(message);
+        if (connectionThread && connect.Success && int.TryParse(connect.Groups[2].Value, out var port) && port is > 0 and <= 65535)
+            _state = new(McStateType.Connecting, connect.Groups[1].Value.Trim(), port, Player: _state.Player);
+        else if (serverThread && message.StartsWith("Starting integrated minecraft server", StringComparison.OrdinalIgnoreCase))
+            _state = new(McStateType.SinglePlayer, Player: _state.Player);
+        else if (serverThread && WorldRegex().Match(message) is { Success: true } world)
+            _state = _state.Type == McStateType.SinglePlayer
+                ? _state with { World = world.Groups[1].Value }
+                : new(McStateType.SinglePlayer, World: world.Groups[1].Value, Player: _state.Player);
+        else if (serverThread && message.StartsWith("Preparing start region for dimension ", StringComparison.Ordinal))
         {
-            _current = McStateType.SinglePlayer;
-            _inWorld = true;
-            _server = null;
-            return true;
+            if (_state.Type is McStateType.Starting or McStateType.Menu)
+                _state = new(McStateType.SinglePlayer, Player: _state.Player);
         }
+        else if (serverThread && _state.Type == McStateType.SinglePlayer && message == "Stopping server")
+            _state = new(McStateType.Menu, Player: _state.Player);
+        else if (clientThread && _state.Type == McStateType.Connecting && LoadedAdvancementsRegex().IsMatch(message))
+            _state = _state with { Type = McStateType.MultiPlayer };
+        else if (clientThread && (_state.Type is McStateType.SinglePlayer or McStateType.MultiPlayer) &&
+                 DimensionRegex().Match(message) is { Success: true } dimension)
+            _state = _state with { Dimension = dimension.Groups[1].Value };
+        else if (clientThread && _state.Type == McStateType.Starting &&
+                 (message is "Sound engine started" or "Sound engine started!" || message.StartsWith("Narrator library successfully loaded", StringComparison.Ordinal)))
+            _state = _state with { Type = McStateType.Menu };
 
-        // Disconnected from server — back to menu
-        if (line.Contains("lost connection") || line.Contains("Disconnecting from server"))
-        {
-            _current = McStateType.Menu;
-            _inWorld = false;
-            _server = null;
-            return true;
-        }
-
-        // Actually quit world (not ESC pause)
-        if (line.Contains("Stopping server") || line.Contains("ThreadedAnvilChunkStorage: All dimensions are saved"))
-        {
-            _current = McStateType.Menu;
-            _inWorld = false;
-            return true;
-        }
-
-        // MC window loaded — menu (only if not already in world). Also extract the player nickname.
-        var userMatch = UserRegex().Match(line);
-        if (userMatch.Success)
-        {
-            _player = userMatch.Groups[1].Value;
-            if (!_inWorld) { _current = McStateType.Menu; return true; }
-        }
-        if (!_inWorld && line.Contains("Narrator library"))
-        {
-            _current = McStateType.Menu;
-            return true;
-        }
-
-        // Dimension changes (only update dimension, don't change state)
-        // IGNORE "Saving chunks" lines — they mention all dimensions at once on ESC/quit
-        if (_inWorld && !line.Contains("Saving chunks") && !line.Contains("Saving worlds"))
-        {
-            if (line.Contains("minecraft:overworld") && (line.Contains("Preparing") || line.Contains("Loaded dimension")))
-            { _dimension = "Overworld"; return true; }
-            if (line.Contains("minecraft:the_nether") && (line.Contains("Preparing") || line.Contains("Loaded dimension")))
-            { _dimension = "Nether"; return true; }
-            if (line.Contains("minecraft:the_end") && (line.Contains("Preparing") || line.Contains("Loaded dimension")))
-            { _dimension = "The End"; return true; }
-        }
-
-        // Gamemode change
-        if (line.Contains("[CHAT]") && line.Contains("Set own game mode to", StringComparison.OrdinalIgnoreCase))
-        {
-            if (line.Contains("Creative", StringComparison.OrdinalIgnoreCase)) _gamemode = "Creative";
-            else if (line.Contains("Survival", StringComparison.OrdinalIgnoreCase)) _gamemode = "Survival";
-            else if (line.Contains("Adventure", StringComparison.OrdinalIgnoreCase)) _gamemode = "Adventure";
-            else if (line.Contains("Spectator", StringComparison.OrdinalIgnoreCase)) _gamemode = "Spectator";
-            return true;
-        }
-
-        // Achievement
-        if (line.Contains("[CHAT]"))
-        {
-            var advMatch = AdvancementRegex().Match(line);
-            if (advMatch.Success)
-            {
-                _achievement = advMatch.Groups[1].Value;
-                return true;
-            }
-        }
-
-        return false;
+        return State != previous;
     }
 
-    public void Reset()
+    private void ProcessChat(string message)
     {
-        _current = McStateType.Launcher;
-        _server = null;
-        _port = 25565;
-        _gamemode = null;
-        _dimension = null;
-        _achievement = null;
-        _world = null;
-        _player = null;
-        _inWorld = false;
+        var advancement = AdvancementRegex().Match(message);
+        if (advancement.Success && advancement.Groups[1].Value == _state.Player)
+        {
+            _state = _state with { Achievement = advancement.Groups[2].Value };
+            _achievementUntil = _time.GetUtcNow().AddSeconds(30);
+        }
+        var mode = GameModeRegex().Match(message);
+        if (mode.Success) _state = _state with { Gamemode = GameMode(mode.Groups[1].Value) };
     }
 
-    [GeneratedRegex(@"Connecting to (.+?),\s*(\d+)")]
+    private static string? GameMode(string value) => value.Trim().TrimEnd('.').ToLowerInvariant() switch
+    {
+        "survival" or "survival mode" or "выживание" => "survival",
+        "creative" or "creative mode" or "творческий" => "creative",
+        "adventure" or "adventure mode" or "приключение" => "adventure",
+        "spectator" or "spectator mode" or "наблюдатель" => "spectator",
+        _ => null
+    };
+
+    private static bool IsDisconnect(string message) =>
+        message.StartsWith("Disconnecting from server", StringComparison.Ordinal) ||
+        message.StartsWith("Disconnected from server", StringComparison.Ordinal) ||
+        message.StartsWith("Failed to connect to the server", StringComparison.Ordinal) ||
+        message.StartsWith("Couldn't connect to server", StringComparison.Ordinal);
+
+    [GeneratedRegex(@"^(?:\[\d{2}:\d{2}:\d{2}(?:[.,]\d+)?\]\s*)?\[(?<thread>[^\]\r\n]+?)/(?<level>INFO|WARN|ERROR|DEBUG)\](?:\s*\[[^\]\r\n]*\])?:\s*(?<message>.*)$", RegexOptions.CultureInvariant)]
+    private static partial Regex LogRegex();
+
+    [GeneratedRegex(@"^Connecting to (.+?),\s*(\d+)$", RegexOptions.CultureInvariant)]
     private static partial Regex ConnectRegex();
 
-    [GeneratedRegex(@"has made the advancement \[(.+?)\]")]
+    [GeneratedRegex(@"^(?:\[Not Secure\] )?(\w{1,16}) (?:has made the advancement|has completed the challenge|has reached the goal|получил(?:а)? достижение|выполнил(?:а)? испытание|достиг(?:ла)? цели) \[(.+?)\]$", RegexOptions.CultureInvariant)]
     private static partial Regex AdvancementRegex();
 
-    [GeneratedRegex(@"Preparing level ""(.+?)""")]
+    [GeneratedRegex(@"^(?:Set own game mode to|Установлен режим игры:) (.+)$", RegexOptions.CultureInvariant)]
+    private static partial Regex GameModeRegex();
+
+    [GeneratedRegex(@"^Preparing level ""(.+?)""$", RegexOptions.CultureInvariant)]
     private static partial Regex WorldRegex();
 
-    [GeneratedRegex(@"Setting user:\s*(\S+)")]
-    private static partial Regex UserRegex();
+    [GeneratedRegex(@"^Loaded \d+ advancements$", RegexOptions.CultureInvariant)]
+    private static partial Regex LoadedAdvancementsRegex();
+
+    [GeneratedRegex(@"^(?:Changing dimension to|Entering dimension) (?:minecraft:)?(overworld|the_nether|the_end)$", RegexOptions.CultureInvariant)]
+    private static partial Regex DimensionRegex();
 }

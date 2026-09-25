@@ -5,6 +5,8 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using MechanicaLauncher.Core.Auth;
 using MechanicaLauncher.Core.Game;
+using MechanicaLauncher.Core.IO;
+using MechanicaLauncher.Core.Mods;
 using MechanicaLauncher.Core.Instances;
 using MechanicaLauncher.Core.Models;
 using MechanicaLauncher.Core.Profiles;
@@ -17,14 +19,21 @@ public sealed partial class HomePage : Page
     private static LauncherSettings S => App.Settings;
     private readonly InstanceManager _im = new();
     private VersionManager _vm = null!;
-    private VersionManifest? _manifest;
     private bool _loading;
+    private bool _preparing;
     private bool _logAutoScroll = true;
     private readonly HashSet<string> _killedByUser = new();
 
     public HomePage()
     {
         this.InitializeComponent();
+        PlayButton.Resources["ButtonBackgroundPointerOver"] = new SolidColorBrush { Opacity = 0.9 };
+        PlayButton.Resources["ButtonBackgroundPressed"] = new SolidColorBrush { Opacity = 0.8 };
+        AnimationHelper.AddButtonFeedback(PlayButton);
+        AnimationHelper.AddButtonFeedback(InstancePicker);
+        AnimationHelper.AddButtonFeedback(ModsCard);
+        AnimationHelper.AddButtonFeedback(AccountCard);
+        AnimationHelper.AddButtonFeedback(InstancesCard);
         _vm = new VersionManager(_im.SharedDir);
     }
 
@@ -33,7 +42,7 @@ public sealed partial class HomePage : Page
         base.OnNavigatedTo(e);
         InstanceManager.InstancesChanged += OnInstancesChanged;
         App.RunningInstancesChanged += OnInstancesChanged;
-        _ = LoadAsync();
+        LoadPage();
     }
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
@@ -89,15 +98,24 @@ public sealed partial class HomePage : Page
     private void UpdateHeroCard()
     {
         var inst = GetSelectedInstance();
+        DetailsButton.Content = App.L("feature.details");
+        DetailsButton.IsEnabled = inst != null;
+        var cover = inst == null ? null : _im.GetCoverAbsolutePath(inst);
+        CoverImage.Source = cover == null ? null : new Microsoft.UI.Xaml.Media.Imaging.BitmapImage { DecodePixelWidth = 1200, UriSource = new Uri(cover) };
+        CoverBorder.Visibility = cover == null ? Visibility.Collapsed : Visibility.Visible;
+        InstancePicker.BorderBrush = InstanceDetailsPage.AccentBrush(inst?.AccentColor);
+        InstancePicker.IsEnabled = inst != null;
         if (inst == null)
         {
-            HeroName.Text = "No instance";
+            HeroName.Text = App.L("home.no_instance");
+            ToolTipService.SetToolTip(InstancePicker, App.L("home.create_instance"));
             HeroIconGrid.Children.Clear();
             HeroIconGrid.Children.Add(new FontIcon { Glyph = "\uE74C", FontSize = 22, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
-            HeroIconBorder.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF));
+            HeroIconBorder.Background = (Brush)Application.Current.Resources["CardHoverBrush"];
             return;
         }
         HeroName.Text = inst.Name;
+        ToolTipService.SetToolTip(InstancePicker, $"{inst.Name}\n{InstanceInfo.Text}");
 
         HeroIconGrid.Children.Clear();
         var iconPath = _im.GetIconAbsolutePath(inst);
@@ -108,7 +126,7 @@ public sealed partial class HomePage : Page
                 Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(iconPath)) { CreateOptions = Microsoft.UI.Xaml.Media.Imaging.BitmapCreateOptions.IgnoreImageCache },
                 Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill,
             });
-            HeroIconBorder.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF));
+            HeroIconBorder.Background = (Brush)Application.Current.Resources["CardHoverBrush"];
         }
         else
         {
@@ -126,6 +144,11 @@ public sealed partial class HomePage : Page
         LoaderType.NeoForge => ("\uE74C", Windows.UI.Color.FromArgb(0xFF, 0xE6, 0x5C, 0x00)),
         _                   => ("\uE74C", Windows.UI.Color.FromArgb(0xFF, 0x78, 0x90, 0x9C)),
     };
+
+    private void Details_Click(object sender, RoutedEventArgs e)
+    {
+        if (GetSelectedInstance() is { } instance) Frame.Navigate(typeof(InstanceDetailsPage), new InstanceDetailsRequest(instance.Id));
+    }
 
     private void RebuildInstancePickerFlyout(List<Core.Instances.GameInstance> instances)
     {
@@ -188,10 +211,8 @@ public sealed partial class HomePage : Page
             {
                 MinHeight = 30,
                 Padding = new Thickness(12, 4, 12, 4),
-                CornerRadius = new CornerRadius(16),
-                Background = new SolidColorBrush(isSelected
-                    ? Windows.UI.Color.FromArgb(0x40, 0x4C, 0xAF, 0x50)
-                    : Windows.UI.Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)),
+                CornerRadius = new CornerRadius(6),
+                Background = (Brush)Application.Current.Resources[isSelected ? "CardHoverBrush" : "CardBrush"],
                 BorderBrush = new SolidColorBrush(isSelected
                     ? Windows.UI.Color.FromArgb(0xAA, 0x4C, 0xAF, 0x50)
                     : Windows.UI.Color.FromArgb(0x00, 0, 0, 0)),
@@ -209,6 +230,8 @@ public sealed partial class HomePage : Page
             {
                 Text = inst.Name,
                 FontSize = 12,
+                MaxWidth = 180,
+                TextTrimming = TextTrimming.CharacterEllipsis,
                 FontWeight = isSelected ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal,
                 VerticalAlignment = VerticalAlignment.Center
             });
@@ -220,6 +243,8 @@ public sealed partial class HomePage : Page
                 VerticalAlignment = VerticalAlignment.Center
             });
             btn.Content = sp;
+            AnimationHelper.AddButtonFeedback(btn);
+            ToolTipService.SetToolTip(btn, inst.Name);
             var id = inst.Id;
             btn.Click += (_, _) =>
             {
@@ -231,58 +256,19 @@ public sealed partial class HomePage : Page
         }
     }
 
-    private async Task LoadAsync()
+    private void LoadPage()
     {
-        // Event mode branding
-        if (App.IsEventMode && App.EventConfig?.Branding != null)
-        {
-            var b = App.EventConfig.Branding;
-            if (b.SplashTexts?.Count > 0)
-                SplashText.Text = b.SplashTexts[Random.Shared.Next(b.SplashTexts.Count)];
-            else if (b.Subtitle != null)
-                SplashText.Text = b.Subtitle;
-            else
-                SplashText.Text = SettingsPage.GetRandomSplash();
-        }
-        else
-        {
-            SplashText.Text = SettingsPage.GetRandomSplash();
-        }
-
         ModsLabel.Text = App.L("home.mods");
         AccountLabel.Text = App.L("home.account");
         InstancesLabel.Text = App.L("home.instances");
+        SelectedInstanceLabel.Text = App.L("home.selected_instance");
+        LogHeader.Text = App.L("home.game_output");
         ProfileSelector.PlaceholderText = App.L("home.select_instance");
+        if (App.RunningInstances.Count == 0) LogBarStatus.Text = App.L("home.game_output");
 
-        var allJava = JavaFinder.FindAllJava();
         AccountText.Text = S.Username;
 
         RefreshInstancesUi();
-
-        AnimationHelper.SlideIn(Card0, 80);
-        AnimationHelper.SlideIn(Card1, 140);
-        AnimationHelper.SlideIn(Card2, 200);
-        AnimationHelper.AddCardHover(Card0);
-        AnimationHelper.AddCardHover(Card1);
-        AnimationHelper.AddCardHover(Card2);
-        AnimationHelper.AddButtonSpring(PlayButton);
-        AnimationHelper.StartBreathing(PlayButton);
-
-        try
-        {
-            _manifest = await _vm.GetManifestAsync();
-            var running = App.RunningInstances.Count(kv => !kv.Value.HasExited);
-            var count = _im.GetAllInstances().Count;
-            NotificationBar.Message = count > 0
-                ? $"{count} instance(s){(running > 0 ? $", {running} running" : "")}. Latest MC: {_manifest.Latest.Release}"
-                : "Create an instance in the Instances tab.";
-        }
-        catch (Exception ex)
-        {
-            NotificationBar.Severity = InfoBarSeverity.Warning;
-            NotificationBar.Message = $"Offline — {ex.Message}";
-        }
-
         _ = ShowUpdateNotificationAsync();
     }
 
@@ -310,21 +296,21 @@ public sealed partial class HomePage : Page
         var inst = GetSelectedInstance();
         if (inst == null)
         {
-            InstanceInfo.Text = "";
+            InstanceInfo.Text = App.L("home.create_instance");
             ModCountText.Text = "0";
             return;
         }
 
         var modsDir = Path.Combine(_im.GetGameDir(inst.Id), "mods");
         var modCount = Directory.Exists(modsDir) ? Directory.GetFiles(modsDir, "*.jar").Length : 0;
-        ModCountText.Text = $"{modCount} active";
+        ModCountText.Text = App.L("home.active_mods", modCount);
 
         var parts = new List<string> { inst.McVersion };
         if (inst.Loader != LoaderType.None)
             parts.Add($"{inst.Loader} {inst.LoaderVersion}");
         parts.Add($"{inst.MinMemoryMb}-{inst.MaxMemoryMb} MB");
         if (inst.LastPlayed.HasValue)
-            parts.Add($"Last played {inst.LastPlayed.Value:MMM dd}");
+            parts.Add(App.L("inst.last_played", inst.LastPlayed.Value.ToLocalTime().ToString("d")));
         InstanceInfo.Text = string.Join("  ·  ", parts);
     }
 
@@ -345,17 +331,18 @@ public sealed partial class HomePage : Page
             UpdatePlayButton();
             UpdateInstanceInfo();
             UpdateHeroCard();
+            AnimationHelper.SlideIn(HeroDetails);
             // Recent pills also update to highlight the new selection.
             RebuildRecentChips(_im.GetAllInstances());
         }
     }
 
     // --- Navigation cards ---
-    private void Card_Mods_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e) =>
+    private void Card_Mods_Click(object sender, RoutedEventArgs e) =>
         NavigateTo("Mods");
-    private void Card_Account_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e) =>
+    private void Card_Account_Click(object sender, RoutedEventArgs e) =>
         NavigateTo("Account");
-    private void Card_Instances_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e) =>
+    private void Card_Instances_Click(object sender, RoutedEventArgs e) =>
         NavigateTo("Instances");
 
     private void NavigateTo(string tag)
@@ -379,30 +366,49 @@ public sealed partial class HomePage : Page
 
     private void UpdatePlayButton()
     {
+        var previousLabel = Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(PlayButton);
+        if (_preparing || App.LaunchPreparationGate.CurrentCount == 0)
+        {
+            PlayButton.IsEnabled = App.PreparationCancellation?.IsCancellationRequested == false;
+            var preparationLabel = App.L(PlayButton.IsEnabled ? "home.cancel_preparation" : "home.cancelling");
+            ToolTipService.SetToolTip(PlayButton, preparationLabel);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(PlayButton, preparationLabel);
+            PlayButton.Content = new TextBlock
+            {
+                Text = preparationLabel,
+                TextWrapping = TextWrapping.Wrap,
+                TextAlignment = TextAlignment.Center
+            };
+            if (previousLabel != preparationLabel && PlayButton.IsLoaded)
+                AnimationHelper.SlideIn((UIElement)PlayButton.Content);
+            return;
+        }
         var inst = GetSelectedInstance();
         var running = inst != null && IsInstanceRunning(inst.Id);
 
-        PlayButton.IsEnabled = true;
+        PlayButton.IsEnabled = inst != null;
         var label = running ? App.L("home.kill") : App.L("home.play");
-        if (inst != null && !running)
-        {
-            if (App.IsEventMode && App.EventConfig?.Ui?.PlayButtonText != null)
-                label = App.EventConfig.Ui.PlayButtonText;
-            else
-                label = App.L("home.play_with", inst.Name);
-        }
+        if (!running && App.IsEventMode && App.EventConfig?.Ui?.PlayButtonText is { } eventLabel)
+            label = eventLabel;
+        ToolTipService.SetToolTip(PlayButton, $"{label} (Ctrl+Enter)");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(PlayButton, label);
 
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
+        var row = new Grid { ColumnSpacing = 12 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         row.Children.Add(new FontIcon
         {
-            Glyph = running ? "\uE71A" : "\uE768", FontSize = 22,
-            Foreground = new SolidColorBrush(running ? Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B) : Microsoft.UI.Colors.White)
+            Glyph = running ? "\uE71A" : "\uE768", FontSize = 20
         });
-        row.Children.Add(new TextBlock
+        var text = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(text, 1);
+        row.Children.Add(text);
+        text.Children.Add(new TextBlock
         {
             Text = label, FontSize = 18,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center
+            TextWrapping = TextWrapping.Wrap, MaxLines = 2,
+            TextTrimming = TextTrimming.CharacterEllipsis
         });
 
         _elapsedLabel = null;
@@ -419,12 +425,7 @@ public sealed partial class HomePage : Page
                 FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Cascadia Mono,Consolas,monospace"),
             };
             UpdateElapsedText(startTime);
-            row.Children.Add(new TextBlock
-            {
-                Text = "·", FontSize = 16, Opacity = 0.5,
-                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0),
-            });
-            row.Children.Add(_elapsedLabel);
+            text.Children.Add(_elapsedLabel);
 
             _elapsedTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _elapsedTimer.Tick += (_, _) =>
@@ -436,9 +437,14 @@ public sealed partial class HomePage : Page
         }
 
         PlayButton.Content = row;
-        PlayButton.Background = running
-            ? new SolidColorBrush(Windows.UI.Color.FromArgb(0x33, 0xFF, 0x00, 0x00))
-            : (Brush)Application.Current.Resources["AccentBrush"];
+        if (previousLabel != label && PlayButton.IsLoaded)
+            AnimationHelper.SlideIn(row);
+        var background = running
+            ? new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xA6, 0x3E, 0x3E))
+            : (SolidColorBrush)Application.Current.Resources[App.IsEventMode ? "AccentBrush" : "PlayBrush"];
+        PlayButton.Background = background;
+        ((SolidColorBrush)PlayButton.Resources["ButtonBackgroundPointerOver"]).Color = background.Color;
+        ((SolidColorBrush)PlayButton.Resources["ButtonBackgroundPressed"]).Color = background.Color;
     }
 
     private void UpdateElapsedText(DateTime startTime)
@@ -452,84 +458,152 @@ public sealed partial class HomePage : Page
 
     private string? _pendingServer;
     private int? _pendingPort;
-    private bool _isReconnecting;
-
-    public async void LaunchWithServer(string instanceId, string server, int port)
+    public void LaunchWithServer(string instanceId, string? server, int port)
     {
-        _pendingServer = server;
-        _pendingPort = port;
-        _isReconnecting = true;
-
-        // Wait for LoadAsync to populate dropdown
-        await LoadAsync();
-        await Task.Delay(200);
-
-        PlayButton_Click(this, new RoutedEventArgs());
+        try
+        {
+            if (_preparing || App.LaunchPreparationGate.CurrentCount == 0 || IsInstanceRunning(instanceId))
+            {
+                ShowNotification(InfoBarSeverity.Informational, "A launch is already in progress or this instance is running.");
+                return;
+            }
+            RefreshInstancesUi();
+            for (int i = 0; i < ProfileSelector.Items.Count; i++)
+                if ((ProfileSelector.Items[i] as ComboBoxItem)?.Tag?.ToString() == instanceId)
+                { ProfileSelector.SelectedIndex = i; break; }
+            if (GetSelectedInstance()?.Id != instanceId)
+                throw new InvalidOperationException("The requested instance was not found.");
+            _pendingServer = server;
+            _pendingPort = server == null ? null : port;
+            PlayButton_Click(this, new RoutedEventArgs());
+        }
+        catch (Exception ex) { ShowNotification(InfoBarSeverity.Error, FriendlyError(ex)); }
     }
 
     private async void PlayButton_Click(object sender, RoutedEventArgs e)
     {
+        if (App.PreparationCancellation is { } preparation)
+        {
+            preparation.Cancel();
+            PlayButton.IsEnabled = false;
+            ProgressText.Text = App.L("home.cancelling");
+            return;
+        }
+        var server = _pendingServer;
+        var port = _pendingPort;
+        _pendingServer = null;
+        _pendingPort = null;
+        if (_preparing) return;
         var instance = GetSelectedInstance();
-        if (instance == null) { ShowNotification(InfoBarSeverity.Warning, "Select an instance."); return; }
+        if (instance == null) { ShowNotification(InfoBarSeverity.Warning, App.L("home.select_instance")); return; }
 
         if (IsInstanceRunning(instance.Id))
         {
-            _killedByUser.Add(instance.Id);
             if (App.RunningInstances.TryGetValue(instance.Id, out var p))
             {
-                try { p.Kill(); } catch { }
-                App.RunningInstances.TryRemove(instance.Id, out _);
-                App.NotifyRunningChanged();
+                try
+                {
+                    _killedByUser.Add(instance.Id);
+                    p.Kill(entireProcessTree: true);
+                }
+                catch (Exception ex)
+                {
+                    _killedByUser.Remove(instance.Id);
+                    ShowNotification(InfoBarSeverity.Error, FriendlyError(ex));
+                    return;
+                }
             }
             UpdatePlayButton();
-            ShowNotification(InfoBarSeverity.Informational, $"{instance.Name} killed.");
+            ShowNotification(InfoBarSeverity.Informational, App.L("home.stopped", instance.Name));
             return;
         }
 
-        PlayButton.IsEnabled = false;
-        var originalContent = PlayButton.Content;
-        PlayButton.Content = new StackPanel
+        if (!await App.LaunchPreparationGate.WaitAsync(0))
         {
-            Orientation = Orientation.Horizontal, Spacing = 12,
-            Children =
-            {
-                new ProgressRing { IsActive = true, Width = 22, Height = 22, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White) },
-                new TextBlock { Text = App.L("home.loading"), FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }
-            }
-        };
-        S.SelectedInstanceId = instance.Id;
-        S.Save();
-        ProgressPanel.Visibility = Visibility.Visible;
-
+            ShowNotification(InfoBarSeverity.Informational, "Another launch is being prepared. Wait for it to finish.");
+            return;
+        }
+        _preparing = true;
+        using var cancellation = new CancellationTokenSource();
+        var cancellationToken = cancellation.Token;
+        using var download = App.Downloads.Track(App.L("downloads.launch", instance.Name), instance.Id, cancellation, () =>
+        {
+            if (App.MainWindow is MainWindow main) main.LaunchServer(instance.Id, server, port ?? 25565);
+        });
+        App.PreparationCancellation = cancellation;
+        App.PreparingInstanceId = instance.Id;
+        var discordSession = App.Discord.BeginPreparation(instance);
+        TextWriter? launchLog = null;
         try
         {
+            App.NotifyRunningChanged();
+            NotificationBar.IsOpen = false;
+            LogBarStatus.Text = App.L("home.game_output");
+            PlayButton.IsEnabled = true;
+            PlayButton.Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 12,
+                Children =
+                {
+                    new ProgressRing { IsActive = true, Width = 22, Height = 22, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White) },
+                    new TextBlock { Text = App.L("home.cancel_preparation"), FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }
+                }
+            };
+            ProgressPanel.Visibility = Visibility.Visible;
+            S.SelectedInstanceId = instance.Id;
+            S.Save();
             var gameDir = _im.GetGameDir(instance.Id);
             var versionId = instance.GetEffectiveVersionId();
             var isModded = instance.Loader != LoaderType.None;
+            if (isModded && string.IsNullOrWhiteSpace(instance.LoaderVersion))
+                throw new InvalidOperationException("Select a loader version in instance settings.");
+            var launcherLogPath = Path.Combine(gameDir, "logs", "launcher-latest.log");
+            Directory.CreateDirectory(Path.GetDirectoryName(launcherLogPath)!);
+            launchLog = TextWriter.Synchronized(new StreamWriter(launcherLogPath) { AutoFlush = true });
+            launchLog.WriteLine($"{DateTimeOffset.Now:O} Preparing {instance.Name}: {instance.McVersion}, {instance.Loader} {instance.LoaderVersion}");
 
-            if (S.AuthMode == "microsoft" && S.AccessToken != "0")
+            var compatibility = await new ModCompatibilityChecker().CheckAsync(instance, gameDir, false, cancellationToken);
+            if (compatibility.Issues.Any(i => i.IsError))
             {
+                var dialog = new ContentDialog { XamlRoot = (App.MainWindow.Content as FrameworkElement)?.XamlRoot,
+                    Title = App.L("compat.launch"),
+                    Content = string.Join("\n\n", compatibility.Issues.Where(i => i.IsError).Take(5).Select(i => App.L("compat." + i.Code) + "\n" + i.Detail)) + "\n\n" + App.L("compat.local"),
+                    PrimaryButtonText = App.L("compat.fix"), SecondaryButtonText = App.L("compat.continue"), CloseButtonText = App.L("feature.cancel") };
+                using var closeDialog = cancellationToken.Register(() => DispatcherQueue.TryEnqueue(dialog.Hide));
+                var choice = await dialog.ShowAsync();
+                if (choice != ContentDialogResult.Secondary)
+                {
+                    cancellation.Cancel();
+                    if (choice == ContentDialogResult.Primary && App.MainWindow is MainWindow main) main.ShowInstanceDetails(instance.Id, "compatibility");
+                    return;
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            if (S.AuthMode == "microsoft")
+            {
+                if (string.IsNullOrWhiteSpace(S.AccessToken) || S.AccessToken == "0")
+                    throw new InvalidOperationException(App.L("acc.session_expired"));
                 ProgressText.Text = "Validating session...";
                 DownloadProgress.IsIndeterminate = true;
-                if (!await MicrosoftAuth.ValidateTokenAsync(S.AccessToken))
+                if (!await MicrosoftAuth.ValidateTokenAsync(S.AccessToken, cancellationToken))
                 {
                     if (!string.IsNullOrEmpty(S.MsRefreshToken))
                     {
                         try
                         {
                             ProgressText.Text = "Refreshing session...";
-                            var refreshed = await new MicrosoftAuth().RefreshAsync(S.MsRefreshToken);
+                            var refreshed = await new MicrosoftAuth(S.MsClientId).RefreshAsync(S.MsRefreshToken, cancellationToken);
                             S.Username = refreshed.Username;
                             S.Uuid = refreshed.Uuid;
                             S.AccessToken = refreshed.AccessToken;
                             S.MsRefreshToken = refreshed.RefreshToken ?? S.MsRefreshToken;
                             S.Save();
                         }
-                        catch
+                        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
                         {
-                            S.MsRefreshToken = "";
-                            S.Save();
-                            ShowNotification(InfoBarSeverity.Warning, App.L("acc.session_expired"));
+                            launchLog.WriteLine(ex);
+                            ShowNotification(InfoBarSeverity.Warning, FriendlyError(ex));
                             return;
                         }
                     }
@@ -543,36 +617,33 @@ public sealed partial class HomePage : Page
 
             ProgressText.Text = "Loading version...";
             DownloadProgress.IsIndeterminate = true;
-            _manifest ??= await _vm.GetManifestAsync();
+            var vanillaMeta = await _vm.GetVersionMetaAsync(instance.McVersion, cancellationToken);
 
-            var vanillaEntry = _manifest.Versions.FirstOrDefault(v => v.Id == instance.McVersion);
-            if (vanillaEntry == null) { ShowNotification(InfoBarSeverity.Error, $"MC {instance.McVersion} not found."); return; }
-
-            var vanillaMeta = await _vm.GetVersionMetaAsync(vanillaEntry);
-
-            var javaComponent = vanillaMeta.JavaVersion?.Component ?? "java-runtime-delta";
-            var javaPath = !string.IsNullOrEmpty(instance.JavaPath) && File.Exists(instance.JavaPath)
-                ? instance.JavaPath : JavaFinder.FindJava(javaComponent);
+            var requiredJava = vanillaMeta.JavaVersion?.MajorVersion ?? 8;
+            var javaComponent = vanillaMeta.JavaVersion?.Component ?? "jre-legacy";
+            var javaPath = !string.IsNullOrWhiteSpace(instance.JavaPath)
+                ? instance.JavaPath : JavaFinder.FindJava(javaComponent, requiredJava);
 
             if (javaPath == null)
             {
                 ProgressText.Text = $"Downloading Java ({javaComponent})...";
                 javaPath = await JavaFinder.DownloadJavaAsync(javaComponent, _im.SharedDir,
-                    status => DispatcherQueue.TryEnqueue(() => ProgressText.Text = status));
-                if (javaPath == null) { await ShowRepairDialogAsync(instance.Id, -1); return; }
+                    status => DispatcherQueue.TryEnqueue(() => ProgressText.Text = status), cancellationToken);
+                if (javaPath == null) { await ShowRepairDialogAsync(instance.Id, -1, captureCrash: false); return; }
             }
+            JavaFinder.ValidateJava(javaPath, requiredJava);
+            launchLog.WriteLine($"Java {requiredJava}: {javaPath}; memory {instance.MinMemoryMb}-{instance.MaxMemoryMb} MB");
 
-            var vanillaJar = Path.Combine(gameDir, "versions", instance.McVersion, $"{instance.McVersion}.jar");
-            if (!File.Exists(vanillaJar) || new FileInfo(vanillaJar).Length == 0)
             {
-                ProgressText.Text = "Downloading game...";
+                ProgressText.Text = "Checking game files...";
                 var dl = new AssetDownloader(_im.SharedDir, gameDir);
                 dl.ProgressChanged += (s, p) => DispatcherQueue.TryEnqueue(() =>
                 {
                     ProgressText.Text = s;
-                    if (p >= 0) { DownloadProgress.IsIndeterminate = false; DownloadProgress.Value = p; }
+                    DownloadProgress.IsIndeterminate = p < 0;
+                    if (p >= 0) DownloadProgress.Value = p;
                 });
-                await Task.Run(() => dl.DownloadVersionAsync(vanillaMeta));
+                await Task.Run(() => dl.DownloadVersionAsync(vanillaMeta, cancellationToken));
             }
 
             // Run the loader installer on first launch (instance create is lightweight and the
@@ -580,30 +651,32 @@ public sealed partial class HomePage : Page
             if (isModded && !string.IsNullOrEmpty(instance.LoaderVersion))
             {
                 var loaderVersionJson = Path.Combine(gameDir, "versions", versionId, $"{versionId}.json");
-                if (!File.Exists(loaderVersionJson))
+                var completePath = Path.Combine(Path.GetDirectoryName(loaderVersionJson)!, ".complete");
+                if (!File.Exists(loaderVersionJson) || !File.Exists(completePath))
                 {
                     ProgressText.Text = $"Installing {instance.Loader} {instance.LoaderVersion}...";
                     DownloadProgress.IsIndeterminate = true;
                     try
                     {
-                        await RunLoaderInstallAsync(instance, gameDir);
+                        await RunLoaderInstallAsync(instance, gameDir, javaPath, cancellationToken);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
                     {
+                        launchLog.WriteLine(ex);
                         ShowNotification(InfoBarSeverity.Error, $"Loader install failed:\n{ex.Message}");
                         return;
                     }
                 }
             }
 
-            var meta = isModded ? await _vm.GetMergedMetaAsync(versionId, gameDir) : vanillaMeta;
+            var meta = isModded ? await _vm.GetMergedMetaAsync(versionId, gameDir, cancellationToken) : vanillaMeta;
 
             if (isModded)
             {
                 ProgressText.Text = "Loader libraries...";
                 var dl = new AssetDownloader(_im.SharedDir, gameDir);
                 dl.ProgressChanged += (s, _) => DispatcherQueue.TryEnqueue(() => ProgressText.Text = s);
-                await Task.Run(() => dl.DownloadVersionAsync(new VersionMeta { Id = versionId, Libraries = meta.Libraries, Downloads = [] }));
+                await Task.Run(() => dl.DownloadVersionAsync(new VersionMeta { Id = instance.McVersion, Libraries = meta.Libraries }, cancellationToken));
             }
 
             // Event integrity check
@@ -624,65 +697,68 @@ public sealed partial class HomePage : Page
             DownloadProgress.Value = 95;
 
             var launcher = new GameLauncher(gameDir, _im.SharedDir);
+            var modsDirectory = Path.Combine(gameDir, "mods");
+            var enabledModFiles = Directory.Exists(modsDirectory) ? Directory.GetFiles(modsDirectory, "*.jar").Length : 0;
+            cancellationToken.ThrowIfCancellationRequested();
             var proc = launcher.Launch(meta, javaPath, S.Username,
                 uuid: S.Uuid, accessToken: S.AccessToken,
                 minMem: instance.MinMemoryMb, maxMem: instance.MaxMemoryMb,
                 extraJvmArgs: instance.JvmArgs,
                 windowWidth: instance.WindowWidth, windowHeight: instance.WindowHeight,
                 vanillaVersionId: isModded ? instance.McVersion : null,
-                server: _pendingServer ?? (App.EventConfig?.Server?.AutoConnect == true ? App.EventConfig.Server.Host : null),
-                port: _pendingPort ?? (App.EventConfig?.Server?.AutoConnect == true ? App.EventConfig.Server.Port : null));
-
-            _pendingServer = null;
-            _pendingPort = null;
+                server: server ?? (App.EventConfig?.Server?.AutoConnect == true ? App.EventConfig.Server.Host : null),
+                port: port ?? (App.EventConfig?.Server?.AutoConnect == true ? App.EventConfig.Server.Port : null));
+            App.Discord.GameStarted(discordSession, enabledModFiles);
 
             LogText.Text = "";
             _logAutoScroll = true;
 
-            var launcherLogPath = Path.Combine(gameDir, "logs", "launcher-latest.log");
-            Directory.CreateDirectory(Path.GetDirectoryName(launcherLogPath)!);
-            var logWriter = new StreamWriter(launcherLogPath, append: false) { AutoFlush = true };
+            var logWriter = launchLog;
+            launchLog = null;
+            var crashLines = new System.Collections.Concurrent.ConcurrentQueue<string>();
+            void RememberLine(string line)
+            {
+                crashLines.Enqueue(line[..Math.Min(line.Length, 4000)]);
+                while (crashLines.Count > 500) crashLines.TryDequeue(out _);
+            }
 
             proc.OutputDataReceived += (_, args) =>
             {
                 if (args.Data == null) return;
                 AppendLog(args.Data);
-                App.Discord.ProcessLogLine(args.Data);
+                RememberLine(args.Data);
+                App.Discord.ProcessLogLine(discordSession, args.Data);
                 try { logWriter.WriteLine(args.Data); } catch { }
             };
             proc.ErrorDataReceived += (_, args) =>
             {
                 if (args.Data == null) return;
                 AppendLog($"[ERR] {args.Data}");
+                RememberLine(args.Data);
+                App.Discord.ProcessLogLine(discordSession, args.Data);
                 try { logWriter.WriteLine($"[ERR] {args.Data}"); } catch { }
             };
-            proc.Exited += (_, _) => { try { logWriter.Dispose(); } catch { } };
-            proc.EnableRaisingEvents = true;
             proc.BeginOutputReadLine();
             proc.BeginErrorReadLine();
 
             App.RunningInstances[instance.Id] = proc;
             App.NotifyRunningChanged();
-            instance.LastPlayed = DateTime.UtcNow;
-            _im.SaveInstance(instance);
-            UpdatePlayButton();
-
-            var modsDir2 = Path.Combine(gameDir, "mods");
-            var mc = Directory.Exists(modsDir2) ? Directory.GetFiles(modsDir2, "*.jar").Length : 0;
-            App.Discord.SetInstance(instance, mc);
-
             var instId = instance.Id;
             _ = Task.Run(async () =>
             {
                 await proc.WaitForExitAsync();
                 var exit = proc.ExitCode;
-                App.RunningInstances.TryRemove(instId, out _);
+                try { logWriter.WriteLine($"{DateTimeOffset.Now:O} Exit code: {exit}"); logWriter.Dispose(); }
+                catch (IOException ex) { Debug.WriteLine(ex.Message); }
+                ((ICollection<KeyValuePair<string, Process>>)App.RunningInstances).Remove(new(instId, proc));
                 App.NotifyRunningChanged();
-                App.Discord.OnGameExit();
-                if (App.IsHidden && !App.HasRunningInstances())
-                    App.ShowWindow();
+                App.Discord.EndSession(discordSession);
                 DispatcherQueue.TryEnqueue(() =>
                 {
+                    if (App.IsHidden && !App.HasRunningInstances())
+                        App.ShowWindow();
+                    LogBarStatus.Text = exit == 0 || _killedByUser.Contains(instId)
+                        ? App.L("home.game_closed") : App.L("home.crashed", exit);
                     UpdatePlayButton();
                     if (App.IsReconnecting)
                     {
@@ -694,7 +770,7 @@ public sealed partial class HomePage : Page
                     }
                     else if (exit != 0)
                     {
-                        _ = ShowRepairDialogAsync(instId, exit);
+                        _ = ShowRepairDialogAsync(instId, exit, capturedLog: string.Join("\n", crashLines));
                     }
                     else
                     {
@@ -703,27 +779,40 @@ public sealed partial class HomePage : Page
                 });
             });
 
+            instance.LastPlayed = DateTime.UtcNow;
+            _im.SaveInstance(instance);
+
             ProgressText.Text = "Game launched!";
             DownloadProgress.Value = 100;
+            download.Job.Complete();
 
-            if (S.CloseOnLaunch)
+            if (S.CloseOnLaunch && !proc.HasExited)
                 App.HideWindow();
 
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            launchLog?.WriteLine($"{DateTimeOffset.Now:O} Preparation cancelled.");
+            ShowNotification(InfoBarSeverity.Informational, App.L("home.cancelled"));
+        }
         catch (Exception ex)
         {
+            download.Job.Fail(ex);
+            try { launchLog?.WriteLine(ex); } catch (IOException) { }
             ShowNotification(InfoBarSeverity.Error, FriendlyError(ex));
         }
         finally
         {
-            if (GetSelectedInstance() is not { } si || !IsInstanceRunning(si.Id))
-            {
-                PlayButton.IsEnabled = true;
-                UpdatePlayButton();
-            }
-            await Task.Delay(3000);
+            App.Discord.EndPreparation(discordSession);
+            _preparing = false;
+            App.PreparationCancellation = null;
+            App.PreparingInstanceId = null;
+            App.LaunchPreparationGate.Release();
+            try { launchLog?.Dispose(); } catch (IOException ex) { Debug.WriteLine(ex.Message); }
             ProgressPanel.Visibility = Visibility.Collapsed;
             DownloadProgress.Value = 0;
+            App.NotifyRunningChanged();
+            UpdatePlayButton();
         }
     }
 
@@ -757,7 +846,6 @@ public sealed partial class HomePage : Page
             if (LogText.Text.Length > 10000)
                 LogText.Text = LogText.Text[5000..];
             LogText.Text += line + "\n";
-            LogBarStatus.Text = line.Length > 80 ? line[..80] + "..." : line;
 
             if (_logAutoScroll)
                 ScrollLogToBottom();
@@ -770,7 +858,8 @@ public sealed partial class HomePage : Page
         LogScroll.ChangeView(null, LogScroll.ScrollableHeight, null, true);
     }
 
-    private async Task RunLoaderInstallAsync(Core.Instances.GameInstance inst, string gameDir)
+    private async Task RunLoaderInstallAsync(Core.Instances.GameInstance inst, string gameDir, string? javaPath = null,
+        CancellationToken cancellationToken = default)
     {
         void OnProgress(string status, double pct)
         {
@@ -787,39 +876,61 @@ public sealed partial class HomePage : Page
                 {
                     var i = new FabricInstaller(_im.SharedDir, gameDir);
                     i.ProgressChanged += OnProgress;
-                    await i.InstallAsync(inst.McVersion, inst.LoaderVersion!);
+                    await i.InstallAsync(inst.McVersion, inst.LoaderVersion!, cancellationToken);
                     break;
                 }
             case LoaderType.Quilt:
                 {
                     var i = new QuiltInstaller(_im.SharedDir, gameDir);
                     i.ProgressChanged += OnProgress;
-                    await i.InstallAsync(inst.McVersion, inst.LoaderVersion!);
+                    await i.InstallAsync(inst.McVersion, inst.LoaderVersion!, cancellationToken);
                     break;
                 }
             case LoaderType.Forge:
                 {
                     var i = new ForgeInstaller(_im.SharedDir, gameDir);
                     i.ProgressChanged += OnProgress;
-                    await i.InstallAsync(inst.McVersion, inst.LoaderVersion!);
+                    await i.InstallAsync(inst.McVersion, inst.LoaderVersion!, javaPath, cancellationToken);
                     break;
                 }
             case LoaderType.NeoForge:
                 {
                     var i = new NeoForgeInstaller(_im.SharedDir, gameDir);
                     i.ProgressChanged += OnProgress;
-                    await i.InstallAsync(inst.McVersion, inst.LoaderVersion!);
+                    await i.InstallAsync(inst.McVersion, inst.LoaderVersion!, javaPath, cancellationToken);
                     break;
                 }
         }
     }
 
-    private async Task ShowRepairDialogAsync(string instanceId, int exitCode)
+    private async Task ShowRepairDialogAsync(string instanceId, int exitCode, bool captureCrash = true, string? capturedLog = null)
     {
         var inst = _im.GetInstance(instanceId);
         if (inst == null) return;
 
         var gameDir = _im.GetGameDir(instanceId);
+        if (captureCrash)
+        {
+            try
+            {
+                var report = capturedLog == null
+                    ? await CrashAnalyzer.CaptureAsync(gameDir, exitCode, [S.AccessToken, S.MsRefreshToken])
+                    : CrashAnalyzer.Analyze(capturedLog, exitCode, [S.AccessToken, S.MsRefreshToken]);
+                if (capturedLog != null) CrashAnalyzer.SaveReport(gameDir, report);
+                var summary = new StackPanel { Spacing = 12 };
+                summary.Children.Add(new TextBlock { Text = App.L("crash." + report.Reason), FontSize = 18, TextWrapping = TextWrapping.Wrap });
+                summary.Children.Add(new TextBlock { Text = App.L("crash." + report.Reason + ".help"), TextWrapping = TextWrapping.Wrap });
+                if (report.Evidence.Length > 0) summary.Children.Add(new TextBlock { Text = report.Evidence, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontSize = 12 });
+                var crashDialog = new ContentDialog { XamlRoot = (App.MainWindow.Content as FrameworkElement)?.XamlRoot,
+                    Title = App.L("crash.title", exitCode), Content = summary,
+                    PrimaryButtonText = App.L("feature.crashes"), SecondaryButtonText = App.L("feature.compatibility"), CloseButtonText = App.L("feature.back") };
+                var choice = await crashDialog.ShowAsync();
+                if (choice != ContentDialogResult.None && App.MainWindow is MainWindow main)
+                    main.ShowInstanceDetails(instanceId, choice == ContentDialogResult.Primary ? "crashes" : "compatibility");
+            }
+            catch (Exception ex) { Debug.WriteLine(ex); ShowNotification(InfoBarSeverity.Error, App.L("crash.title", exitCode)); }
+            return;
+        }
         var list = new StackPanel { Spacing = 6 };
         var scroll = new ScrollViewer { Content = list, MaxHeight = 500, MinWidth = 500 };
 
@@ -893,7 +1004,7 @@ public sealed partial class HomePage : Page
                 Text = r.Detail,
                 TextWrapping = TextWrapping.Wrap,
                 FontSize = 12,
-                Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0xAA, 0xFF, 0xFF, 0xFF)),
+                Foreground = (Brush)Application.Current.Resources["SubtleBrush"],
                 Margin = new Thickness(26, 0, 0, 0)
             });
 
@@ -913,7 +1024,7 @@ public sealed partial class HomePage : Page
 
         return new Border
         {
-            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)),
+            Background = (Brush)Application.Current.Resources["CardBrush"],
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(10),
             Child = body
@@ -931,7 +1042,10 @@ public sealed partial class HomePage : Page
 
     private static string FriendlyError(Exception ex) => ex switch
     {
+        System.Net.Http.HttpRequestException { StatusCode: { } status } http => $"{App.L("gen.service_error", (int)status)}\n{http.Message}",
         System.Net.Http.HttpRequestException => $"{App.L("gen.no_internet")}\n{ex.Message}",
+        TaskCanceledException or TimeoutException => $"{App.L("gen.request_timeout")}\n{ex.Message}",
+        InvalidDataException => $"{App.L("gen.corrupted_data")}\n{ex.Message}",
         IOException io => $"{App.L("gen.file_error")}\n{io.Message}",
         System.Text.Json.JsonException => $"{App.L("gen.corrupted_data")}\n{ex.Message}",
         _ => $"{ex.GetType().Name}: {ex.Message}"

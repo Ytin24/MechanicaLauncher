@@ -10,6 +10,48 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
 
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Default">
+                    <Color x:Key="LauncherBackgroundColor">#1B211D</Color>
+                    <Color x:Key="LauncherPaneColor">#171D19</Color>
+                    <Color x:Key="LauncherCardColor">#252E28</Color>
+                    <Color x:Key="LauncherCardHoverColor">#303C33</Color>
+                    <Color x:Key="LauncherBorderColor">#435147</Color>
+                    <Color x:Key="LauncherSelectionColor">#314F3A</Color>
+                    <Color x:Key="LauncherSelectionTextColor">#C5E5CD</Color>
+                    <Color x:Key="LauncherActionColor">#347849</Color>
+                    <Color x:Key="LauncherActionHoverColor">#3C8753</Color>
+                    <Color x:Key="LauncherActionPressedColor">#2C673E</Color>
+                    <Color x:Key="LauncherActionTextColor">#FFFFFF</Color>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <Color x:Key="LauncherBackgroundColor">#CFD6D0</Color>
+                    <Color x:Key="LauncherPaneColor">#C2CCC4</Color>
+                    <Color x:Key="LauncherCardColor">#E0E6E0</Color>
+                    <Color x:Key="LauncherCardHoverColor">#D5DFD6</Color>
+                    <Color x:Key="LauncherBorderColor">#AFBEB2</Color>
+                    <Color x:Key="LauncherSelectionColor">#C8DDCC</Color>
+                    <Color x:Key="LauncherSelectionTextColor">#244F30</Color>
+                    <Color x:Key="LauncherActionColor">#347849</Color>
+                    <Color x:Key="LauncherActionHoverColor">#2E6C41</Color>
+                    <Color x:Key="LauncherActionPressedColor">#285D38</Color>
+                    <Color x:Key="LauncherActionTextColor">#FFFFFF</Color>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="HighContrast">
+                    <Color x:Key="LauncherBackgroundColor">{ThemeResource SystemColorWindowColor}</Color>
+                    <Color x:Key="LauncherPaneColor">{ThemeResource SystemColorWindowColor}</Color>
+                    <Color x:Key="LauncherCardColor">{ThemeResource SystemColorButtonFaceColor}</Color>
+                    <Color x:Key="LauncherCardHoverColor">{ThemeResource SystemColorHighlightColor}</Color>
+                    <Color x:Key="LauncherBorderColor">{ThemeResource SystemColorWindowTextColor}</Color>
+                    <Color x:Key="LauncherSelectionColor">{ThemeResource SystemColorHighlightColor}</Color>
+                    <Color x:Key="LauncherSelectionTextColor">{ThemeResource SystemColorHighlightTextColor}</Color>
+                    <Color x:Key="LauncherActionColor">{ThemeResource SystemColorHighlightColor}</Color>
+                    <Color x:Key="LauncherActionHoverColor">{ThemeResource SystemColorHighlightColor}</Color>
+                    <Color x:Key="LauncherActionPressedColor">{ThemeResource SystemColorHighlightColor}</Color>
+                    <Color x:Key="LauncherActionTextColor">{ThemeResource SystemColorHighlightTextColor}</Color>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
             <!-- Palette -->
             <Color x:Key="Accent">#4CAF50</Color>
             <Color x:Key="AccentLight">#81C784</Color>
@@ -28,11 +70,25 @@
 
             <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource Accent}" />
             <SolidColorBrush x:Key="AccentLightBrush" Color="{StaticResource AccentLight}" />
-            <SolidColorBrush x:Key="SubtleBrush" Color="{StaticResource Text70}" />
-            <SolidColorBrush x:Key="DimBrush" Color="{StaticResource Text40}" />
-            <SolidColorBrush x:Key="FaintBrush" Color="{StaticResource Text20}" />
-            <SolidColorBrush x:Key="CardBrush" Color="{StaticResource Surface2}" />
-            <SolidColorBrush x:Key="CardHoverBrush" Color="{StaticResource Surface3}" />
+            <SolidColorBrush x:Key="PrimaryBrush" Color="{ThemeResource TextFillColorPrimary}" />
+            <SolidColorBrush x:Key="SubtleBrush" Color="{ThemeResource TextFillColorSecondary}" />
+            <SolidColorBrush x:Key="DimBrush" Color="{ThemeResource TextFillColorSecondary}" />
+            <SolidColorBrush x:Key="FaintBrush" Color="{ThemeResource TextFillColorDisabled}" />
+            <SolidColorBrush x:Key="LauncherBackgroundBrush" Color="{ThemeResource LauncherBackgroundColor}" />
+            <SolidColorBrush x:Key="LauncherPaneBrush" Color="{ThemeResource LauncherPaneColor}" />
+            <SolidColorBrush x:Key="CardBrush" Color="{ThemeResource LauncherCardColor}" />
+            <SolidColorBrush x:Key="CardHoverBrush" Color="{ThemeResource LauncherCardHoverColor}" />
+            <SolidColorBrush x:Key="CardBorderBrush" Color="{ThemeResource LauncherBorderColor}" />
+            <SolidColorBrush x:Key="MenuFlyoutPresenterBackground" Color="{ThemeResource LauncherCardColor}" />
+            <SolidColorBrush x:Key="PlayBrush" Color="#347849" />
+            <SolidColorBrush x:Key="SelectionBrush" Color="{ThemeResource LauncherSelectionColor}" />
+            <SolidColorBrush x:Key="SelectionTextBrush" Color="{ThemeResource LauncherSelectionTextColor}" />
+            <SolidColorBrush x:Key="AccentButtonBackground" Color="{ThemeResource LauncherActionColor}" />
+            <SolidColorBrush x:Key="AccentButtonBackgroundPointerOver" Color="{ThemeResource LauncherActionHoverColor}" />
+            <SolidColorBrush x:Key="AccentButtonBackgroundPressed" Color="{ThemeResource LauncherActionPressedColor}" />
+            <SolidColorBrush x:Key="AccentButtonForeground" Color="{ThemeResource LauncherActionTextColor}" />
+            <SolidColorBrush x:Key="AccentButtonForegroundPointerOver" Color="{ThemeResource LauncherActionTextColor}" />
+            <SolidColorBrush x:Key="AccentButtonForegroundPressed" Color="{ThemeResource LauncherActionTextColor}" />
 
             <CornerRadius x:Key="R6">6</CornerRadius>
             <CornerRadius x:Key="R10">10</CornerRadius>
@@ -45,19 +101,11 @@
                 <Setter Property="FontSize" Value="18" />
                 <Setter Property="FontWeight" Value="SemiBold" />
                 <Setter Property="CornerRadius" Value="{StaticResource R14}" />
-                <Setter Property="Padding" Value="48,16" />
-                <Setter Property="MinWidth" Value="240" />
+                <Setter Property="Padding" Value="24,16" />
                 <Setter Property="MinHeight" Value="56" />
-                <Setter Property="HorizontalAlignment" Value="Center" />
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
                 <Setter Property="HorizontalContentAlignment" Value="Center" />
-                <Setter Property="Background">
-                    <Setter.Value>
-                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                            <GradientStop Color="{StaticResource Accent}" Offset="0" />
-                            <GradientStop Color="{StaticResource Teal}" Offset="1" />
-                        </LinearGradientBrush>
-                    </Setter.Value>
-                </Setter>
+                <Setter Property="Background" Value="{StaticResource PlayBrush}" />
             </Style>
 
             <!-- Card -->
@@ -66,7 +114,7 @@
                 <Setter Property="CornerRadius" Value="{StaticResource R10}" />
                 <Setter Property="Padding" Value="20,16" />
                 <Setter Property="MinHeight" Value="48" />
-                <Setter Property="BorderBrush" Value="{StaticResource FaintBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource CardBorderBrush}" />
                 <Setter Property="BorderThickness" Value="1" />
             </Style>
 
@@ -111,16 +159,23 @@
                 <Setter Property="CornerRadius" Value="{StaticResource R6}" />
             </Style>
 
-            <Style x:Key="AccentSmallButton" TargetType="Button" BasedOn="{StaticResource SmallButton}">
-                <Setter Property="Background">
-                    <Setter.Value>
-                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                            <GradientStop Color="{StaticResource Accent}" Offset="0" />
-                            <GradientStop Color="{StaticResource Teal}" Offset="1" />
-                        </LinearGradientBrush>
-                    </Setter.Value>
-                </Setter>
-                <Setter Property="Foreground" Value="White" />
+            <Style x:Key="AccentSmallButton" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Padding" Value="16,8" />
+                <Setter Property="MinWidth" Value="96" />
+                <Setter Property="MinHeight" Value="36" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
+            </Style>
+
+            <Style x:Key="FilterChip" TargetType="Button" BasedOn="{StaticResource SmallButton}">
+                <Setter Property="Background" Value="{StaticResource CardBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
+                <Setter Property="Padding" Value="12,6" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
             </Style>
 
             <Style x:Key="IconBox" TargetType="Border">

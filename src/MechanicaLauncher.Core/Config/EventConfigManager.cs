@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using MechanicaLauncher.Core.IO;
 
 namespace MechanicaLauncher.Core.Config;
 
@@ -12,9 +13,7 @@ public sealed class EventConfigManager
 
     public EventConfigManager(string? baseDir = null)
     {
-        _baseDir = baseDir ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "MechanicaLauncher");
+        _baseDir = baseDir ?? LauncherPaths.DataDirectory;
     }
 
     public bool IsEventMode => _active != null;
