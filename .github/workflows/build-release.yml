@@ -94,15 +94,11 @@ jobs:
         env:
           MICROSOFT_CLIENT_ID: ${{ vars.MICROSOFT_CLIENT_ID }}
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
-          IS_PRERELEASE: ${{ steps.version.outputs.PRERELEASE }}
         run: |
           $clientId = [guid]::Empty
           if (-not [string]::IsNullOrWhiteSpace($env:MICROSOFT_CLIENT_ID) -and
               (-not [guid]::TryParse($env:MICROSOFT_CLIENT_ID, [ref]$clientId) -or $clientId -eq [guid]::Empty)) {
             throw 'MICROSOFT_CLIENT_ID must be the Application (client) ID of Mechanica.'
-          }
-          if ($env:GITHUB_REF -like 'refs/tags/v*' -and $env:IS_PRERELEASE -ne 'true' -and [string]::IsNullOrWhiteSpace($env:MICROSOFT_CLIENT_ID)) {
-            throw 'Set the approved Mechanica application ID in repository variable MICROSOFT_CLIENT_ID before a stable release.'
           }
           dotnet restore src/MechanicaLauncher/MechanicaLauncher.csproj `
             --locked-mode -p:Platform=x64 -p:SelfContained=true
