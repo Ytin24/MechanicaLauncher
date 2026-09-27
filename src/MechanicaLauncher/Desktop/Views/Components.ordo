@@ -54,8 +54,9 @@ template Choice(vm: ItemModel) {
 }
 template Field(vm: FieldModel) {
     Column Boundary=false Gap=6 Padding=4 {
-        Text .muted vm.Label
-        Input Value <=> vm.Value
+        Text .muted vm.Label Visible=(!vm.IsToggle)
+        Input Value <=> vm.Value Visible=(!vm.IsToggle)
+        CheckBox Text=vm.Label IsChecked <=> vm.IsChecked Visible=vm.IsToggle
     }
 }
 template Article(vm: ItemModel) {

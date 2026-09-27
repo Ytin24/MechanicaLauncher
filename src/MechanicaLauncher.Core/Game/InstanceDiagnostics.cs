@@ -1,5 +1,6 @@
 using System.Text.Json;
 using MechanicaLauncher.Core.Instances;
+using MechanicaLauncher.Core.IO;
 using MechanicaLauncher.Core.Models;
 
 namespace MechanicaLauncher.Core.Game;
@@ -117,23 +118,33 @@ public static class InstanceDiagnostics
         // 4. NeoForge/Forge patched client.jar
         if (inst.Loader == LoaderType.NeoForge && !string.IsNullOrEmpty(inst.LoaderVersion))
         {
-            var clientJar = Path.Combine(sharedLibs, "net", "neoforged", "neoforge", inst.LoaderVersion,
-                $"neoforge-{inst.LoaderVersion}-client.jar");
-            if (File.Exists(clientJar))
-                reports.Add(new() { Severity = DiagnosticSeverity.Ok, Title = "NeoForge patched client.jar present", Detail = $"{new FileInfo(clientJar).Length / 1024} KB" });
-            else
+            try
+            {
+                var artifact = NeoForgeInstaller.GetInstallArtifact(inst.McVersion, inst.LoaderVersion);
+                var clientJar = FileDownloader.GetPath(sharedLibs, artifact.RequiredLibrary);
+                if (File.Exists(clientJar))
+                    reports.Add(new() { Severity = DiagnosticSeverity.Ok, Title = "NeoForge patched client.jar present", Detail = $"{new FileInfo(clientJar).Length / 1024} KB" });
+                else
+                    reports.Add(new()
+                    {
+                        Severity = DiagnosticSeverity.Error,
+                        Title = "NeoForge patched client.jar missing",
+                        Detail = clientJar,
+                        FixLabel = "Re-run NeoForge installer",
+                        Fix = async () =>
+                        {
+                            var ni = new NeoForgeInstaller(im.SharedDir, gameDir);
+                            await ni.InstallAsync(inst.McVersion, inst.LoaderVersion!);
+                        }
+                    });
+            }
+            catch (InvalidDataException ex)
+            {
                 reports.Add(new()
                 {
-                    Severity = DiagnosticSeverity.Error,
-                    Title = "NeoForge patched client.jar missing",
-                    Detail = "Installer processors didn't run — forgeclient target will crash with ClassNotFoundException.\n" + clientJar,
-                    FixLabel = "Re-run NeoForge installer",
-                    Fix = async () =>
-                    {
-                        var ni = new NeoForgeInstaller(im.SharedDir, gameDir);
-                        await ni.InstallAsync(inst.McVersion, inst.LoaderVersion!);
-                    }
+                    Severity = DiagnosticSeverity.Error, Title = "NeoForge version invalid", Detail = ex.Message
                 });
+            }
         }
 
         // 5. Library presence (sample missing files)

@@ -20,7 +20,30 @@ public sealed class ModrinthClient
             using var response = await Http.PostAsJsonAsync("/v2/version_files", new { hashes = batch, algorithm = "sha1" }, cancellationToken);
             response.EnsureSuccessStatusCode();
             var versions = await response.Content.ReadFromJsonAsync<Dictionary<string, ModrinthVersion>>(cancellationToken);
-            foreach (var entry in versions ?? []) result[entry.Key] = entry.Value;
+            if (versions == null || versions.Values.Any(v => v == null)) throw new JsonException("Invalid version lookup response.");
+            foreach (var entry in versions) result[entry.Key] = entry.Value;
+        }
+        return result;
+    }
+
+    public async Task<Dictionary<string, ModrinthVersion>> GetUpdatesFromHashesAsync(IEnumerable<string> hashes,
+        string mcVersion, string loader, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mcVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(loader);
+        var result = new Dictionary<string, ModrinthVersion>(StringComparer.OrdinalIgnoreCase);
+        foreach (var batch in hashes.Distinct(StringComparer.OrdinalIgnoreCase).Chunk(100))
+        {
+            using var response = await Http.PostAsJsonAsync("/v2/version_files/update", new
+            {
+                hashes = batch, algorithm = "sha1", game_versions = new[] { mcVersion },
+                loaders = new[] { loader }, version_types = new[] { "release" }
+            }, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            var versions = await response.Content.ReadFromJsonAsync<Dictionary<string, ModrinthVersion>>(cancellationToken);
+            if (versions == null || versions.Any(p => p.Value == null || !batch.Contains(p.Key, StringComparer.OrdinalIgnoreCase)))
+                throw new JsonException("Invalid mod update response.");
+            foreach (var entry in versions) result[entry.Key] = entry.Value;
         }
         return result;
     }
@@ -54,6 +77,20 @@ public sealed class ModrinthClient
 
     public Task<ModrinthProjectInfo?> GetProjectAsync(string projectId, CancellationToken cancellationToken = default) =>
         Http.GetFromJsonAsync<ModrinthProjectInfo>($"/v2/project/{Uri.EscapeDataString(projectId)}", cancellationToken);
+
+    public async Task<List<ModrinthProjectInfo>> GetProjectsAsync(IEnumerable<string> projectIds,
+        CancellationToken cancellationToken = default)
+    {
+        var projects = new List<ModrinthProjectInfo>();
+        foreach (var batch in projectIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal).Chunk(100))
+        {
+            var ids = Uri.EscapeDataString(JsonSerializer.Serialize(batch));
+            var found = await Http.GetFromJsonAsync<List<ModrinthProjectInfo>>($"/v2/projects?ids={ids}", cancellationToken);
+            if (found == null || found.Any(p => p == null)) throw new JsonException("Invalid project lookup response.");
+            projects.AddRange(found);
+        }
+        return projects;
+    }
 
     public async Task<List<ModrinthVersion>> GetProjectVersionsAsync(string projectId,
                                                                        string? mcVersion = null, string? loader = null, CancellationToken cancellationToken = default)

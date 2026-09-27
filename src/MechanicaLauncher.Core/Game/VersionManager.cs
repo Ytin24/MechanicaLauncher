@@ -135,12 +135,14 @@ public sealed class VersionManager
     // otherwise classpath ends up with two versions of asm/guava/etc and class-version mismatches surface at runtime.
     private static List<Library> DedupeLibraries(List<Library> child, List<Library> parent)
     {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var selected = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var result = new List<Library>(child.Count + parent.Count);
         foreach (var lib in child.Concat(parent))
         {
+            if (!AssetDownloader.ShouldIncludeLibrary(lib)) continue;
             var key = LibraryKey(lib.Name);
-            if (seen.Add(key)) result.Add(lib);
+            if (!selected.TryGetValue(key, out var name)) selected.Add(key, name = lib.Name);
+            if (name.Equals(lib.Name, StringComparison.OrdinalIgnoreCase)) result.Add(lib);
         }
         return result;
     }

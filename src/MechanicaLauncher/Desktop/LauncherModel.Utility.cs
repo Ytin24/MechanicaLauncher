@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Net;
 using System.Text.RegularExpressions;
 using MechanicaLauncher.Core.Auth;
 using MechanicaLauncher.Core.Servers;
@@ -52,7 +53,7 @@ public sealed partial class LauncherModel
                 Id = server.Id, Title = server.Name, Meta = server.Address,
                 Description = instance == null ? T("Выбери сборку в настройках сервера", "Choose an instance in server settings") : instance.Name + " · " + InstanceLabel(instance),
                 Primary = T("Подключиться", "Connect"), Secondary = T("Изменить", "Edit"), Tertiary = T("Удалить", "Remove"),
-                Action = () => Run(async () => { var current = Instances.GetInstance(server.InstanceId) ?? throw new InvalidOperationException(T("Сборка сервера удалена. Выбери другую.", "Server instance is missing. Choose another.")); SetInstance(current.Id); Home(); await Launch(current, server.Host, server.Port); }),
+                Action = () => ConnectServer(server),
                 Action2 = () => EditServer(server), Action3 = () => Run(async () => { if (await Confirm(T("Удалить сервер?", "Remove server?"), server.Name, T("Удалить", "Remove"), destructive: true)) { var store = new FavoriteServers(); store.Save(store.Load().Where(s => s.Id != server.Id)); RefreshServers(); } })
             });
         }
@@ -61,23 +62,44 @@ public sealed partial class LauncherModel
     public void AddServer() => EditServer(null);
     private void EditServer(FavoriteServer? server)
     {
+        if (disposed || DialogOpen || TLauncherBlocked) return;
         if (SelectedInstance == null) { Notice(T("Сначала выбери сборку в шапке.", "Select an instance in the header first."), true); return; }
         string targetId = server != null && Instances.GetInstance(server.InstanceId) != null ? server.InstanceId : SelectedInstance.Id;
+        var addressField = new FieldModel("address", T("Адрес", "Address"), server?.Address ?? "");
+        var syncField = new FieldModel("syncUrl", T("Ссылка на список модов (необязательно)", "Mod list URL (optional)"), server?.SyncManifestUrl ?? "");
+        var automatic = new FieldModel("autoSync", T("Автодокачка модов", "Download server mods automatically"))
+        {
+            IsToggle = true, IsChecked = server is { AutoSync: true } && targetId == server.InstanceId
+        };
+        addressField.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(FieldModel.Value)) automatic.IsChecked = false; };
+        syncField.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(FieldModel.Value)) automatic.IsChecked = false; };
         BeginDialog(server == null ? T("Добавить сервер", "Add server") : T("Изменить сервер", "Edit server"),
             T("Сборка: ", "Instance: ") + Instances.GetInstance(targetId)?.Name, T("Сохранить", "Save"), () =>
             {
-                string name = Field("name"), address = Field("address");
+                string name = Field("name"), address = Field("address"), syncUrl = Field("syncUrl");
                 if (name.Length == 0) throw new InvalidDataException(T("Введи название сервера.", "Enter a server name."));
                 if (!FavoriteServers.TryParseAddress(address, out var host, out int port)) throw new InvalidDataException(T("Проверь адрес: host или host:port.", "Check the address: host or host:port."));
+                if (Instances.GetInstance(targetId) == null) throw new InvalidDataException(T("Выбранная сборка удалена. Выбери другую.", "The selected instance was deleted. Choose another."));
+                if (syncUrl.Length > 0 && !FavoriteServers.IsValidSyncUrl(syncUrl, true))
+                    throw new InvalidDataException(T("Нужна HTTPS-ссылка на список модов. HTTP доступен только для локального сервера.", "Use an HTTPS mod list URL. HTTP is available only for a local server."));
+                if (automatic.IsChecked && syncUrl.Length == 0)
+                    throw new InvalidDataException(T("Укажи ссылку на список модов для автодокачки.", "Enter a mod list URL to enable automatic downloads."));
+                Uri? source = syncUrl.Length == 0 ? null : new Uri(syncUrl);
+                bool allowLocal = source != null && IPAddress.TryParse(source.IdnHost.Trim('[', ']'), out var addressIp) && IPAddress.IsLoopback(addressIp);
                 var store = new FavoriteServers(); var all = store.Load().Where(s => s.Id != server?.Id).ToList();
-                all.Add(new(server?.Id ?? Guid.NewGuid().ToString("N"), name, host, port, targetId)); store.Save(all); RefreshServers(); return Task.CompletedTask;
-            }, new("name", T("Название", "Name"), server?.Name ?? ""), new("address", T("Адрес", "Address"), server?.Address ?? ""));
+                all.Add(new(server?.Id ?? Guid.NewGuid().ToString("N"), name, host, port, targetId)
+                {
+                    SyncManifestUrl = source?.AbsoluteUri, AutoSync = automatic.IsChecked, AllowLocalSync = allowLocal
+                });
+                store.Save(all); RefreshServers(); return Task.CompletedTask;
+            }, new("name", T("Название", "Name"), server?.Name ?? ""), addressField, syncField, automatic);
         foreach (var instance in Instances.GetAllInstances())
             DialogChoices.Add(new()
             {
                 Id = instance.Id, Title = instance.Name, Meta = InstanceLabel(instance), Selected = instance.Id == targetId,
                 Action = () =>
                 {
+                    if (targetId != instance.Id) automatic.IsChecked = false;
                     targetId = instance.Id;
                     DialogBody = T("Сборка: ", "Instance: ") + instance.Name;
                     foreach (var row in DialogChoices) { row.Selected = row.Id == targetId; row.Changed(); }

@@ -25,10 +25,16 @@
     <Content Include="Assets/StoreLogo.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets/Mechanica.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets/Mechanica.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../mods/server-sync/dist/*.jar;../../mods/server-sync/dist/manifest.json"
+             Link="bridges/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="RemoveUnusedWebViewWpf" BeforeTargets="ResolveAssemblyReferences">
     <ItemGroup>
       <Reference Remove="@(Reference)" Condition="'%(Reference.Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
     </ItemGroup>
+  </Target>
+  <Target Name="RequireServerSyncBridge" BeforeTargets="Publish">
+    <Error Condition="!Exists('../../mods/server-sync/dist/manifest.json')"
+           Text="Build the server sync bridge with scripts/Build-ServerSyncBridge.ps1 before publishing." />
   </Target>
 </Project>

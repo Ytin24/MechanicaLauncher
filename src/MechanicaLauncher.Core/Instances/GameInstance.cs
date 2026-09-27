@@ -19,6 +19,9 @@ public sealed class GameInstance
     [JsonPropertyName("loaderVersion")]
     public string? LoaderVersion { get; set; }
 
+    [JsonPropertyName("useServerModSync")]
+    public bool UseServerModSync { get; set; }
+
     [JsonPropertyName("javaPath")]
     public string? JavaPath { get; set; }
 

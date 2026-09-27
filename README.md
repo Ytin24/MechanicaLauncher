@@ -25,6 +25,15 @@
 - Учётные записи Microsoft и локальные профили, Discord Rich Presence, сворачивание в трей.
 - Светлая и тёмная темы, русский и английский интерфейс, отключаемые анимации.
 
+## В текущем исходном коде
+
+Изменения после `v4.0.0-beta.1`:
+
+- Распознавание установленных модов по содержимому JAR, включая переименованные и отключённые файлы. Проверка совместимых обновлений Modrinth с резервными копиями.
+- [Mechanica Server Sync](https://github.com/Ytin24/MechanicaServerSync): докачка разрешённых модов сервера, перезапуск игры и повторное подключение. Включается галочкой в настройках конкретной сборки.
+
+[Проверенные версии и ограничения](COMPATIBILITY.md) · [Настройка синхронизации](docs/server-mod-sync.md)
+
 ## Сборки
 
 ![Библиотека сборок в светлой теме](docs/images/instances.png)
@@ -34,5 +43,11 @@
 ![Память и размер окна в настройках сборки](docs/images/instance-settings.png)
 
 Обложка на первом снимке — [Minecraft.net](https://www.minecraft.net/en-us/about-minecraft).
+
+## Сборка из исходников
+
+Клонировать с `git clone https://github.com/Ytin24/MechanicaLauncher.git`. Из папки репозитория выполнить `git submodule update --init --recursive -- mods/server-sync` — эта же команда обновляет мод в существующей копии.
+
+На Windows нужны .NET SDK 9 и 10, JDK 8, 17, 21 и 25. Сначала выполнить `./scripts/Build-ServerSyncBridge.ps1`, затем `dotnet build tests/MechanicaLauncher.Desktop.Tests -c Release`. Настройка Java и варианты мода описаны в [его README](https://github.com/Ytin24/MechanicaServerSync#сборка). Полная сборка, тесты и упаковка выполняются в [CI](.github/workflows/build-release.yml).
 
 [Сообщить об ошибке](https://github.com/Ytin24/MechanicaLauncher/issues)

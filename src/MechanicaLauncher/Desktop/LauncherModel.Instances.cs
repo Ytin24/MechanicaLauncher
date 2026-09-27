@@ -29,6 +29,9 @@ public sealed partial class LauncherModel
     public string EditHeight { get; set; } = "1080";
     public string EditJava { get; set; } = "";
     public string EditJvm { get; set; } = "";
+    private bool editUseServerModSync;
+    public bool EditUseServerModSync { get => editUseServerModSync; set => Set(ref editUseServerModSync, value); }
+    public bool CanEditServerModSync => EditingInstance is { Loader: not LoaderType.None } instance && !Sessions.IsBusy(instance.Id);
     private bool autoJava = true;
     public bool AutoJava { get => autoJava; set { autoJava = value; Changed(); } }
     public bool Advanced { get; set; }
@@ -138,6 +141,7 @@ public sealed partial class LauncherModel
         var i = EditingInstance;
         EditName = i.Name; EditMaxMemory = i.MaxMemoryMb.ToString(); EditMinMemory = i.MinMemoryMb.ToString();
         EditWidth = i.WindowWidth.ToString(); EditHeight = i.WindowHeight.ToString(); EditJava = i.JavaPath ?? ""; AutoJava = string.IsNullOrEmpty(i.JavaPath); EditJvm = i.JvmArgs;
+        EditUseServerModSync = i.UseServerModSync;
         EditAccent = i.AccentColor ?? ""; coverDraft = Instances.GetCoverAbsolutePath(i); iconDraft = Instances.GetIconAbsolutePath(i);
         CoverPreview = MediaCache.LoadLocal(coverDraft); IconPreview = MediaCache.LoadLocal(iconDraft);
         Advanced = false; InstanceTab = "settings"; DetailItems.Clear(); Navigate("instance");
@@ -174,6 +178,7 @@ public sealed partial class LauncherModel
         if (!AutoJava && (!File.Exists(EditJava.Trim()) || !new[] { "java.exe", "javaw.exe" }.Contains(Path.GetFileName(EditJava.Trim()), StringComparer.OrdinalIgnoreCase))) throw new InvalidDataException(T("Выбери существующий java.exe или javaw.exe.", "Choose an existing java.exe or javaw.exe."));
         i.Name = EditName.Trim(); i.MaxMemoryMb = max; i.MinMemoryMb = min; i.WindowWidth = width; i.WindowHeight = height;
         i.JavaPath = AutoJava ? null : Path.GetFullPath(EditJava.Trim()); i.JvmArgs = EditJvm;
+        i.UseServerModSync = i.Loader != LoaderType.None && EditUseServerModSync;
         Instances.SaveInstance(i); EditingInstance = i; Notice(T("Настройки сохранены", "Settings saved")); return Task.CompletedTask;
     });
     public void PickJava() { var file = Platform.PickFile("Java|java.exe;javaw.exe"); if (file != null) { EditJava = file; AutoJava = false; Changed(); } }
@@ -200,7 +205,7 @@ public sealed partial class LauncherModel
         {
             new() { Title = T("Открыть папку", "Open folder"), Action = () => { CloseDialog(); Platform.OpenPath(Instances.GetGameDir(id)); } },
             new() { Title = T("Дублировать", "Duplicate"), Enabled = AllowCreate, Action = () => { CloseDialog(); Run(() => { RequireEventPermission(AllowCreate); if (Sessions.IsBusy(id)) throw new InvalidOperationException(L("feature.busy")); Sessions.Enqueue(T("Дублирование сборки", "Duplicate instance"), id, token => { RequireEventPermission(AllowCreate); token.ThrowIfCancellationRequested(); Instances.DuplicateInstance(id); return Task.CompletedTask; }); Downloads(); return Task.CompletedTask; }); } },
-            new() { Title = T("Экспорт .mrpack", "Export .mrpack"), Action = () => { CloseDialog(); Run(() => { if (Sessions.IsBusy(id)) throw new InvalidOperationException(L("feature.busy")); var path = Platform.SaveFile("Modrinth pack|*.mrpack", instance.Name + ".mrpack"); if (path != null) { Sessions.Enqueue(T("Экспорт сборки", "Export instance"), id, async token => { token.ThrowIfCancellationRequested(); await ModpackInstaller.ExportAsync(instance, Instances, path); }); Downloads(); } return Task.CompletedTask; }); } },
+            new() { Title = T("Экспорт .mrpack", "Export .mrpack"), Action = () => { CloseDialog(); Run(() => { if (Sessions.IsBusy(id)) throw new InvalidOperationException(L("feature.busy")); var path = Platform.SaveFile("Modrinth pack|*.mrpack", instance.Name + ".mrpack"); if (path != null) { Sessions.Enqueue(T("Экспорт сборки", "Export instance"), id, async token => { token.ThrowIfCancellationRequested(); await ModpackInstaller.ExportAsync(instance, Instances, path, token); }); Downloads(); } return Task.CompletedTask; }); } },
             new() { Title = T("Удалить сборку…", "Delete instance…"), Enabled = AllowDelete, Action = () => { CloseDialog(); Run(async () => { RequireEventPermission(AllowDelete); if (await Confirm(T("Удалить сборку?", "Delete instance?"), instance.Name + "\n" + T("Миры, моды и скриншоты будут удалены безвозвратно.", "Worlds, mods and screenshots will be permanently deleted."), T("Удалить", "Delete"), destructive: true)) { RequireEventPermission(AllowDelete); if (Sessions.IsBusy(id)) throw new InvalidOperationException(L("feature.busy")); Instances.DeleteInstance(id); RefreshInstances(); } }); } }
         });
     }

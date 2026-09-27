@@ -25,6 +25,7 @@ internal sealed class LauncherWindowController : NativeWindow, IDisposable
         model.MinimizeRequested = Minimize;
         model.MaximizeRequested = () => { if (window.State == WindowState.Maximized) window.Show(); else window.Maximize(); };
         model.ShowRequested = Show;
+        model.AttentionRequested = Show;
         window.Opened += Opened;
         window.Closing += Closing;
         window.TrayActivated += Show;
@@ -178,7 +179,7 @@ internal sealed class LauncherWindowController : NativeWindow, IDisposable
         window.Opened -= Opened; window.Closing -= Closing;
         window.TrayActivated -= Show; window.TrayContextMenuRequested -= TrayMenu;
         model.Sessions.GameStarted -= GameStarted; model.Sessions.GameExited -= GameExited;
-        model.CloseRequested = null; model.ExitRequested = null; model.MinimizeRequested = null; model.MaximizeRequested = null; model.ShowRequested = null;
+        model.CloseRequested = null; model.ExitRequested = null; model.MinimizeRequested = null; model.MaximizeRequested = null; model.ShowRequested = null; model.AttentionRequested = null;
         if (Handle != 0) ReleaseHandle();
         smallIcon?.Dispose(); largeIcon?.Dispose();
     }

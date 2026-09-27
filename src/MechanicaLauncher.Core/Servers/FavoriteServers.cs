@@ -6,6 +6,9 @@ namespace MechanicaLauncher.Core.Servers;
 
 public sealed record FavoriteServer(string Id, string Name, string Host, int Port, string InstanceId)
 {
+    public string? SyncManifestUrl { get; init; }
+    public bool AutoSync { get; init; }
+    public bool AllowLocalSync { get; init; }
     public string Address => Host.Contains(':') ? $"[{Host}]:{Port}" : Port == 25565 ? Host : $"{Host}:{Port}";
 }
 
@@ -61,5 +64,11 @@ public sealed class FavoriteServers(string? dataDirectory = null)
     private static bool IsValid(FavoriteServer? server) => server != null && !string.IsNullOrWhiteSpace(server.Id) &&
         !string.IsNullOrWhiteSpace(server.Name) && IsValidHost(server.Host) && server.Port is > 0 and <= 65535 &&
         !string.IsNullOrWhiteSpace(server.InstanceId) && server.InstanceId is not ("." or "..") &&
-        server.InstanceId.IndexOfAny(['/', '\\', ':']) < 0;
+        server.InstanceId.IndexOfAny(['/', '\\', ':']) < 0 &&
+        (string.IsNullOrEmpty(server.SyncManifestUrl) || IsValidSyncUrl(server.SyncManifestUrl, server.AllowLocalSync));
+
+    public static bool IsValidSyncUrl(string value, bool allowLocal) => Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+        uri.UserInfo.Length == 0 && uri.Fragment.Length == 0 &&
+        (uri.Scheme == Uri.UriSchemeHttps || allowLocal && uri.Scheme == Uri.UriSchemeHttp &&
+            IPAddress.TryParse(uri.Host, out var address) && IPAddress.IsLoopback(address));
 }

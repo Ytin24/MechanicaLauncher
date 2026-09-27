@@ -108,7 +108,7 @@ internal static class SmokeTests
         }
     }
 
-    private static async Task LaunchAsync(VersionMeta meta, string java, string gameDir, string sharedDir, string vanillaId, int pass)
+    internal static async Task LaunchAsync(VersionMeta meta, string java, string gameDir, string sharedDir, string vanillaId, int pass)
     {
         var logPath = Path.Combine(gameDir, "logs", $"smoke-{pass}.log");
         Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);

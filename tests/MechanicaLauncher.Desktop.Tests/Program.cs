@@ -36,7 +36,44 @@ internal static partial class Program
         SynchronizationContext.SetSynchronizationContext(context);
         try
         {
+            if (args.Contains("--server-sync-smoke")) return ServerSyncSmoke(args, context);
+            if (args.Contains("--server-sync-settings"))
+            {
+                ServerSyncSettingsChecks(context);
+                Console.WriteLine($"PASS {checks} server sync settings checks");
+                Console.WriteLine(output);
+                return 0;
+            }
+            if (args.Contains("--bundled-bridge"))
+            {
+                BundledBridgeChecks(context);
+                Console.WriteLine($"PASS {checks} bundled bridge checks");
+                Console.WriteLine(output);
+                return 0;
+            }
+            if (args.Contains("--bridge-lifecycle"))
+            {
+                GameBridgeLifecycleChecks(context);
+                Console.WriteLine($"PASS {checks} bridge lifecycle checks");
+                Console.WriteLine(output);
+                return 0;
+            }
+            if (args.Contains("--server-sync") || args.Contains("--mod-updates"))
+            {
+                if (args.Contains("--server-sync")) ServerSyncChecks(context);
+                if (args.Contains("--mod-updates")) ModUpdateChecks(context);
+                Console.WriteLine($"PASS {checks} server sync / mod update checks");
+                Console.WriteLine(output);
+                return 0;
+            }
             if (args.Contains("--window")) return WindowChecks(args.Contains("--end-session"));
+            if (args.Contains("--installed-content"))
+            {
+                InstalledContentChecks(context);
+                Console.WriteLine($"PASS {checks} installed content checks");
+                Console.WriteLine(output);
+                return 0;
+            }
             if (args.Contains("--focus"))
             {
                 FocusChecks();
@@ -318,6 +355,12 @@ internal static partial class Program
             ScrollChecks();
             DialogChecks(context);
             TLauncherChecks(context);
+            InstalledContentChecks(context);
+            ServerSyncChecks(context);
+            ModUpdateChecks(context);
+            GameBridgeLifecycleChecks(context);
+            ServerSyncSettingsChecks(context);
+            BundledBridgeChecks(context);
             Console.WriteLine($"PASS {checks} checks");
             Console.WriteLine(output);
             return 0;

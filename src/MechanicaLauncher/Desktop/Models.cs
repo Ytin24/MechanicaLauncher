@@ -46,6 +46,9 @@ public sealed class FieldModel(string id, string label, string value = "") : Obs
     public string Label { get; } = label;
     private string value = value;
     public string Value { get => value; set => Set(ref this.value, value); }
+    public bool IsToggle { get; init; }
+    private bool isChecked;
+    public bool IsChecked { get => isChecked; set => Set(ref isChecked, value); }
 }
 
 public sealed record LauncherPalette(Color Background, Color Surface, Color Hover, Color Border,

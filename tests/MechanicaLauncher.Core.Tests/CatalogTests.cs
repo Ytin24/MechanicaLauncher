@@ -118,9 +118,14 @@ internal static class CatalogTests
             await File.WriteAllTextAsync(Path.Combine(game, "saves", "Chosen", "level.dat"), "world");
             await File.WriteAllTextAsync(Path.Combine(game, "saves", "Untouched", "level.dat"), "other world");
             var bytes = Zip(new() { ["pack.mcmeta"] = "{}" });
-            using var handler = new FakeHttp(_ => Bytes(bytes));
-            using var http = new HttpClient(handler);
-            var installer = new ModInstaller(http);
+            using var handler = new FakeHttp(request =>
+            {
+                Require(request.Method == HttpMethod.Get && new[] { "/shader.zip", "/resourcepack.zip", "/datapack.zip" }
+                    .Contains(request.RequestUri!.AbsolutePath));
+                return Bytes(bytes);
+            });
+            using var http = new HttpClient(handler) { BaseAddress = new Uri("https://example.test") };
+            var installer = new ModInstaller(http, new ModrinthClient(http));
             foreach (var (type, relative) in new[] {
                 ("shader", "shaderpacks"), ("resourcepack", "resourcepacks"), ("datapack", "saves/Chosen/datapacks") })
             {
@@ -131,6 +136,7 @@ internal static class CatalogTests
             }
             Require(!Directory.Exists(Path.Combine(game, "mods")));
             Require(!Directory.Exists(Path.Combine(game, "saves", "Untouched", "datapacks")));
+            Require(handler.Calls == 3);
             Require(await File.ReadAllTextAsync(Path.Combine(game, "saves", "Chosen", "level.dat")) == "world");
             var resource = Path.Combine(game, "resourcepacks", "resourcepack.zip");
             ModInstaller.ToggleMod(resource);
@@ -169,6 +175,149 @@ internal static class CatalogTests
             await Expect<InvalidDataException>(() => new ModInstaller(http, new ModrinthClient(http))
                 .InstallContentAsync(rootVersion, game, "resourcepack", "1.21.1"));
             Require(!Directory.Exists(Path.Combine(game, "resourcepacks")));
+        });
+
+        await check("An installed dependency version is preserved instead of adding a conflicting version", async () =>
+        {
+            foreach (var pinned in new[] { false, true })
+            {
+                var game = Path.Combine(root, "content-existing-dependency-" + pinned);
+                var mods = Directory.CreateDirectory(Path.Combine(game, "mods")).FullName;
+                byte[] oldBytes = [1, 2, 3];
+                var previous = Version("dep-v1", ".jar", oldBytes);
+                var dependency = Version("dep-v2", ".jar", [4, 5, 6]);
+                previous.ProjectId = dependency.ProjectId = "dep";
+                var parent = Version("parent", ".jar", [7, 8, 9]);
+                parent.Dependencies.Add(new() { ProjectId = "dep", VersionId = pinned ? dependency.Id : null, DependencyType = "required" });
+                var existing = Path.Combine(mods, "renamed-dependency.jar");
+                await File.WriteAllBytesAsync(existing, oldBytes);
+                var hash = previous.Files.Single().Hashes["sha1"];
+                using var handler = new FakeHttp(async (request, ct) =>
+                {
+                    if (request.Method == HttpMethod.Get && request.RequestUri!.AbsolutePath == "/v2/version/dep-v2" && pinned)
+                        return new(HttpStatusCode.OK) { Content = JsonContent.Create(dependency) };
+                    if (request.Method == HttpMethod.Get && request.RequestUri!.AbsolutePath == "/v2/project/dep/version" && !pinned)
+                        return new(HttpStatusCode.OK) { Content = JsonContent.Create(new[] { dependency }) };
+                    Require(request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/v2/version_files");
+                    using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+                    Require(body.RootElement.GetProperty("algorithm").GetString() == "sha1");
+                    Require(body.RootElement.GetProperty("hashes").EnumerateArray().Single().GetString() == hash);
+                    return new(HttpStatusCode.OK) { Content = JsonContent.Create(new Dictionary<string, ModrinthVersion> { [hash] = previous }) };
+                });
+                using var http = new HttpClient(handler) { BaseAddress = new Uri("https://example.test") };
+                await Expect<InvalidDataException>(() => new ModInstaller(http, new ModrinthClient(http))
+                    .InstallContentAsync(parent, game, "mod", "1.21.1", "fabric"));
+                Require(handler.Calls == 2 && (await File.ReadAllBytesAsync(existing)).SequenceEqual(oldBytes));
+                Require(Directory.GetFiles(mods, "*", SearchOption.AllDirectories).Single() == existing);
+                Require(Directory.GetDirectories(mods).Length == 0);
+            }
+        });
+
+        await check("A renamed matching dependency is reused without a duplicate download or hash lookup", async () =>
+        {
+            var game = Path.Combine(root, "content-reused-dependency");
+            var mods = Directory.CreateDirectory(Path.Combine(game, "mods")).FullName;
+            byte[] dependencyBytes = [1, 2, 3];
+            byte[] parentBytes = [4, 5, 6];
+            var dependency = Version("dep", ".jar", dependencyBytes);
+            var parent = Version("parent", ".jar", parentBytes);
+            parent.Dependencies.Add(new() { VersionId = dependency.Id, DependencyType = "required" });
+            var existing = Path.Combine(mods, "custom-name.jar");
+            await File.WriteAllBytesAsync(existing, dependencyBytes);
+            using var handler = new FakeHttp(request =>
+            {
+                Require(request.Method == HttpMethod.Get);
+                if (request.RequestUri!.AbsolutePath == "/v2/version/dep")
+                    return new(HttpStatusCode.OK) { Content = JsonContent.Create(dependency) };
+                Require(request.RequestUri.AbsolutePath == "/parent.jar");
+                return Bytes(parentBytes);
+            });
+            using var http = new HttpClient(handler) { BaseAddress = new Uri("https://example.test") };
+            await new ModInstaller(http, new ModrinthClient(http)).InstallContentAsync(parent, game, "mod", "1.21.1", "fabric");
+            Require(handler.Calls == 2 && (await File.ReadAllBytesAsync(existing)).SequenceEqual(dependencyBytes));
+            Require(File.Exists(Path.Combine(mods, "parent.jar")) && !File.Exists(Path.Combine(mods, "dep.jar")));
+            Require(Directory.GetFiles(mods, "*", SearchOption.AllDirectories).Length == 2);
+        });
+
+        await check("A disabled dependency is preserved without installing an enabled duplicate", async () =>
+        {
+            var game = Path.Combine(root, "content-disabled-dependency");
+            var mods = Directory.CreateDirectory(Path.Combine(game, "mods")).FullName;
+            byte[] bytes = [1, 2, 3];
+            var dependency = Version("dep", ".jar", bytes);
+            var parent = Version("parent", ".jar", [4, 5, 6]);
+            parent.Dependencies.Add(new() { VersionId = dependency.Id, DependencyType = "required" });
+            var existing = Path.Combine(mods, "custom-name.jar.disabled");
+            await File.WriteAllBytesAsync(existing, bytes);
+            using var handler = new FakeHttp(request =>
+            {
+                Require(request.Method == HttpMethod.Get && request.RequestUri!.AbsolutePath == "/v2/version/dep");
+                return new(HttpStatusCode.OK) { Content = JsonContent.Create(dependency) };
+            });
+            using var http = new HttpClient(handler) { BaseAddress = new Uri("https://example.test") };
+            await Expect<InvalidDataException>(() => new ModInstaller(http, new ModrinthClient(http))
+                .InstallContentAsync(parent, game, "mod", "1.21.1", "fabric"));
+            Require(handler.Calls == 1 && (await File.ReadAllBytesAsync(existing)).SequenceEqual(bytes));
+            Require(Directory.GetFiles(mods, "*", SearchOption.AllDirectories).Single() == existing);
+        });
+
+        await check("Verified installed content can be reinstalled offline beside unknown files", async () =>
+        {
+            var game = Path.Combine(root, "content-offline-reinstall");
+            var mods = Directory.CreateDirectory(Path.Combine(game, "mods")).FullName;
+            byte[] bytes = [1, 2, 3];
+            var version = Version("existing", ".jar", bytes);
+            await File.WriteAllBytesAsync(Path.Combine(mods, "existing.jar"), bytes);
+            await File.WriteAllBytesAsync(Path.Combine(mods, "manual.jar"), [4, 5, 6]);
+            using var handler = new FakeHttp(_ => throw new Exception("Unexpected offline request"));
+            using var http = new HttpClient(handler) { BaseAddress = new Uri("https://example.test") };
+            await new ModInstaller(http, new ModrinthClient(http)).InstallContentAsync(version, game, "mod", "1.21.1", "fabric");
+            Require(handler.Calls == 0 && Directory.GetFiles(mods).Length == 2);
+        });
+
+        await check("Failed installed-version lookup leaves existing files untouched and downloads nothing", async () =>
+        {
+            var game = Path.Combine(root, "content-lookup-failed");
+            var mods = Directory.CreateDirectory(Path.Combine(game, "mods")).FullName;
+            var existing = Path.Combine(mods, "old-dependency.jar");
+            byte[] bytes = [1, 2, 3];
+            await File.WriteAllBytesAsync(existing, bytes);
+            var version = Version("new", ".jar", [4, 5, 6]);
+            using var handler = new FakeHttp(request =>
+            {
+                Require(request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/v2/version_files");
+                return new(HttpStatusCode.ServiceUnavailable);
+            });
+            using var http = new HttpClient(handler) { BaseAddress = new Uri("https://example.test") };
+            await Expect<HttpRequestException>(() => new ModInstaller(http, new ModrinthClient(http))
+                .InstallContentAsync(version, game, "mod", "1.21.1", "fabric"));
+            Require(handler.Calls == 1 && (await File.ReadAllBytesAsync(existing)).SequenceEqual(bytes));
+            Require(Directory.GetFiles(mods, "*", SearchOption.AllDirectories).Single() == existing);
+        });
+
+        await check("Unrelated installed ZIP projects do not conflict with a new resourcepack", async () =>
+        {
+            var game = Path.Combine(root, "content-unrelated-zip");
+            var packs = Directory.CreateDirectory(Path.Combine(game, "resourcepacks")).FullName;
+            byte[] oldBytes = [1, 2, 3];
+            byte[] newBytes = [4, 5, 6];
+            var previous = Version("shader", ".zip", oldBytes);
+            previous.Loaders = ["iris"];
+            var existing = Path.Combine(packs, "shader.zip");
+            await File.WriteAllBytesAsync(existing, oldBytes);
+            using var handler = new FakeHttp(request =>
+            {
+                if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/v2/version_files")
+                    return new(HttpStatusCode.OK) { Content = JsonContent.Create(new Dictionary<string, ModrinthVersion> {
+                        [previous.Files.Single().Hashes["sha1"]] = previous }) };
+                Require(request.Method == HttpMethod.Get && request.RequestUri!.AbsolutePath == "/pack.zip");
+                return Bytes(newBytes);
+            });
+            using var http = new HttpClient(handler) { BaseAddress = new Uri("https://example.test") };
+            await new ModInstaller(http, new ModrinthClient(http))
+                .InstallContentAsync(Version("pack", ".zip", newBytes), game, "resourcepack", "1.21.1");
+            Require(handler.Calls == 2 && (await File.ReadAllBytesAsync(existing)).SequenceEqual(oldBytes));
+            Require((await File.ReadAllBytesAsync(Path.Combine(packs, "pack.zip"))).SequenceEqual(newBytes));
         });
 
         await check("Failed hash verification preserves the previous resourcepack", async () =>

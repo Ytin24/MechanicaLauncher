@@ -59,6 +59,7 @@ public sealed partial class LauncherModel : ObservableModel, IDisposable
     public bool AllowCreate => Sessions.Events.Active?.Ui?.AllowInstanceCreate != false;
     public bool AllowDelete => Sessions.Events.Active?.Ui?.AllowInstanceDelete != false;
     public bool AllowModToggle => Sessions.Events.Active?.Ui?.AllowModToggle != false;
+    public bool AllowModInstall => Sessions.Events.Active?.Ui?.AllowModInstall != false;
     public bool AllowLog => Sessions.Events.Active?.Ui?.ShowLogPanel != false;
     public bool DialogOpen { get; private set; }
     public string DialogTitle { get; private set; } = "";
@@ -82,6 +83,7 @@ public sealed partial class LauncherModel : ObservableModel, IDisposable
         }
     }
     public ObservableCollection<FieldModel> DialogFields { get; } = [];
+    public float DialogFieldsHeight => DialogFields.Sum(item => item.IsToggle ? 50 : 88);
     public ObservableCollection<ItemModel> DialogChoices { get; } = [];
     private Func<Task>? dialogAction;
     private TaskCompletionSource<bool>? dialogCompletion;
@@ -110,14 +112,18 @@ public sealed partial class LauncherModel : ObservableModel, IDisposable
     public string RuntimeStatus => TLauncherBlocked ? T("Проверка TLauncher", "TLauncher check") : Sessions.RunningCount > 0 ? T("Minecraft запущен", "Minecraft is running") : "";
     public CancellationToken PageToken => pageLifetime.Token;
 
-    public LauncherModel(LauncherSettings settings, InstanceManager? instances = null, ModrinthClient? catalog = null)
+    public LauncherModel(LauncherSettings settings, InstanceManager? instances = null, ModrinthClient? catalog = null, ModUpdateService? modUpdates = null)
     {
         Settings = settings;
         Instances = instances ?? new();
         CatalogClient = catalog ?? new();
+        contentIndex = new(CatalogClient);
+        this.modUpdates = modUpdates ?? new(CatalogClient);
         Locale.Init(settings.Language);
         Sessions = new(settings, Instances);
+        Sessions.ConfirmServerSync = ConfirmServerSyncOnUi;
         Sessions.Changed += OnSessionChanged;
+        Sessions.Downloads.Changed += OnSessionChanged;
         InstancesChangedHandler = () => Dispatch(() => { if (!disposed) RefreshInstances(); });
         InstanceManager.InstancesChanged += InstancesChangedHandler;
         RefreshInstances();
@@ -133,7 +139,7 @@ public sealed partial class LauncherModel : ObservableModel, IDisposable
         Dispatch(() =>
         {
             Interlocked.Exchange(ref sessionRefreshPending, 0);
-            if (!disposed) { if (Page == "downloads") RefreshDownloads(); Changed(); }
+            if (!disposed) { RefreshCompletedContent(); if (Page == "downloads") RefreshDownloads(); Changed(); }
         });
     }
     public void Notice(string message, bool error = false) { Message = CrashAnalyzer.Redact(message, [Settings.AccessToken, Settings.MsRefreshToken]); Error = error; Changed(); }
@@ -200,7 +206,7 @@ public sealed partial class LauncherModel : ObservableModel, IDisposable
         await Launch(instance);
     });
     private Task Launch(GameInstance instance, string? server = null, int? port = null) => TLauncherBlocked ? Task.CompletedTask : Sessions.LaunchAsync(instance, server, port,
-        (text) => Confirm(L("compat.launch"), text, L("compat.continue")));
+        ConfirmCompatibilityOnUi);
     public void OpenSelectedFolder() { if (SelectedInstance != null) Platform.OpenPath(Instances.GetGameDir(SelectedInstance.Id)); }
     public void SelectedDetails() { if (SelectedInstance != null) EditInstance(SelectedInstance.Id); else NewInstance(); }
     public void SelectInstance()
@@ -282,9 +288,11 @@ public sealed partial class LauncherModel : ObservableModel, IDisposable
         tlauncherLifetime.Cancel(); tlauncherLifetime.Dispose();
         pageLifetime.Cancel(); pageLifetime.Dispose(); catalogCancellation?.Cancel(); catalogCancellation?.Dispose(); skinBitmap?.Dispose();
         searchDelay?.Cancel(); searchDelay?.Dispose();
+        contentCancellation?.Cancel(); contentCancellation?.Dispose();
+        modUpdateCancellation?.Cancel(); modUpdateCancellation?.Dispose();
         foreach (var snapshot in skinUndo) snapshot.Dispose();
         dialogCompletion?.TrySetResult(false);
         InstanceManager.InstancesChanged -= InstancesChangedHandler;
-        Sessions.Changed -= OnSessionChanged; Sessions.Dispose();
+        Sessions.Changed -= OnSessionChanged; Sessions.Downloads.Changed -= OnSessionChanged; Sessions.Dispose();
     }
 }

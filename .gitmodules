@@ -1,0 +1,3 @@
+[submodule "server-sync"]
+	path = mods/server-sync
+	url = https://github.com/Ytin24/MechanicaServerSync.git

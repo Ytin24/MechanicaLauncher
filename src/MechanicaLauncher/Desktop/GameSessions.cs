@@ -5,10 +5,11 @@ using MechanicaLauncher.Core.Game;
 using MechanicaLauncher.Core.Mods;
 using MechanicaLauncher.Core.Models;
 using MechanicaLauncher.Core.Config;
+using MechanicaLauncher.Core.Servers;
 
 namespace MechanicaLauncher.Desktop;
 
-public sealed class GameSessions(LauncherSettings settings, InstanceManager instances) : IDisposable
+public sealed partial class GameSessions(LauncherSettings settings, InstanceManager instances) : IDisposable
 {
     private readonly SemaphoreSlim preparationGate = new(1, 1);
     private readonly ConcurrentDictionary<string, Process> running = new();
@@ -33,7 +34,7 @@ public sealed class GameSessions(LauncherSettings settings, InstanceManager inst
         try { return !process.HasExited; }
         catch (InvalidOperationException) { return false; }
     }
-    public bool IsBusy(string id) => preparingId == id || IsRunning(id) || Downloads.Jobs.Any(j => j.InstanceId == id && j.State is DownloadState.Queued or DownloadState.Running);
+    public bool IsBusy(string id) => preparingId == id || running.ContainsKey(id) || IsSyncBusy(id) || Downloads.Jobs.Any(j => j.InstanceId == id && j.State is DownloadState.Queued or DownloadState.Running);
     public void Cancel() => preparation?.Cancel();
     private void Report(string status, double progress = 0) { Status = status; Progress = Math.Clamp(progress, 0, 100); Changed?.Invoke(); }
     public void Stop(string id)
@@ -45,20 +46,25 @@ public sealed class GameSessions(LauncherSettings settings, InstanceManager inst
             catch { stopped.TryRemove(id, out _); throw; }
         }
     }
-    public DownloadJob Enqueue(string title, string? instanceId, Func<CancellationToken, Task> work) => Downloads.Enqueue(title, instanceId, async token =>
+    public DownloadJob Enqueue(string title, string? instanceId, Func<CancellationToken, Task> work) => EnqueueCore(title, instanceId, work, false);
+    private DownloadJob EnqueueCore(string title, string? instanceId, Func<CancellationToken, Task> work, bool serverSync) => Downloads.Enqueue(title, instanceId, async token =>
     {
         await preparationGate.WaitAsync(token);
         try
         {
-            if (instanceId != null && IsRunning(instanceId)) throw new InvalidOperationException(Locale.Get("feature.busy"));
+            if (instanceId != null && (IsRunning(instanceId) || !serverSync && IsSyncBusy(instanceId))) throw new InvalidOperationException(Locale.Get("feature.busy"));
             preparingId = instanceId ?? "import"; preparation = DownloadQueue.CurrentCancellation; Changed?.Invoke();
             await work(token);
         }
         finally { preparingId = null; preparation = null; preparationGate.Release(); Changed?.Invoke(); }
     });
-    public async Task LaunchAsync(GameInstance instance, string? server, int? port, Func<string, Task<bool>> confirmCompatibility)
+    public Task LaunchAsync(GameInstance instance, string? server, int? port, Func<string, Task<bool>> confirmCompatibility) =>
+        LaunchCoreAsync(instance, server, port, confirmCompatibility, false);
+
+    private async Task LaunchCoreAsync(GameInstance instance, string? server, int? port, Func<string, Task<bool>> confirmCompatibility, bool syncRestart)
     {
-        if (IsRunning(instance.Id) || !await preparationGate.WaitAsync(0)) throw new InvalidOperationException(Locale.Get("feature.busy"));
+        ObjectDisposedException.ThrowIf(syncLifetime.IsCancellationRequested, this);
+        if (running.ContainsKey(instance.Id) || IsSyncBusy(instance.Id) || !await preparationGate.WaitAsync(0)) throw new InvalidOperationException(Locale.Get("feature.busy"));
         using var cancellation = new CancellationTokenSource();
         var token = cancellation.Token;
         using var tracking = Downloads.Track(instance.Name, instance.Id, cancellation, () => _ = RetryLaunch());
@@ -70,10 +76,14 @@ public sealed class GameSessions(LauncherSettings settings, InstanceManager inst
         preparation = cancellation; preparingId = instance.Id;
         var session = Discord.BeginPreparation(instance);
         TextWriter? log = null;
+        BridgeRun? unboundBridge = null;
         try
         {
             Report(Locale.Get("home.loading"));
             var gameDir = instances.GetGameDir(instance.Id);
+            await new ServerModSync().RecoverAsync(gameDir, token);
+            await new ModUpdateService().RecoverAsync(gameDir, () => IsRunning(instance.Id), token);
+            await InstallBundledBridgeAsync(instance, gameDir, token);
             Directory.CreateDirectory(Path.Combine(gameDir, "logs"));
             log = TextWriter.Synchronized(new StreamWriter(Path.Combine(gameDir, "logs", "launcher-latest.log")) { AutoFlush = true });
             log.WriteLine($"{DateTimeOffset.Now:O} {instance.Name} · {instance.McVersion} · {instance.Loader}");
@@ -136,10 +146,18 @@ public sealed class GameSessions(LauncherSettings settings, InstanceManager inst
             }
             token.ThrowIfCancellationRequested();
             var eventServer = Events.Active?.Server;
+            unboundBridge = instance.UseServerModSync ? CreateBridgeRun(instance, syncRestart) : null;
             var process = new GameLauncher(gameDir, instances.SharedDir).Launch(meta, java, settings.Username, settings.Uuid,
                 settings.AuthMode == "microsoft" ? settings.AccessToken : "0", instance.MinMemoryMb, instance.MaxMemoryMb, instance.JvmArgs,
                 instance.WindowWidth, instance.WindowHeight, modded ? instance.McVersion : null,
-                server ?? (eventServer?.AutoConnect == true ? eventServer.Host : null), port ?? (eventServer?.AutoConnect == true ? eventServer.Port : null));
+                server ?? (eventServer?.AutoConnect == true ? eventServer.Host : null), port ?? (eventServer?.AutoConnect == true ? eventServer.Port : null),
+                unboundBridge?.Session.Environment);
+            var bridge = unboundBridge;
+            try { bridge?.Session.BindProcess(process); }
+            catch { try { process.Kill(entireProcessTree: true); } finally { process.Dispose(); } throw; }
+            unboundBridge = null;
+            if (bridge != null) bridges[instance.Id] = bridge.Session;
+            int processId = process.Id;
             int modCount = Directory.Exists(Path.Combine(gameDir, "mods")) ? Directory.GetFiles(Path.Combine(gameDir, "mods"), "*.jar").Length : 0;
             Discord.GameStarted(session, modCount);
             lines.Clear();
@@ -158,17 +176,21 @@ public sealed class GameSessions(LauncherSettings settings, InstanceManager inst
             process.ErrorDataReceived += (_, e) => Append(e.Data);
             running[instance.Id] = process;
             process.BeginOutputReadLine(); process.BeginErrorReadLine();
+            ProcessStarted?.Invoke(instance.Id, processId);
             var latest = instances.GetInstance(instance.Id);
             if (latest != null) { latest.LastPlayed = DateTime.UtcNow; instances.SaveInstance(latest); }
             tracking.Job.Complete(); Report(Locale.CurrentLanguage == "ru" ? "Minecraft запущен" : "Minecraft is running", 100); GameStarted?.Invoke();
             _ = Task.Run(async () =>
             {
+                int code = -1;
+                bool wasStopped = false;
                 try
                 {
                     await process.WaitForExitAsync();
                     process.WaitForExit();
-                    int code = process.ExitCode;
-                    if (!stopped.TryRemove(instance.Id, out _) && code != 0)
+                    code = process.ExitCode;
+                    wasStopped = stopped.TryRemove(instance.Id, out _);
+                    if (!wasStopped && code != 0)
                     {
                         var report = CrashAnalyzer.Analyze(string.Join("\n", crashLines), code, [settings.AccessToken, settings.MsRefreshToken]);
                         CrashAnalyzer.SaveReport(gameDir, report);
@@ -179,8 +201,17 @@ public sealed class GameSessions(LauncherSettings settings, InstanceManager inst
                 catch (Exception ex) { Report(ex.Message); }
                 finally
                 {
-                    running.TryRemove(instance.Id, out _); writer.Dispose(); process.Dispose();
-                    Discord.EndSession(session); Changed?.Invoke(); GameExited?.Invoke();
+                    writer.Dispose(); process.Dispose();
+                    if (bridge != null)
+                    {
+                        bridges.TryRemove(new KeyValuePair<string, GameBridgeSession>(instance.Id, bridge.Session)); bridge.Session.Dispose();
+                    }
+                    running.TryRemove(new KeyValuePair<string, Process>(instance.Id, process));
+                    ProcessExited?.Invoke(instance.Id, processId, code);
+                    Discord.EndSession(session);
+                    bool restarted = bridge != null && await CompleteBridgeAsync(bridge, instance, code, wasStopped, confirmCompatibility);
+                    Changed?.Invoke();
+                    if (!restarted) GameExited?.Invoke();
                 }
             });
         }
@@ -188,9 +219,9 @@ public sealed class GameSessions(LauncherSettings settings, InstanceManager inst
         catch (Exception ex) { tracking.Job.Fail(ex); Report(ex.Message); throw; }
         finally
         {
-            log?.Dispose(); Discord.EndPreparation(session); preparingId = null; preparation = null;
+            unboundBridge?.Session.Dispose(); log?.Dispose(); Discord.EndPreparation(session); preparingId = null; preparation = null;
             preparationGate.Release(); Changed?.Invoke();
         }
     }
-    public void Dispose() { Cancel(); Discord.Dispose(); }
+    public void Dispose() { syncLifetime.Cancel(); foreach (var bridge in bridges.Values) bridge.Dispose(); Cancel(); Discord.Dispose(); }
 }

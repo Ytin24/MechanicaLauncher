@@ -22,6 +22,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout server sync bridge
+        run: |
+          git submodule update --init --recursive -- mods/server-sync
+          if ($LASTEXITCODE -ne 0) { throw 'Server sync checkout failed' }
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            17
+            25
+            21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build server sync bridge
+        run: ./scripts/Build-ServerSyncBridge.ps1
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
@@ -138,6 +157,14 @@ jobs:
             MechanicaLauncher-x64-portable.zip
             output/MechanicaLauncher-*-setup.exe
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MechanicaServerSync
+          if-no-files-found: error
+          path: |
+            mods/server-sync/dist/*.jar
+            mods/server-sync/dist/manifest.json
+
       - name: Upload failed UI snapshots
         if: failure()
         uses: actions/upload-artifact@v4
@@ -168,3 +195,4 @@ jobs:
           files: |
             artifacts/MechanicaLauncher-x64/MechanicaLauncher-x64-portable.zip
             artifacts/MechanicaLauncher-x64/output/MechanicaLauncher-*-setup.exe
+            artifacts/MechanicaServerSync/*.jar

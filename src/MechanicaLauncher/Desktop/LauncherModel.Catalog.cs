@@ -16,6 +16,8 @@ public sealed partial class LauncherModel
         {
             if (!Set(ref query, value) || Page != "catalog") return;
             searchDelay?.Cancel(); searchDelay?.Dispose();
+            searchDelay = null;
+            if (InstalledOnly) { RenderInstalled(); return; }
             searchDelay = CancellationTokenSource.CreateLinkedTokenSource(PageToken);
             var token = searchDelay.Token;
             Run(async () => { await Task.Delay(350, token); token.ThrowIfCancellationRequested(); await SearchAsync(false); });
@@ -31,18 +33,19 @@ public sealed partial class LauncherModel
     public bool InstalledOnly { get; private set; }
     public bool MoreCatalog { get; private set; }
     public bool HasCatalogFilters => !string.IsNullOrWhiteSpace(Query) || !InstalledOnly && category != null;
-    public string CatalogEmptyTitle => CatalogLoading ? T("Ищу дополнения", "Searching for extras")
-        : CatalogFailed ? T("Каталог недоступен", "Catalog unavailable")
+    public string CatalogEmptyTitle => CatalogLoading ? InstalledOnly ? T("Читаю установленные файлы", "Reading installed files") : T("Ищу дополнения", "Searching for extras")
+        : CatalogFailed ? InstalledOnly ? T("Не удалось прочитать файлы", "Could not read files") : T("Каталог недоступен", "Catalog unavailable")
         : InstalledOnly && SelectedInstance == null ? T("Нужна сборка для установки", "Choose an instance first")
         : InstalledOnly && NeedsWorld && World == null ? T("В какой мир добавить датапаки?", "Which world needs datapacks?")
         : InstalledOnly && !HasCatalogFilters ? T("Здесь пока пусто", "Nothing installed yet")
         : T("Ничего не нашлось", "No results found");
-    public string CatalogEmptyHint => CatalogLoading ? T("Загружаю результаты с Modrinth…", "Loading results from Modrinth…")
+    public string CatalogEmptyHint => InstalledOnly && (CatalogLoading || CatalogFailed) ? ""
+        : CatalogLoading ? T("Загружаю результаты с Modrinth…", "Loading results from Modrinth…")
         : CatalogFailed ? T("Проверь подключение или повтори чуть позже. Фильтры поиска сохранены.", "Check your connection or try again later. Your search filters are saved.")
         : InstalledOnly && SelectedInstance == null ? T("Создай сборку или выбери существующую — дополнения устанавливаются отдельно для каждой.", "Create or select an instance. Each instance has its own extras.")
         : InstalledOnly && NeedsWorld && World == null ? T("Датапаки хранятся внутри мира. Если миров ещё нет, сначала создай мир в Minecraft.", "Datapacks belong to a world. Create a world in Minecraft first if you don't have one.")
         : InstalledOnly && !HasCatalogFilters ? T("Выбери дополнение в каталоге. После установки оно появится здесь.", "Choose an extra in Discover. It will appear here after installation.")
-        : InstalledOnly ? T("Попробуй другое название файла или сбрось поиск.", "Try another file name or clear the search.")
+        : InstalledOnly ? T("Попробуй другое название или имя файла.", "Try another name or file name.")
         : HasCatalogFilters ? T("Попробуй другое название или сбрось поиск и категорию. Версия Minecraft останется прежней.", "Try another name or clear the search and category. Your Minecraft version filter will stay as selected.")
         : T("Для выбранной версии и типа дополнений результатов нет. Можно выбрать другую сборку или изменить фильтры.", "No results for this version and content type. Choose another instance or change the filters.");
     public string CatalogEmptyAction => CatalogLoading ? "" : CatalogFailed ? T("Повторить", "Retry")
@@ -85,7 +88,7 @@ public sealed partial class LauncherModel
     public string WorldLabel => World ?? T("Выбрать мир", "Choose world");
     public bool NeedsWorld => (Page == "project" ? projectType : ContentType) == "datapack";
     private DownloadJob? installJob;
-    private enum InstallRequirement { Ready, Loading, Retry, Queued, Permission, Instance, Loader, Busy, Version, World }
+    private enum InstallRequirement { Ready, Loading, Retry, Queued, Permission, Instance, Loader, Busy, Version, World, Index, Installed, Disabled, OtherVersion }
     private InstallRequirement RequiredForInstall => ProjectLoading ? InstallRequirement.Loading : ProjectFailed ? InstallRequirement.Retry
         : installJob?.State is DownloadState.Queued or DownloadState.Running ? InstallRequirement.Queued
         : Sessions.Events.Active?.Ui?.AllowModInstall == false || projectType == "modpack" && !AllowCreate ? InstallRequirement.Permission
@@ -93,7 +96,9 @@ public sealed partial class LauncherModel
         : projectType == "mod" && SelectedInstance?.Loader == LoaderType.None ? InstallRequirement.Loader
         : projectType != "modpack" && SelectedInstance != null && Sessions.IsBusy(SelectedInstance.Id) ? InstallRequirement.Busy
         : selectedVersion == null ? InstallRequirement.Version
-        : NeedsWorld && World == null ? InstallRequirement.World : InstallRequirement.Ready;
+        : NeedsWorld && World == null ? InstallRequirement.World
+        : contentScanning ? InstallRequirement.Loading
+        : contentIndexFailed ? InstallRequirement.Index : InstalledRequirement;
     public bool CanInstall => RequiredForInstall == InstallRequirement.Ready;
     public string InstallHint => RequiredForInstall switch
     {
@@ -106,6 +111,9 @@ public sealed partial class LauncherModel
         InstallRequirement.Busy => T("Сборка занята. Заверши игру или дождись окончания её загрузок.", "This instance is busy. Close the game or wait for its downloads to finish."),
         InstallRequirement.Version => T("У проекта нет подходящего файла для выбранной версии Minecraft и загрузчика.", "This project has no compatible file for the selected Minecraft version and loader."),
         InstallRequirement.World => T("Выбери мир, в который нужно установить датапак.", "Choose the world where this datapack should be installed."),
+        InstallRequirement.Index => T("Не удалось прочитать установленные файлы.", "Could not read installed files."),
+        InstallRequirement.Disabled => T("Дополнение отключено в сборке.", "This extra is disabled in the instance."),
+        InstallRequirement.OtherVersion => T("Установлена другая версия", "Another version is installed") + (InstalledProject?.DisplayVersion is { Length: > 0 } version ? ": " + version : "."),
         _ => ""
     };
     public string InstallHelpLabel => RequiredForInstall switch
@@ -116,9 +124,17 @@ public sealed partial class LauncherModel
         InstallRequirement.Version => projectType == "modpack" ? T("В каталог", "Discover") : T("Сменить сборку", "Change instance"),
         InstallRequirement.Busy => T("На главную", "Home"),
         InstallRequirement.World => T("Выбрать мир", "Choose world"),
+        InstallRequirement.Index => T("Повторить", "Retry"),
+        InstallRequirement.Disabled or InstallRequirement.OtherVersion => T("К установленным", "Installed extras"),
         _ => ""
     };
-    public string InstallLabel => installJob?.State is DownloadState.Queued or DownloadState.Running ? T("В очереди загрузок", "In download queue") : T("Установить", "Install");
+    public string InstallLabel => RequiredForInstall switch
+    {
+        InstallRequirement.Queued => T("В очереди загрузок", "In download queue"),
+        InstallRequirement.Installed or InstallRequirement.OtherVersion => T("Установлено", "Installed"),
+        InstallRequirement.Disabled => T("Отключено", "Disabled"),
+        _ => T("Установить", "Install")
+    };
     public void ResolveInstallRequirement()
     {
         switch (RequiredForInstall)
@@ -129,6 +145,8 @@ public sealed partial class LauncherModel
             case InstallRequirement.Version: if (projectType == "modpack") Catalog(); else SelectInstance(); break;
             case InstallRequirement.Busy: Home(); break;
             case InstallRequirement.World: ChooseWorld(); break;
+            case InstallRequirement.Index: Run(() => RefreshContentIndexAsync(true)); break;
+            case InstallRequirement.Disabled or InstallRequirement.OtherVersion: OpenInstalledProject(); break;
         }
     }
 
@@ -139,8 +157,8 @@ public sealed partial class LauncherModel
         Search(); Changed();
     }
     public void ShowCatalog() { InstalledOnly = false; Search(); }
-    public void ShowInstalled() { InstalledOnly = true; Search(); }
-    public void Search() { searchDelay?.Cancel(); Run(() => SearchAsync(false)); }
+    public void ShowInstalled() { if (ContentType == "modpack") return; InstalledOnly = true; Search(); }
+    public void Search() { searchDelay?.Cancel(); Run(() => SearchAsync(false, true)); }
     public void LoadMoreCatalog() => Run(() => SearchAsync(true));
     public void RetryCatalog() => Run(() => SearchAsync(CatalogItems.Count > 0));
     public void ClearCatalogFilters() { query = ""; category = null; Search(); Changed(); }
@@ -159,25 +177,27 @@ public sealed partial class LauncherModel
         if (InstalledOnly || catalogSelection != CurrentCatalogSelection || CatalogLoading) { Search(); return; }
         foreach (var row in CatalogItems.Where(row => !row.HasImage))
             if (catalogIcons.TryGetValue(row.Id, out var url)) LoadRemoteImage(row, url, PageToken);
+        Run(() => RefreshContentIndexAsync(true));
     }
     private void LeaveCatalog()
     {
         ++catalogGeneration; catalogCancellation?.Cancel(); CatalogLoading = false;
         if (catalogSelection != null) CatalogStatus = catalogResultStatus;
     }
-    public async Task SearchAsync(bool append = false)
+    public async Task SearchAsync(bool append = false, bool refreshInstalled = false)
     {
         if (Page != "catalog") return;
         searchDelay?.Cancel();
         if (append && catalogSelection != CurrentCatalogSelection) append = false;
-        if (InstalledOnly) { LoadInstalled(); return; }
+        if (InstalledOnly) { await LoadInstalledAsync(refreshInstalled); return; }
         if (append && (CatalogLoading || !MoreCatalog && !CatalogFailed)) return;
         catalogCancellation?.Cancel(); catalogCancellation?.Dispose();
         catalogCancellation = CancellationTokenSource.CreateLinkedTokenSource(PageToken);
         var token = catalogCancellation.Token; int generation = ++catalogGeneration;
         var selection = CurrentCatalogSelection;
         string previousStatus = CatalogStatus;
-        if (!append) { catalogSelection = null; catalogOffset = 0; CatalogItems.Clear(); catalogIcons.Clear(); MoreCatalog = false; }
+        if (!append) { catalogSelection = null; catalogOffset = 0; CatalogItems.Clear(); catalogIcons.Clear(); catalogDetails.Clear(); MoreCatalog = false; }
+        Run(() => RefreshContentIndexAsync(refreshInstalled));
         CatalogLoading = true; CatalogFailed = false;
         CatalogStatus = append ? T("Загружаю ещё…", "Loading more…") : T("Ищу дополнения…", "Searching…"); Changed();
         string type = ContentType;
@@ -191,13 +211,14 @@ public sealed partial class LauncherModel
             foreach (var hit in result.Hits)
             {
                 if (CatalogItems.Any(item => item.Id == hit.ProjectId)) continue;
+                string details = hit.Author + " · " + hit.DownloadsFormatted + T(" загрузок", " downloads");
                 var row = new ItemModel
                 {
                     Id = hit.ProjectId, Title = hit.Title, Description = hit.Description,
-                    Meta = hit.Author + " · " + hit.DownloadsFormatted + T(" загрузок", " downloads"),
+                    Meta = CatalogContentMeta(hit.ProjectId, details),
                     Primary = T("Подробнее", "View project"), Action = () => OpenProject(hit, type, minecraft)
                 };
-                CatalogItems.Add(row); catalogIcons[row.Id] = hit.IconUrl; LoadRemoteImage(row, hit.IconUrl, token);
+                CatalogItems.Add(row); catalogDetails[row.Id] = details; catalogIcons[row.Id] = hit.IconUrl; LoadRemoteImage(row, hit.IconUrl, token);
             }
             catalogOffset += result.Hits.Count; MoreCatalog = catalogOffset < result.TotalHits;
             catalogSelection = selection;
@@ -244,28 +265,8 @@ public sealed partial class LauncherModel
         if (SelectedInstance == null) { SelectInstance(); return; }
         string saves = Path.Combine(Instances.GetGameDir(SelectedInstance.Id), "saves");
         var worlds = Directory.Exists(saves) ? Directory.GetDirectories(saves).Where(path => File.Exists(Path.Combine(path, "level.dat"))) : [];
-        ShowChoices(T("Мир для датапака", "Datapack world"), worlds.Select(path => new ItemModel { Id = path, Title = Path.GetFileName(path), Action = () => { World = Path.GetFileName(path); CloseDialog(); if (InstalledOnly) LoadInstalled(); Changed(); } }));
+        ShowChoices(T("Мир для датапака", "Datapack world"), worlds.Select(path => new ItemModel { Id = path, Title = Path.GetFileName(path), Action = () => { World = Path.GetFileName(path); CloseDialog(); Run(() => RefreshContentIndexAsync(true)); Changed(); } }));
         DialogBody = T("Если список пуст, сначала создай мир в Minecraft.", "If the list is empty, create a world in Minecraft first."); Changed();
-    }
-    private void LoadInstalled()
-    {
-        catalogCancellation?.Cancel(); ++catalogGeneration; catalogSelection = null;
-        CatalogLoading = false; CatalogFailed = false; MoreCatalog = false; CatalogItems.Clear(); catalogIcons.Clear();
-        if (SelectedInstance is not { } instance) { CatalogStatus = T("Сначала выбери сборку", "Select an instance first"); Changed(); return; }
-        if (ContentType == "modpack") { InstalledOnly = false; Search(); return; }
-        if (NeedsWorld && World == null) { CatalogStatus = T("Выбери мир для датапаков", "Choose a world for datapacks"); Changed(); return; }
-        var directory = ModInstaller.GetContentDirectory(Instances.GetGameDir(instance.Id), ContentType, World);
-        foreach (var mod in ModInstaller.GetInstalledMods(directory, ContentType == "mod" ? ".jar" : ".zip").Where(m => m.FileName.Contains(Query, StringComparison.OrdinalIgnoreCase)))
-        {
-            CatalogItems.Add(new()
-            {
-                Id = mod.FilePath, Title = mod.FileName, Meta = mod.SizeFormatted, Description = mod.Enabled ? T("Включено", "Enabled") : T("Отключено", "Disabled"),
-                Primary = mod.Enabled ? T("Отключить", "Disable") : T("Включить", "Enable"), Secondary = T("Удалить", "Remove"), Enabled = AllowModToggle,
-                Action = () => Run(() => { RequireEventPermission(AllowModToggle); if (Sessions.IsBusy(instance.Id)) throw new InvalidOperationException(L("feature.busy")); ModInstaller.ToggleMod(mod.FilePath); LoadInstalled(); return Task.CompletedTask; }),
-                Action2 = () => Run(async () => { RequireEventPermission(AllowModToggle); if (await Confirm(T("Удалить файл?", "Delete file?"), mod.FileName, T("Удалить", "Delete"), destructive: true)) { RequireEventPermission(AllowModToggle); if (Sessions.IsBusy(instance.Id)) throw new InvalidOperationException(L("feature.busy")); ModInstaller.RemoveMod(mod.FilePath); LoadInstalled(); } })
-            });
-        }
-        CatalogStatus = T($"Установлено: {CatalogItems.Count}", $"Installed: {CatalogItems.Count}"); Changed();
     }
     public void CatalogFolder() { if (SelectedInstance != null && (!NeedsWorld || World != null)) Platform.OpenPath(ModInstaller.GetContentDirectory(Instances.GetGameDir(SelectedInstance.Id), ContentType, World)); }
     public void OpenProject(ModrinthProject hit, string type, string? minecraft)
@@ -288,6 +289,7 @@ public sealed partial class LauncherModel
             string? loader = projectType == "mod" && SelectedInstance?.Loader != LoaderType.None ? SelectedInstance?.Loader.ToString().ToLowerInvariant() : projectType == "datapack" ? "datapack" : null;
             var infoTask = CatalogClient.GetProjectAsync(id, token);
             var versionsTask = CatalogClient.GetProjectVersionsAsync(id, mc, loader, token);
+            Run(() => RefreshContentIndexAsync(true));
             await Task.WhenAll(infoTask, versionsTask); token.ThrowIfCancellationRequested();
             projectInfo = await infoTask;
             string extension = projectType == "modpack" ? ".mrpack" : projectType == "mod" ? ".jar" : ".zip";

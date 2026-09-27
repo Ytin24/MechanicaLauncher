@@ -164,13 +164,19 @@ view Shell(vm: LauncherModel) {
                                         Button Text=vm.SortLabel Width=158 Command=vm.ChooseSort Visible=(!vm.InstalledOnly)
                                         Button Text=vm.CategoryLabel Width=140 Command=vm.ChooseCategory Visible=(!vm.InstalledOnly)
                                     }
-                                    Row Gap=8 {
+                                    Row Gap=8 Visible=(!vm.ShowModUpdates) {
                                         CheckBox #compatible Text=vm.CompatibilityLabel IsChecked <=> vm.CompatibleOnly Grow=1 Enabled=(vm.SelectedInstance != null) Visible=(!vm.InstalledOnly)
                                         Button Text=vm.WorldLabel Width=180 Command=vm.ChooseWorld Visible=vm.NeedsWorld
                                         Button Text=(vm.T("Папка", "Folder")) Width=94 Command=vm.CatalogFolder Visible=vm.InstalledOnly
                                     }
+                                    Row Gap=8 Visible=vm.ShowModUpdates {
+                                        Button #checkModUpdates Text=vm.ModUpdateButton Width=210 Command=vm.CheckModUpdates Enabled=vm.CanCheckModUpdates
+                                        Button #selectModUpdates Text=vm.ModUpdateSelectionLabel Width=224 Command=vm.SelectModUpdates Visible=(vm.ModUpdateCount > 0) Enabled=(vm.CanCheckModUpdates && vm.AllowModInstall)
+                                        Spacer Grow=1
+                                        Button Text=(vm.T("Папка", "Folder")) Width=94 Command=vm.CatalogFolder
+                                    }
                                 }
-                                Text .muted vm.CatalogStatus Wrap=true Visible=(vm.CatalogItems.Count > 0)
+                                Text .muted Text=(vm.CatalogStatus + (vm.ModUpdateStatus.Length > 0 ? " · " + vm.ModUpdateStatus : "")) Wrap=true Visible=(vm.CatalogItems.Count > 0)
                                 Card .emptyState #catalogEmpty Visible=(vm.CatalogItems.Count == 0) {
                                     Text .emptyTitle vm.CatalogEmptyTitle Wrap=true
                                     Text .muted vm.CatalogEmptyHint Wrap=true
@@ -236,7 +242,10 @@ view Shell(vm: LauncherModel) {
                                             TextField #windowWidth Text=(vm.T("Ширина окна", "Window width")) Value <=> vm.EditWidth ShowError=false
                                             TextField #windowHeight Text=(vm.T("Высота окна", "Window height")) Value <=> vm.EditHeight ShowError=false
                                         }
-                                        Button Text=(vm.T("Дополнительно", "Advanced")) Width=190 Command=vm.ToggleAdvanced
+                                        Row Gap=16 {
+                                            Button Text=(vm.T("Дополнительно", "Advanced")) Width=190 Command=vm.ToggleAdvanced
+                                            CheckBox #useServerModSync Text="Mechanica Server Sync" IsChecked <=> vm.EditUseServerModSync Enabled=vm.CanEditServerModSync Grow=1
+                                        }
                                         Column #advanced Gap=12 Visible=vm.Advanced {
                                             Form Columns=2 Gap=12 {
                                                 TextField #minMemory Text=(vm.T("Минимум памяти, MB", "Minimum memory, MB")) Value <=> vm.EditMinMemory ShowError=false
@@ -494,7 +503,7 @@ view Shell(vm: LauncherModel) {
                 }
             }
             Grid #modalLayer GridRow=0 GridColumn=0 Align=Stretch VerticalAlign=Stretch ColumnDefinitions="*" RowDefinitions="*" Padding=24 Visible=vm.DialogOpen Background=(new Color(0, 0, 0, vm.LightTheme ? 0.32f : 0.56f)) {
-                Card #dialog GridRow=0 GridColumn=0 Width=(vm.HasDialogImage || vm.DialogText.Length > 0 ? 920 : 620) MaxHeight=(vm.HasDialogImage || vm.DialogText.Length > 0 ? 680 : vm.DialogSearch ? 600 : vm.DialogFields.Count > 0 ? Math.Min(600, 250 + vm.DialogFields.Count * 88 + (vm.DialogChoices.Count > 0 ? 184 : 0) + (vm.DialogError.Length > 0 ? 76 : 0)) : vm.DialogChoices.Count > 0 ? Math.Min(600, 220 + vm.DialogChoices.Count * 80 + (vm.DialogError.Length > 0 ? 76 : 0)) : 300) Align=Center VerticalAlign=Center Padding=0 Gap=0 {
+                Card #dialog GridRow=0 GridColumn=0 Width=(vm.HasDialogImage || vm.DialogText.Length > 0 ? 920 : 620) MaxHeight=(vm.HasDialogImage || vm.DialogText.Length > 0 ? 680 : vm.DialogSearch ? 600 : vm.DialogFields.Count > 0 ? Math.Min(600, 250 + vm.DialogFieldsHeight + (vm.DialogChoices.Count > 0 ? 184 : 0) + (vm.DialogError.Length > 0 ? 76 : 0)) : vm.DialogChoices.Count > 0 ? Math.Min(600, 220 + vm.DialogChoices.Count * 80 + (vm.DialogError.Length > 0 ? 76 : 0)) : 300) Align=Center VerticalAlign=Center Padding=0 Gap=0 {
                     Row #dialogHeader Padding=20 Gap=16 {
                         Text #dialogTitle vm.DialogTitle FontSize=22 FontWeight=650 Grow=1 Wrap=true VerticalAlign=Center
                         Button .iconButton #dialogClose "" Width=38 Command=vm.CloseDialog Enabled=(!vm.DialogBusy)
@@ -503,10 +512,10 @@ view Shell(vm: LauncherModel) {
                     Column Padding=20 Visible=vm.DialogSearch {
                         Input #choiceSearch Value <=> vm.DialogQuery Placeholder=(vm.T("Найти…", "Search…")) Enabled=(!vm.DialogBusy)
                     }
-                    ScrollViewer #dialogScroll Grow=1 VerticalScrollBarVisibility=(vm.DialogSearch || vm.DialogChoices.Count > 0 || vm.HasDialogImage || vm.DialogText.Length > 0 ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto) {
+                    ScrollViewer #dialogScroll Grow=1 VerticalScrollBarVisibility=(vm.DialogFields.Count == 0 && (vm.DialogSearch || vm.DialogChoices.Count > 0 || vm.HasDialogImage || vm.DialogText.Length > 0) ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto) {
                         Column #dialogContent Grow=1 Padding=20 Gap=16 Enabled=(!vm.DialogBusy) {
                             Text #dialogBody vm.DialogBody Wrap=true Visible=(vm.DialogBody.Length > 0)
-                            VirtualList #dialogFields Items=vm.DialogFields ItemTemplate=Field ItemKey=Id Height=(vm.DialogFields.Count * 88) Visible=(vm.DialogFields.Count > 0)
+                            VirtualList #dialogFields Items=vm.DialogFields ItemTemplate=Field ItemKey=Id Height=vm.DialogFieldsHeight Visible=(vm.DialogFields.Count > 0)
                             FitImage #dialogImage Picture=vm.DialogImage Grow=1 Visible=(vm.DialogImage != ImageSource.Empty)
                             TextArea #dialogText Value=vm.DialogText Grow=1 ControlHeight=320 ReadOnly=true ShowLabel=false ShowError=false Visible=(vm.DialogText.Length > 0)
                             VirtualList #choices Items=vm.DialogChoices ItemTemplate=Choice ItemKey=Id Grow=1 Height=(vm.DialogFields.Count > 0 ? 168f : float.NaN) EstimatedItemHeight=65 Visible=(vm.DialogChoices.Count > 0)

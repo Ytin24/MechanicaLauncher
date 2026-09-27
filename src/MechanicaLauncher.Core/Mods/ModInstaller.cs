@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using MechanicaLauncher.Core.Models;
 using MechanicaLauncher.Core.IO;
 using MechanicaLauncher.Core.Instances;
@@ -83,19 +84,51 @@ public sealed class ModInstaller
             if (!destinations.Add(FileDownloader.GetPath(modsDir, file.Filename)))
                 throw new InvalidDataException($"Dependencies contain conflicting filenames: {file.Filename}");
 
+        var pending = new List<ModrinthFile>();
+        foreach (var file in files)
+            if (!await FileDownloader.IsValidAsync(FileDownloader.GetPath(modsDir, file.Filename),
+                file.Hashes.GetValueOrDefault("sha1"), file.Size, cancellationToken, file.Hashes.GetValueOrDefault("sha512")))
+                pending.Add(file);
+        if (pending.Count == 0) return;
+
+        var existing = new List<(InstalledMod Mod, string Hash)>();
+        foreach (var mod in GetInstalledMods(modsDir, extension).OrderByDescending(m => m.Enabled))
+        {
+            if (destinations.Contains(Path.GetFullPath(mod.FilePath))) continue;
+            string hash;
+            await using (var stream = new FileStream(mod.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                81920, FileOptions.Asynchronous | FileOptions.SequentialScan))
+                hash = Convert.ToHexString(await SHA1.HashDataAsync(stream, cancellationToken)).ToLowerInvariant();
+            var matching = files.FirstOrDefault(f => hash.Equals(f.Hashes.GetValueOrDefault("sha1"), StringComparison.OrdinalIgnoreCase));
+            if (matching != null && await FileDownloader.IsValidAsync(mod.FilePath, hash, matching.Size,
+                cancellationToken, matching.Hashes.GetValueOrDefault("sha512")))
+            {
+                if (!mod.Enabled && pending.Contains(matching))
+                    throw new InvalidDataException($"Required content is disabled: {Path.GetFileName(mod.FilePath)}");
+                pending.Remove(matching);
+            }
+            else existing.Add((mod, hash));
+        }
+        if (pending.Count == 0) return;
+        if (existing.Count > 0)
+        {
+            var installedVersions = await _client.GetVersionsFromHashesAsync(existing.Select(e => e.Hash), cancellationToken);
+            foreach (var (mod, hash) in existing)
+                if (installedVersions.TryGetValue(hash, out var installed) && installed.ProjectId != null &&
+                    selected.ContainsKey(installed.ProjectId))
+                    throw new InvalidDataException($"Installed file conflicts with the requested version: {Path.GetFileName(mod.FilePath)}");
+        }
+
         var staging = Path.Combine(modsDir, ".install-" + Guid.NewGuid().ToString("N"));
         try
         {
-            foreach (var file in files)
+            foreach (var file in pending)
             {
-                var dest = FileDownloader.GetPath(modsDir, file.Filename);
-                if (await FileDownloader.IsValidAsync(dest, file.Hashes.GetValueOrDefault("sha1"), file.Size,
-                    cancellationToken, file.Hashes.GetValueOrDefault("sha512"))) continue;
                 StatusChanged?.Invoke(file.Filename);
                 await DownloadAsync(file, FileDownloader.GetPath(staging, file.Filename), cancellationToken);
             }
             cancellationToken.ThrowIfCancellationRequested();
-            foreach (var file in files)
+            foreach (var file in pending)
             {
                 var staged = FileDownloader.GetPath(staging, file.Filename);
                 if (File.Exists(staged)) File.Move(staged, FileDownloader.GetPath(modsDir, file.Filename), overwrite: true);

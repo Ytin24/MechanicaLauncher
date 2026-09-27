@@ -14,6 +14,10 @@ using MechanicaLauncher.Core.Profiles;
 
 if (args.FirstOrDefault() == "--smoke")
     return await SmokeTests.RunAsync(args.Skip(1).ToArray());
+if (args.FirstOrDefault() == "--modpack-smoke")
+    return await ModpackSmokeTests.RunAsync(args.Skip(1).ToArray());
+if (args.FirstOrDefault() == "--mod-updates-smoke")
+    return await ModUpdateSmokeTests.RunAsync(args.Skip(1).ToArray());
 if (args.FirstOrDefault() == "--discord-smoke")
     return await DiscordLiveTest.RunAsync();
 
@@ -488,6 +492,86 @@ await Check("SHA512 mismatch cannot publish a file even when SHA1 matches", asyn
     Equal(false, File.Exists(path));
 });
 
+await Check("Modpack roundtrip preserves custom client files without including unrelated game data", async () =>
+{
+    var pack = FilePath("pack-custom", "test.mrpack");
+    var data = "custom content"u8.ToArray();
+    var entries = new Dictionary<string, string>
+    {
+        ["overrides/kubejs/server_scripts/recipes.js"] = "recipes",
+        ["overrides/scripts/recipes.zs"] = "crafttweaker",
+        ["overrides/defaultconfigs/server.toml"] = "defaults",
+        ["overrides/custom/settings.json"] = "common",
+        ["client-overrides/custom/settings.json"] = "client",
+        ["client-overrides/pack-settings.json"] = "root settings",
+        ["server-overrides/server-only.txt"] = "server"
+    };
+    CreatePack(pack, [PackFile("custom/content.bin", data)], entries);
+    var manager = new InstanceManager(Path.Combine(testRoot, "pack-custom", "data"));
+    using var handler = new FakeHttp(_ => Response(data));
+    using var http = new HttpClient(handler);
+    var installer = new ModpackInstaller(http);
+    var instance = await installer.ImportAsync(pack, manager);
+    var game = manager.GetGameDir(instance.Id);
+    await File.WriteAllTextAsync(Path.Combine(game, "launcher_accounts.json"), "private");
+    var exported = FilePath("pack-custom", "exported.mrpack");
+    await ModpackInstaller.ExportAsync(instance, manager, exported);
+    var imported = await installer.ImportAsync(exported, manager);
+    var restored = manager.GetGameDir(imported.Id);
+    foreach (var path in new[] { "kubejs/server_scripts/recipes.js", "scripts/recipes.zs", "defaultconfigs/server.toml", "custom/settings.json", "pack-settings.json", "custom/content.bin" })
+        Equal(await File.ReadAllTextAsync(Path.Combine(game, path)), await File.ReadAllTextAsync(Path.Combine(restored, path)));
+    Equal(false, File.Exists(Path.Combine(restored, "launcher_accounts.json")));
+    Equal(false, File.Exists(Path.Combine(restored, "server-only.txt")));
+    Equal(1, handler.Calls);
+});
+
+await Check("Locally created modpack exports scripts and defaults with its exact loader", async () =>
+{
+    var manager = new InstanceManager(Path.Combine(testRoot, "pack-local"));
+    var instance = manager.CreateInstance("Local pack", "1.21.1", LoaderType.NeoForge, "21.1.250");
+    foreach (var folder in new[] { "kubejs", "scripts", "defaultconfigs" })
+    {
+        var directory = Path.Combine(manager.GetGameDir(instance.Id), folder);
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(Path.Combine(directory, "custom.txt"), folder);
+    }
+    var exported = FilePath("pack-local", "exported.mrpack");
+    await ModpackInstaller.ExportAsync(instance, manager, exported);
+    var imported = await new ModpackInstaller().ImportAsync(exported, manager);
+    Equal(LoaderType.NeoForge, imported.Loader);
+    Equal("21.1.250", imported.LoaderVersion);
+    foreach (var folder in new[] { "kubejs", "scripts", "defaultconfigs" })
+        Equal(folder, await File.ReadAllTextAsync(Path.Combine(manager.GetGameDir(imported.Id), folder, "custom.txt")));
+});
+
+await Check("Export cannot silently turn an unresolved mod loader into vanilla", async () =>
+{
+    var manager = new InstanceManager(Path.Combine(testRoot, "pack-unresolved-loader"));
+    var instance = manager.CreateInstance("Unresolved", "1.21.1", LoaderType.Fabric);
+    var output = FilePath("pack-unresolved-loader", "previous.mrpack");
+    await File.WriteAllTextAsync(output, "previous export");
+    await Throws<InvalidOperationException>(() => ModpackInstaller.ExportAsync(instance, manager, output));
+    Equal("previous export", await File.ReadAllTextAsync(output));
+});
+
+await Check("Cancelling an active modpack export preserves the previous archive", async () =>
+{
+    var manager = new InstanceManager(Path.Combine(testRoot, "pack-export-cancel"));
+    var instance = manager.CreateInstance("Cancel", "1.21.1");
+    var data = new byte[32 * 1024 * 1024];
+    RandomNumberGenerator.Fill(data);
+    await File.WriteAllBytesAsync(Path.Combine(manager.GetGameDir(instance.Id), "mods", "large.jar"), data);
+    var output = FilePath("pack-export-cancel", "previous.mrpack");
+    await File.WriteAllTextAsync(output, "previous export");
+    using var cancellation = new CancellationTokenSource();
+    var exporting = ModpackInstaller.ExportAsync(instance, manager, output, cancellation.Token);
+    Equal(false, exporting.IsCompleted);
+    cancellation.Cancel();
+    await Throws<OperationCanceledException>(() => exporting);
+    Equal("previous export", await File.ReadAllTextAsync(output));
+    Equal(0, Directory.GetFiles(Path.GetDirectoryName(output)!, "*.part").Length);
+});
+
 await Check("Pinned recursive mod dependencies and cycles install exactly once", async () =>
 {
     var root = ModVersion("root");
@@ -598,8 +682,38 @@ await Check("Modrinth search keeps encoded filters and cancels the underlying re
     Equal(1, handler.Calls);
 });
 
+await Check("Server launch selects Quick Play from metadata and keeps bridge secrets out of arguments", async () =>
+{
+    string game = Path.Combine(testRoot, "quickplay");
+    await File.WriteAllTextAsync(FilePath("quickplay", "versions/test/test.jar"), "client");
+    var meta = new VersionMeta { Id = "test", MainClass = "game.Main" };
+    var launcher = new GameLauncher(game, testRoot);
+    var legacy = launcher.CreateStartInfo(meta, Environment.ProcessPath!, "Player", server: "localhost", port: 25566);
+    Equal("localhost", legacy.ArgumentList[legacy.ArgumentList.IndexOf("--server") + 1]);
+    Equal("25566", legacy.ArgumentList[legacy.ArgumentList.IndexOf("--port") + 1]);
+    meta.Arguments = JsonSerializer.Deserialize<VersionMeta>("""
+        {"arguments":{"game":[{"rules":[{"action":"allow","features":{"is_quick_play_multiplayer":true}}],"value":["--quickPlayMultiplayer","${quickPlayMultiplayer}"]}],"jvm":[]}}
+        """)!.Arguments;
+    var modern = launcher.CreateStartInfo(meta, Environment.ProcessPath!, "Player", server: "::1", port: 25566,
+        environment: new Dictionary<string, string> { ["MECHANICA_BRIDGE_TOKEN"] = "private-token" });
+    Equal("[::1]:25566", modern.ArgumentList[modern.ArgumentList.IndexOf("--quickPlayMultiplayer") + 1]);
+    Equal(false, modern.ArgumentList.Contains("--server"));
+    Equal(false, modern.ArgumentList.Any(arg => arg.Contains("private-token")));
+    Equal("private-token", modern.Environment["MECHANICA_BRIDGE_TOKEN"]);
+    var menu = launcher.CreateStartInfo(meta, Environment.ProcessPath!, "Player");
+    Equal(false, menu.ArgumentList.Contains("--quickPlayMultiplayer"));
+});
+
 await AuthTests.RunAsync(Check);
+await GameBridgeTests.RunAsync(Check);
+await ServerModSyncTests.RunAsync(Check, testRoot);
+await ModUpdateTests.RunAsync(Check, testRoot);
+await ModpackPrivateStateTests.RunAsync(Check, testRoot);
+await NeoForgeVersionTests.RunAsync(Check, testRoot);
+await GameLibraryMergeTests.RunAsync(Check, testRoot);
+await ModLoaderCompatibilityTests.RunAsync(Check, testRoot);
 await CatalogTests.RunAsync(Check, testRoot);
+await InstalledContentIndexTests.RunAsync(Check, testRoot);
 await FeatureTests.RunAsync(Check, testRoot);
 await DiscordTests.RunAsync(Check);
 await TLauncherTests.RunAsync(Check, testRoot);

@@ -24,9 +24,9 @@ public sealed class GameLauncher
                           string? extraJvmArgs = null,
                           int windowWidth = 1920, int windowHeight = 1080,
                           string? vanillaVersionId = null,
-                          string? server = null, int? port = null) =>
+                          string? server = null, int? port = null, IReadOnlyDictionary<string, string>? environment = null) =>
         Process.Start(CreateStartInfo(meta, javaPath, username, uuid, accessToken, minMem, maxMem,
-            extraJvmArgs, windowWidth, windowHeight, vanillaVersionId, server, port))
+            extraJvmArgs, windowWidth, windowHeight, vanillaVersionId, server, port, environment))
         ?? throw new InvalidOperationException("Failed to start Java process");
 
     internal ProcessStartInfo CreateStartInfo(VersionMeta meta, string javaPath, string username,
@@ -35,7 +35,7 @@ public sealed class GameLauncher
                           string? extraJvmArgs = null,
                           int windowWidth = 1920, int windowHeight = 1080,
                           string? vanillaVersionId = null,
-                          string? server = null, int? port = null)
+                          string? server = null, int? port = null, IReadOnlyDictionary<string, string>? environment = null)
     {
         if (!File.Exists(javaPath))
             throw new FileNotFoundException("Selected Java executable was not found.", javaPath);
@@ -97,6 +97,12 @@ public sealed class GameLauncher
             ["${library_directory}"] = librariesDir,
             ["${classpath_separator}"] = Path.PathSeparator.ToString(),
         };
+        bool connect = !string.IsNullOrWhiteSpace(server);
+        if (connect && port is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(port));
+        bool quickPlay = connect && meta.Arguments?.Game.Any(argument => ContainsArgument(argument, "--quickPlayMultiplayer")) == true;
+        string host = server?.Trim() ?? "";
+        if (host.Contains(':') && !host.StartsWith('[')) host = "[" + host + "]";
+        vars["${quickPlayMultiplayer}"] = host + ":" + (port ?? 25565);
 
         var args = new List<string> { $"-Xms{minMem}M", $"-Xmx{maxMem}M", "-Dminecraft.api.env.disableDiscord=true" };
 
@@ -129,7 +135,7 @@ public sealed class GameLauncher
 
         if (meta.Arguments?.Game != null)
         {
-            foreach (var gameArg in ResolveArgs(meta.Arguments.Game, vars))
+            foreach (var gameArg in ResolveArgs(meta.Arguments.Game, vars, quickPlay))
                 args.Add(gameArg);
         }
         else if (!string.IsNullOrEmpty(meta.MinecraftArguments))
@@ -147,10 +153,10 @@ public sealed class GameLauncher
                 "--versionType", "release"]);
         }
 
-        if (!string.IsNullOrEmpty(server))
+        if (connect && !quickPlay)
         {
             args.Add("--server");
-            args.Add(server);
+            args.Add(server!.Trim());
             args.Add("--port");
             args.Add((port ?? 25565).ToString());
         }
@@ -166,6 +172,8 @@ public sealed class GameLauncher
         };
         foreach (var arg in args)
             psi.ArgumentList.Add(arg);
+        if (environment != null)
+            foreach (var variable in environment) psi.Environment[variable.Key] = variable.Value;
 
         return psi;
     }
@@ -215,7 +223,15 @@ public sealed class GameLauncher
         return result;
     }
 
-    private static List<string> ResolveArgs(List<JsonElement> jsonArgs, Dictionary<string, string> vars)
+    private static bool ContainsArgument(JsonElement argument, string value) => argument.ValueKind switch
+    {
+        JsonValueKind.String => argument.GetString() == value,
+        JsonValueKind.Array => argument.EnumerateArray().Any(item => ContainsArgument(item, value)),
+        JsonValueKind.Object => argument.TryGetProperty("value", out var nested) && ContainsArgument(nested, value),
+        _ => false
+    };
+
+    private static List<string> ResolveArgs(List<JsonElement> jsonArgs, Dictionary<string, string> vars, bool quickPlay = false)
     {
         var result = new List<string>();
         foreach (var el in jsonArgs)
@@ -226,7 +242,7 @@ public sealed class GameLauncher
             }
             else if (el.ValueKind == JsonValueKind.Object)
             {
-                if (el.TryGetProperty("rules", out var rules) && !EvaluateRules(rules))
+                if (el.TryGetProperty("rules", out var rules) && !EvaluateRules(rules, quickPlay))
                     continue;
                 if (el.TryGetProperty("value", out var value))
                 {
@@ -242,8 +258,9 @@ public sealed class GameLauncher
         return result;
     }
 
-    private static bool EvaluateRules(JsonElement rules) => LaunchRules.Evaluate(
-        rules.Deserialize<List<Rule>>(), new Dictionary<string, bool> { ["has_custom_resolution"] = true });
+    private static bool EvaluateRules(JsonElement rules, bool quickPlay) => LaunchRules.Evaluate(
+        rules.Deserialize<List<Rule>>(), new Dictionary<string, bool>
+        { ["has_custom_resolution"] = true, ["is_quick_play_multiplayer"] = quickPlay });
 
     private static string Substitute(string template, Dictionary<string, string> vars)
     {

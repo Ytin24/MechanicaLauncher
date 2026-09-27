@@ -156,6 +156,39 @@ internal static class FeatureTests
             var report = await new ModCompatibilityChecker().CheckAsync(Instance(), dir, false);
             Require(report.Issues.Count == 0);
         });
+        await check("Fabric multiline descriptions preserve offline dependency and version checks", async () =>
+        {
+            var dir = Area("compat-multiline");
+            MakeJar(dir, "multiline", "{\"schemaVersion\":1,\"id\":\"multiline\",\"version\":\"1\",\"description\":\"Первая строка\nВторая строка\r\nТретья\tстрока\",\"depends\":{\"minecraft\":\"~1.20.1\",\"missing\":\"*\"}}");
+            MakeJar(dir, "consumer", "{\"schemaVersion\":1,\"id\":\"consumer\",\"version\":\"1\",\"depends\":{\"multiline\":\"*\"}}");
+            var report = await new ModCompatibilityChecker().CheckAsync(Instance(), dir, false);
+            Require(report.EnabledFiles == 2 && !report.Issues.Any(i => i.Code == "unreadable"));
+            Require(report.Issues.Single(i => i.Code == "dependency").Detail == "multiline.jar → missing");
+            Require(report.Issues.Count(i => i.Code == "version_range") == 1);
+        });
+        await check("Fabric multiline descriptions preserve escaped quotes and backslashes", async () =>
+        {
+            var dir = Area("compat-multiline-escapes");
+            var metadata = """{"schemaVersion":1,"id":"quoted","version":"1","description":"An \"escaped quote\" and \\ backslash""" + "\n" +
+                """A second line, a literal \\n and an escaped newline \n; end \\","depends":{"missing":"*"}}""";
+            MakeJar(dir, "quoted", metadata);
+            var report = await new ModCompatibilityChecker().CheckAsync(Instance(), dir, false);
+            Require(!report.Issues.Any(i => i.Code == "unreadable"));
+            Require(report.Issues.Single(i => i.Code == "dependency").Detail == "quoted.jar → missing");
+        });
+        await check("Malformed Fabric syntax and escape sequences remain unreadable beside multiline text", async () =>
+        {
+            var dir = Area("compat-multiline-invalid");
+            var malformed = new[] {
+                """{"id":"bad","description":"first<break>line","depends" {"missing":"*"}}""",
+                """{"id":"bad","description":"first<break>line \q","depends":{"missing":"*"}}""",
+                """{"id":"bad","description":"first<break>line}"""
+            };
+            for (int i = 0; i < malformed.Length; i++) MakeJar(dir, "bad-" + i, malformed[i].Replace("<break>", "\n"));
+            var report = await new ModCompatibilityChecker().CheckAsync(Instance(), dir, false);
+            Require(report.Issues.Count(i => i.Code == "unreadable") == malformed.Length);
+            Require(!report.Issues.Any(i => i.Code == "dependency"));
+        });
         await check("Compatibility uses bulk hashes, caches exact results, and exposes offline coverage", async () =>
         {
             var dir = Area("compat-catalog");
