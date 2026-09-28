@@ -1,6 +1,7 @@
 param(
     [switch] $DownloadAndRun,
     [switch] $AcceptEula,
+    [switch] $Discovery,
     [string[]] $Targets,
     [string] $OutputDirectory,
     [string] $SharedCacheDirectory,
@@ -53,6 +54,7 @@ foreach ($case in $selected) {
             Loader = $case.Loader; LoaderVersion = $case.Version; JavaPath = $javaPaths[$case.Java]; Configuration = $Configuration }
         if ($SharedCacheDirectory) { $arguments.SharedCacheDirectory = $SharedCacheDirectory }
         if ($TestExecutable) { $arguments.TestExecutable = $TestExecutable }
+        if ($Discovery) { $arguments.Discovery = $true }
         & (Join-Path $PSScriptRoot 'Test-ServerSync.ps1') @arguments *> $log
     }
     catch { $failure = $_.Exception.Message }

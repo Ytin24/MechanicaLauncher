@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using MechanicaLauncher.Core.Instances;
 using MechanicaLauncher.Core.Models;
+using MechanicaLauncher.Core.Mods;
 using MechanicaLauncher.Core.Servers;
 
 internal static class ServerModSyncTests
@@ -394,6 +395,84 @@ internal static class ServerModSyncTests
             Require(plan.Conflicts.Any(c => c.FileName == "personal-forge.jar"));
         });
 
+        await check("Server sync installs legacy mcmod info with raw controls and escaped quotes without changing personal jars", async () =>
+        {
+            foreach (bool wrapped in new[] { false, true })
+            {
+                using var f = new Fixture(root, "legacy-controls-" + wrapped);
+                f.UseLegacyForge();
+                string metadata = "{\"modid\":\"compactsolars\",\"name\":\"Compact \\\"Solar\\\" Panels\",\"version\":\"5.0.18.341\","
+                    + "\"description\":\"First \\\"quoted\\\" \\\\path\nSecond\r\n\tline\"}";
+                byte[] data = LegacyJar(wrapped ? "{\"modList\":[" + metadata + "]}" : "[" + metadata + "]");
+                f.Add("compactsolars", data: data);
+                byte[] personal = LegacyJar("[{\"modid\":\"personal\",\"description\":\"Line one\nLine two\"}]");
+                string personalPath = f.Local("personal-legacy.jar", personal);
+                var engine = f.Engine();
+                var plan = await f.Plan(engine);
+                Require(plan.Changes.Count == 1 && plan.Conflicts.Count == 0);
+                var stage = await engine.StageAsync(plan, f.Staging);
+                Require(stage.Files.Count == 1 && !File.Exists(Path.Combine(f.Mods, "compactsolars.jar")));
+                await engine.ApplyAsync(stage, () => false);
+                Require(data.SequenceEqual(await File.ReadAllBytesAsync(Path.Combine(f.Mods, "compactsolars.jar")))
+                    && personal.SequenceEqual(await File.ReadAllBytesAsync(personalPath)));
+                Require(!(await f.Plan(engine)).HasChanges);
+                using var http = new HttpClient(new FakeHttp(_ => Response("{}"u8.ToArray()))) { BaseAddress = new("https://api.modrinth.com") };
+                var indexed = (await new InstalledContentIndex(new ModrinthClient(http)).ScanAsync(f.Game, "mod"))
+                    .Single(file => file.FileName == "compactsolars.jar");
+                Require(indexed.DisplayName == "Compact \"Solar\" Panels" && indexed.DisplayVersion == "5.0.18.341");
+            }
+        });
+
+        await check("Server sync still rejects malformed legacy JSON in local and downloaded mods", async () =>
+        {
+            string[] malformed = [
+                "[{\"modid\":\"broken\",\"description\":\"unterminated\n}]",
+                "[{\"modid\":\"broken\",\"description\":\"bad\\q\nline\"}]",
+                "[{\"modid\":\"broken\",\"description\":\"line\nline\",}]"
+            ];
+            for (int i = 0; i < malformed.Length; i++)
+            {
+                byte[] data = LegacyJar(malformed[i]);
+                using var local = new Fixture(root, "legacy-malformed-local-" + i);
+                local.UseLegacyForge();
+                string path = local.Local("broken.jar", data);
+                await Error("conflict", () => local.Plan(local.Engine()));
+                Require(data.SequenceEqual(await File.ReadAllBytesAsync(path)) && !File.Exists(local.StatePath));
+                using var remote = new Fixture(root, "legacy-malformed-remote-" + i);
+                remote.UseLegacyForge();
+                remote.Add("broken", data: data);
+                var engine = remote.Engine();
+                var plan = await remote.Plan(engine);
+                await Error("invalid_manifest", () => engine.StageAsync(plan, remote.Staging));
+                Require(!Directory.Exists(remote.Mods) && !File.Exists(remote.StatePath));
+            }
+        });
+
+        await check("Server sync keeps legacy mod ID checks after normalizing descriptions", async () =>
+        {
+            foreach (bool reused in new[] { false, true })
+            {
+                using var f = new Fixture(root, "legacy-wrong-id-" + reused);
+                f.UseLegacyForge();
+                byte[] data = LegacyJar("[{\"modid\":\"actual\",\"description\":\"Line one\nLine two\"}]");
+                f.Add("claimed", data: data);
+                var engine = f.Engine();
+                if (reused)
+                {
+                    string path = f.Local("renamed.jar", data);
+                    await Error("invalid_manifest", () => f.Plan(engine));
+                    Require(data.SequenceEqual(await File.ReadAllBytesAsync(path)));
+                }
+                else
+                {
+                    var plan = await f.Plan(engine);
+                    await Error("invalid_manifest", () => engine.StageAsync(plan, f.Staging));
+                    Require(!Directory.Exists(f.Mods));
+                }
+                Require(!File.Exists(f.StatePath));
+            }
+        });
+
         await check("Server sync refuses pending mod updater journals including replay of an already applied plan", async () =>
         {
             using var f = new Fixture(root, "foreign-journal"); f.Add("main");
@@ -430,6 +509,15 @@ internal static class ServerModSyncTests
         using (var zip = new ZipArchive(memory, ZipArchiveMode.Create, leaveOpen: true))
         using (var writer = new StreamWriter(zip.CreateEntry("fabric.mod.json").Open(), new UTF8Encoding(false)))
             writer.Write($"{{\"schemaVersion\":1,\"id\":\"{id}\",\"version\":\"{version}\",\"name\":\"{id}\",\"depends\":{dependencies ?? "{}"}}}");
+        return memory.ToArray();
+    }
+
+    private static byte[] LegacyJar(string metadata)
+    {
+        using var memory = new MemoryStream();
+        using (var zip = new ZipArchive(memory, ZipArchiveMode.Create, leaveOpen: true))
+        using (var writer = new StreamWriter(zip.CreateEntry("mcmod.info").Open(), new UTF8Encoding(false)))
+            writer.Write(metadata);
         return memory.ToArray();
     }
 
@@ -494,6 +582,18 @@ internal static class ServerModSyncTests
         public ServerModSync Engine(bool approveExternal = true) => new(http, approvedExternalOrigins: approveExternal ? [new Uri(origin)] : []);
         public Task<ServerSyncPlan> Plan(ServerModSync engine, bool allowLocal = false) => engine.PlanAsync(Endpoint, Instance, Game, allowLocal);
         public async Task Install(ServerModSync engine) => await engine.ApplyAsync(await engine.StageAsync(await Plan(engine), Staging), () => false);
+
+        public void UseLegacyForge()
+        {
+            Instance.McVersion = "1.12.2"; Instance.Loader = LoaderType.Forge; Instance.LoaderVersion = "14.23.5.2859";
+            void Target(JsonObject target)
+            {
+                target["targetId"] = "forge-1.12.2"; target["minecraft"] = Instance.McVersion;
+                target["loader"] = "forge"; target["loaderVersion"] = Instance.LoaderVersion;
+            }
+            DescriptorEdit = descriptor => Target(descriptor["protocols"]![0]!["targets"]![0]!.AsObject());
+            ManifestEdit = Target;
+        }
 
         public JsonObject Add(string id, string version = "1", string side = "required", string? filename = null, bool modrinth = false, byte[]? data = null)
         {

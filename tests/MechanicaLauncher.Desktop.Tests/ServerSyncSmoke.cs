@@ -33,6 +33,7 @@ internal static partial class Program
             return Path.GetFullPath(args[index + 1]);
         }
         if (!args.Contains("--accept-eula")) throw new ArgumentException("The real server smoke requires --accept-eula.");
+        bool discovery = args.Contains("--discovery");
         string root = Argument("--smoke-root"), serverDir = Argument("--server-dir"), shared = Argument("--shared-cache");
         string java = Argument("--java"), bridge = Argument("--bridge"), fixture = Argument("--fixture");
         string minecraft = Value("--minecraft", "1.21.1"), loaderVersion = Value("--loader-version", "0.19.3");
@@ -79,8 +80,22 @@ internal static partial class Program
         string instanceId = "", installed = "", gameDir = "";
         string fixtureName = Path.GetFileName(fixture);
         string fixtureHash = ServerSmokeHash(fixture);
+        string? advertisedDescriptor = null;
         int initialChecks = checks;
         int fileRequestsAfterSync = 0;
+        int confirmations = 0;
+        var favorites = new FavoriteServers(data);
+        sessions.ConfirmServerSync = (endpoint, plan, token) =>
+        {
+            Interlocked.Increment(ref confirmations);
+            bool expected = discovery && endpoint.Host == "127.0.0.1" && endpoint.Port == gamePort && endpoint.InstanceId == instanceId &&
+                endpoint.SyncManifestUrl == descriptorUrl && !endpoint.AutoSync && endpoint.AllowLocalSync && favorites.Load().Count == 0 &&
+                plan.Conflicts.Count == 0 && plan.Changes.Count == 1 && plan.Changes[0].FileName == fixtureName &&
+                plan.Changes[0].Kind == ServerSyncChangeKind.Add && !File.Exists(installed) && !token.IsCancellationRequested;
+            if (!expected) eventErrors.Enqueue("Unexpected server synchronization confirmation: " + endpoint.Address + " / " + plan.Summary);
+            Console.WriteLine("SYNC_CONFIRM discovery=" + discovery + " expected=" + expected + " bytes=" + plan.DownloadBytes);
+            return Task.FromResult(expected);
+        };
 
         void Until(Func<bool> predicate, string operation, int seconds = 180, bool requireServer = true)
         {
@@ -182,6 +197,26 @@ internal static partial class Program
             Until(() => serverLines.Any(line => line.Contains("Done (", StringComparison.Ordinal)) &&
                 serverLines.Any(line => line.Contains("MECHANICA_SYNC_SERVER_READY", StringComparison.Ordinal)), "waiting for the real " + loader + " server and its HTTP publisher");
             Check(serverLines.Any(line => line.Contains("MECHANICA_SYNC_FIXTURE_INIT side=SERVER", StringComparison.Ordinal)), "real server loaded the fixture mod");
+            if (discovery)
+            {
+                async Task<ServerStatus> ReadReadyStatus()
+                {
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                    for (;;)
+                    {
+                        try { return await new ServerStatusClient().QueryAsync("127.0.0.1", gamePort, timeout.Token); }
+                        // Minecraft can print Done before it creates its first status response.
+                        catch (EndOfStreamException) when (!timeout.IsCancellationRequested) { }
+                        await Task.Delay(150, timeout.Token);
+                    }
+                }
+                var status = ReadReadyStatus();
+                Await(status, "reading the real server status advertisement");
+                advertisedDescriptor = status.Result.SyncDescriptorUrl;
+                File.WriteAllText(Path.Combine(root, "served-status.json"), JsonSerializer.Serialize(status.Result,
+                    new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+                Check(advertisedDescriptor == descriptorUrl, "the real game status advertises the server mod's exact descriptor URL");
+            }
             using (var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) })
             {
                 var fetch = http.GetStringAsync(descriptorUrl);
@@ -224,10 +259,14 @@ internal static partial class Program
             File.WriteAllText(Path.Combine(gameDir, "options.txt"),
                 "skipMultiplayerWarning:true\nonboardAccessibility:false\nrenderDistance:2\nsimulationDistance:2\n" +
                 "maxFps:30\nenableVsync:false\nsoundCategory_master:0.0\npauseOnLostFocus:false\nfullscreen:false\n");
-            new FavoriteServers(data).Save([new("sync-smoke", "Sync smoke", "127.0.0.1", gamePort, instanceId)
-            {
-                SyncManifestUrl = descriptorUrl, AutoSync = true, AllowLocalSync = true
-            }]);
+            if (discovery)
+                Check(favorites.Load().Count == 0 && !File.Exists(Path.Combine(data, "servers.json")),
+                    "discovery starts without a saved server or descriptor URL");
+            else
+                favorites.Save([new("sync-smoke", "Sync smoke", "127.0.0.1", gamePort, instanceId)
+                {
+                    SyncManifestUrl = descriptorUrl, AutoSync = true, AllowLocalSync = true
+                }]);
             Check(!File.Exists(installed), "fresh client deliberately starts without the required fixture");
             Await(sessions.LaunchAsync(instance, "127.0.0.1", gamePort, detail => Task.FromException<bool>(new InvalidOperationException("Unexpected compatibility confirmation: " + detail))),
                 "preparing the first real client", 300);
@@ -238,6 +277,11 @@ internal static partial class Program
             Check(firstLaunches[0].Pid != firstLaunches[1].Pid, "restarted Minecraft has a different process ID");
             Check(!firstLaunches[0].FixtureInstalled && firstLaunches[1].FixtureInstalled, "fixture is installed between the first and second JVM starts");
             Check(firstExits.All(exit => exit.Code == 0), "both clients exit normally with code zero");
+            Check(Volatile.Read(ref confirmations) == (discovery ? 1 : 0),
+                "the first discovered installation requests exactly one approval while the explicitly trusted path remains automatic");
+            if (discovery)
+                Check(favorites.Load().Count == 0 && !File.Exists(Path.Combine(data, "servers.json")),
+                    "discovery and controlled restart do not silently create a trusted favorite");
             Check(firstExits[0].At <= firstLaunches[1].At, "the original JVM exits before the restarted JVM starts");
             string firstLog = File.ReadAllText(firstExits[0].LogPath), secondLog = File.ReadAllText(firstExits[1].LogPath);
             Check(!firstLog.Contains("MECHANICA_SYNC_FIXTURE_INIT side=CLIENT", StringComparison.Ordinal), "the first JVM did not load the missing fixture");
@@ -263,6 +307,7 @@ internal static partial class Program
             Check(FileRequests() == fileRequestsAfterSync && File.GetLastWriteTimeUtc(installed) == installedWriteTime &&
                 ServerSmokeHash(installed) == fixtureHash, "repeat join neither downloads nor rewrites the already installed fixture");
             Check(ServerSmokeHash(sentinelMod) == sentinelHash && File.ReadAllText(sentinelFile) == sentinelText, "repeat join preserves personal files");
+            Check(Volatile.Read(ref confirmations) == (discovery ? 1 : 0), "an up-to-date repeat join requires no further mod approval");
             instance = instances.GetInstance(instanceId)!;
             instance.UseServerModSync = false;
             instances.SaveInstance(instance);
@@ -274,6 +319,10 @@ internal static partial class Program
             Check(disabledLog.Contains("MECHANICA_SYNC_FIXTURE_CLIENT_JOIN", StringComparison.Ordinal) &&
                 !disabledLog.Contains("MECHANICA_SYNC_PREPARE", StringComparison.Ordinal), "disabled bridge does not intercept an ordinary connection");
             Check(FileRequests() == fileRequestsAfterSync && ServerSmokeHash(installed) == fixtureHash, "disabled server sync leaves server content unchanged");
+            Check(Volatile.Read(ref confirmations) == (discovery ? 1 : 0), "disabled synchronization never requests discovery consent");
+            if (discovery)
+                Check(favorites.Load().Count == 0 && !File.Exists(Path.Combine(data, "servers.json")),
+                    "repeat and disabled joins leave the favorite list untouched");
             Check(eventErrors.IsEmpty, "all process events and complete per-launch logs were preserved");
             server.StandardInput.WriteLine("stop"); server.StandardInput.Flush();
             Until(() => server.HasExited, "stopping the isolated server", 60, false);
@@ -324,7 +373,8 @@ internal static partial class Program
             File.WriteAllText(resultFile, JsonSerializer.Serialize(new
             {
                 passed = failure == null, checks = checks - initialChecks, minecraft, loader = loader.ToString(), loaderVersion,
-                server = new { gamePort, descriptorUrl, exitCode = serverExitCode },
+                mode = discovery ? "discovery" : "explicit", confirmations,
+                server = new { gamePort, descriptorUrl, advertisedDescriptor, exitCode = serverExitCode },
                 bridge = new { filename = Path.GetFileName(bridge), sha512 = ServerSmokeHash(bridge) },
                 fixture = new { filename = fixtureName, sha512 = fixtureHash, fileRequests = FileRequests() },
                 launches = launches.ToArray(), exits = exits.ToArray(), error = failure?.ToString(), eventErrors = eventErrors.ToArray()

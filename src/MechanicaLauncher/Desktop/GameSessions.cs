@@ -174,6 +174,7 @@ public sealed partial class GameSessions(LauncherSettings settings, InstanceMana
             }
             process.OutputDataReceived += (_, e) => Append(e.Data);
             process.ErrorDataReceived += (_, e) => Append(e.Data);
+            if (bridge != null) bridge.Trace = Append;
             running[instance.Id] = process;
             process.BeginOutputReadLine(); process.BeginErrorReadLine();
             ProcessStarted?.Invoke(instance.Id, processId);

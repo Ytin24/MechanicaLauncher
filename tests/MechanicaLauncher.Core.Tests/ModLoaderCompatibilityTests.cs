@@ -166,13 +166,15 @@ internal static class ModLoaderCompatibilityTests
             Require((await f.Check()).Issues.Any(i => i.Code == "duplicate" && i.IsError));
         });
 
-        await check("Forge 1.12.2 mcmod info arrays and modList wrappers identify duplicates", async () =>
+        await check("Forge 1.12.2 mcmod info controls preserve IDs and malformed metadata stays unreadable", async () =>
         {
             var f = new Fixture(root, "legacy", LoaderType.Forge, "1.12.2", "14.23.5.2859");
-            f.Write("first.jar", Jar(("mcmod.info", Utf8("[{\"modid\":\"legacy\",\"version\":\"1.0\"}]"))));
+            f.Write("first.jar", Jar(("mcmod.info", Utf8("[{\"modid\":\"legacy\",\"version\":\"1.0\",\"description\":\"First \\\"quoted\\\" line\nSecond\tline\"}]"))));
             Require(!(await f.Check()).Issues.Any(i => i.IsError));
             f.Write("second.jar", Jar(("mcmod.info", Utf8("{\"modList\":[{\"modid\":\"legacy\",\"version\":\"2.0\"}]}"))));
             Require((await f.Check()).Issues.Any(i => i.IsError && i.Code == "duplicate"));
+            f.Write("broken.jar", Jar(("mcmod.info", Utf8("[{\"modid\":\"broken\",\"description\":\"unclosed\n}]"))));
+            Require((await f.Check()).Issues.Any(i => i.IsError && i.Code == "unreadable" && i.Detail == "broken.jar"));
         });
 
         await check("Fabric server environment dependencies do not block a client and missing required remains a warning", async () =>

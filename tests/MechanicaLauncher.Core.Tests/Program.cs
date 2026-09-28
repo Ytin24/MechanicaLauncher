@@ -706,6 +706,7 @@ await Check("Server launch selects Quick Play from metadata and keeps bridge sec
 
 await AuthTests.RunAsync(Check);
 await GameBridgeTests.RunAsync(Check);
+await ServerDiscoveryTests.RunAsync(Check);
 await ServerModSyncTests.RunAsync(Check, testRoot);
 await ModUpdateTests.RunAsync(Check, testRoot);
 await ModpackPrivateStateTests.RunAsync(Check, testRoot);

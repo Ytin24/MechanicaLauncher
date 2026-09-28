@@ -2,16 +2,16 @@
 
 Лаунчер Minecraft для Windows 10/11 x64. Отдельные сборки, моды из Modrinth и запуск игры с нужной версией и загрузчиком.
 
-[Скачать 1.0.0](https://github.com/Ytin24/MechanicaLauncher/releases/tag/v1.0.0)
+[Скачать 1.0.1](https://github.com/Ytin24/MechanicaLauncher/releases/tag/v1.0.1)
 
 ![Главная Mechanica Launcher с обложкой выбранной сборки](docs/images/home.png)
 
 ## Скачать
 
-Версия 1.0.0 для Windows x64:
+Версия 1.0.1 для Windows x64:
 
-- **[Установщик](https://github.com/Ytin24/MechanicaLauncher/releases/download/v1.0.0/MechanicaLauncher-1.0.0-setup.exe)** — установи лаунчер и запускай его из меню «Пуск».
-- **[Portable ZIP](https://github.com/Ytin24/MechanicaLauncher/releases/download/v1.0.0/MechanicaLauncher-x64-portable.zip)** — распакуй архив и открой `MechanicaLauncher.exe`. Сборки и настройки хранятся в папке `data` рядом с лаунчером.
+- **[Установщик](https://github.com/Ytin24/MechanicaLauncher/releases/download/v1.0.1/MechanicaLauncher-1.0.1-setup.exe)** — установи лаунчер и запускай его из меню «Пуск».
+- **[Portable ZIP](https://github.com/Ytin24/MechanicaLauncher/releases/download/v1.0.1/MechanicaLauncher-x64-portable.zip)** — распакуй архив и открой `MechanicaLauncher.exe`. Сборки и настройки хранятся в папке `data` рядом с лаунчером.
 
 Отдельно устанавливать .NET не нужно. Нумерация начинается заново с 1.0.0: при переходе с прежних 2.x, 3.x и 4.0.0-beta.1 скачай новую версию вручную — старый лаунчер считает её номер более низким. Перед заменой portable сохрани папку `data`.
 

@@ -2,6 +2,7 @@ param(
     [switch] $PrepareOnly,
     [switch] $DownloadAndRun,
     [switch] $AcceptEula,
+    [switch] $Discovery,
     [string] $SmokeRoot,
     [string] $SharedCacheDirectory,
     [string] $ClientJar,
@@ -75,6 +76,7 @@ $testArguments = @('--server-sync-smoke', '--accept-eula', '--smoke-root', $Smok
     '--shared-cache', $SharedCacheDirectory, '--server-dir', $serverDirectory, '--java', $JavaPath,
     '--bridge', $BridgePath, '--fixture', $FixturePath, '--minecraft', $MinecraftVersion, '--loader', $Loader,
     '--loader-version', $LoaderVersion, '--server-arguments', (Join-Path $serverDirectory 'mechanica-server-arguments.json'))
+if ($Discovery) { $testArguments += '--discovery' }
 if (-not $ClientJar) {
     $oldInstances = Join-Path (Split-Path -Parent $SharedCacheDirectory) 'instances'
     if (Test-Path -LiteralPath $oldInstances -PathType Container) {

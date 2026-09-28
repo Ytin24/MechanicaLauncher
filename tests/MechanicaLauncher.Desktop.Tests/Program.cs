@@ -37,6 +37,13 @@ internal static partial class Program
         try
         {
             if (args.Contains("--server-sync-smoke")) return ServerSyncSmoke(args, context);
+            if (args.Contains("--server-discovery"))
+            {
+                ServerDiscoveryChecks(context);
+                Console.WriteLine($"PASS {checks} server discovery checks");
+                Console.WriteLine(output);
+                return 0;
+            }
             if (args.Contains("--server-sync-settings"))
             {
                 ServerSyncSettingsChecks(context);
@@ -357,6 +364,7 @@ internal static partial class Program
             TLauncherChecks(context);
             InstalledContentChecks(context);
             ServerSyncChecks(context);
+            ServerDiscoveryChecks(context);
             ModUpdateChecks(context);
             GameBridgeLifecycleChecks(context);
             ServerSyncSettingsChecks(context);

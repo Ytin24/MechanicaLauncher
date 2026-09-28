@@ -189,7 +189,7 @@ public sealed class ModCompatibilityChecker(ModrinthClient? client = null)
         if (entry == null) return;
         if (entry.Length > 1024 * 1024) throw new InvalidDataException("Mod metadata is too large.");
         using var input = entry.Open();
-        using var document = ReadFabricMetadata(input);
+        using var document = ReadModMetadata(input);
         var root = document.RootElement;
         if (root.TryGetProperty("environment", out var environment) && environment.ValueKind == JsonValueKind.String && environment.GetString() == "server") return;
         if (root.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
@@ -216,7 +216,7 @@ public sealed class ModCompatibilityChecker(ModrinthClient? client = null)
         }
     }
 
-    internal static JsonDocument ReadFabricMetadata(Stream input)
+    internal static JsonDocument ReadModMetadata(Stream input)
     {
         using var buffer = new MemoryStream();
         input.CopyTo(buffer);
@@ -232,7 +232,7 @@ public sealed class ModCompatibilityChecker(ModrinthClient? client = null)
             if (value == '"') { quoted = !quoted; continue; }
             if (!quoted || value >= 0x20) continue;
 
-            // Fabric's JsonReader accepts raw control characters inside quoted strings.
+            // The loaders' Gson JsonReader accepts raw control characters inside quoted strings.
             normalized.Write(bytes[start..i]);
             normalized.Write("\\u00"u8);
             normalized.WriteByte("0123456789abcdef"u8[value >> 4]);
@@ -340,7 +340,9 @@ public sealed class ModCompatibilityChecker(ModrinthClient? client = null)
         }
         else if (zip.GetEntry("mcmod.info") is { } legacy)
         {
-            using var document = JsonDocument.Parse(EntryText(legacy));
+            if (legacy.Length > 1024 * 1024) throw new InvalidDataException("Mod metadata is too large.");
+            using var input = legacy.Open();
+            using var document = ReadModMetadata(input);
             var root = document.RootElement;
             if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("modList", out var list)) root = list;
             if (root.ValueKind == JsonValueKind.Array)

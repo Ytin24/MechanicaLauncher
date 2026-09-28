@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text.Json;
 using MechanicaLauncher.Core.Servers;
@@ -19,6 +21,8 @@ public sealed partial class GameSessions
     {
         public required GameBridgeSession Session { get; init; }
         public FavoriteServer? Server { get; set; }
+        public bool Discovered { get; set; }
+        public Action<string>? Trace { get; set; }
         public ServerModSync? Sync { get; set; }
         public ServerSyncPlan? Plan { get; set; }
         public ServerSyncStage? Stage { get; set; }
@@ -72,8 +76,9 @@ public sealed partial class GameSessions
     private string SyncStageDirectory(string instanceId, Guid planId) =>
         Path.Combine(instances.SharedDir, "server-sync", instanceId, planId.ToString("N"));
 
-    private static void ValidateSyncServer(FavoriteServer expected)
+    private static void ValidateSyncServer(FavoriteServer expected, bool discovered = false)
     {
+        if (discovered) return;
         var current = new FavoriteServers().Load().FirstOrDefault(server => server.Id == expected.Id);
         if (current == null || current.InstanceId != expected.InstanceId || current.Host != expected.Host || current.Port != expected.Port ||
             current.SyncManifestUrl != expected.SyncManifestUrl || current.AutoSync != expected.AutoSync || current.AllowLocalSync != expected.AllowLocalSync)
@@ -94,14 +99,48 @@ public sealed partial class GameSessions
             throw new InvalidOperationException("Конфликт модов:\n" + string.Join("\n", plan.Conflicts.Select(c => c.FileName + ": " + c.Reason)));
     }
 
-    private async Task<bool> ApproveServerSyncAsync(FavoriteServer server, ServerSyncPlan plan, CancellationToken token)
+    private async Task<bool> ApproveServerSyncAsync(FavoriteServer server, ServerSyncPlan plan, CancellationToken token, bool discovered = false)
     {
         if (Events.Active?.Ui?.AllowModInstall == false) throw new InvalidOperationException(Locale.Get("catalog.install_locked"));
-        bool allowed = server.AutoSync || ConfirmServerSync != null && await ConfirmServerSync(server, plan, token).WaitAsync(token);
+        bool allowed = !discovered && server.AutoSync || ConfirmServerSync != null && await ConfirmServerSync(server, plan, token).WaitAsync(token);
         token.ThrowIfCancellationRequested();
-        ValidateSyncServer(server);
+        ValidateSyncServer(server, discovered);
         if (Events.Active?.Ui?.AllowModInstall == false) throw new InvalidOperationException(Locale.Get("catalog.install_locked"));
         return allowed;
+    }
+
+    private static bool SameServerHost(string left, string right) =>
+        IPAddress.TryParse(left, out var leftAddress) && IPAddress.TryParse(right, out var rightAddress)
+            ? leftAddress.Equals(rightAddress)
+            : left.TrimEnd('.').Equals(right.TrimEnd('.'), StringComparison.OrdinalIgnoreCase);
+
+    private static async Task<(FavoriteServer? Server, bool Discovered)> FindSyncServerAsync(
+        GameInstance instance, string host, int port, Action<string>? trace, CancellationToken token)
+    {
+        var matches = new FavoriteServers().Load().Where(candidate => candidate.InstanceId == instance.Id &&
+            SameServerHost(candidate.Host, host) && candidate.Port == port && !string.IsNullOrWhiteSpace(candidate.SyncManifestUrl)).ToArray();
+        if (matches.Length > 1) throw new ServerModSyncException("conflict", "Несколько настроек для этого сервера.");
+        if (matches.Length == 1) return (matches[0], false);
+        ServerStatus status;
+        try { status = await new ServerStatusClient().QueryAsync(host, port, token); }
+        catch (Exception ex) when (ex is SocketException or IOException ||
+            ex is OperationCanceledException && !token.IsCancellationRequested)
+        {
+            trace?.Invoke($"MECHANICA_SYNC_STATUS_UNAVAILABLE {host}:{port} ({ex.GetType().Name})");
+            return (null, false);
+        }
+        if (status.SyncDescriptorUrl == null)
+        {
+            trace?.Invoke($"MECHANICA_SYNC_NOT_ADVERTISED {host}:{port}");
+            return (null, false);
+        }
+        var server = new FavoriteServer(Guid.NewGuid().ToString("N"), host, host, port, instance.Id)
+        {
+            SyncManifestUrl = status.SyncDescriptorUrl,
+            AllowLocalSync = IPAddress.TryParse(host, out var address) && IPAddress.IsLoopback(address)
+        };
+        trace?.Invoke($"MECHANICA_SYNC_DISCOVERED {server.Address} ({new Uri(status.SyncDescriptorUrl).Host})");
+        return (server, true);
     }
 
     private BridgeRun CreateBridgeRun(GameInstance instance, bool restarted)
@@ -141,25 +180,28 @@ public sealed partial class GameSessions
                         run.Operation = CancellationTokenSource.CreateLinkedTokenSource(token, syncLifetime.Token);
                         token = run.Operation.Token;
                         generation = ++run.Generation;
-                        run.Plan = null; run.Job = null;
+                        run.Plan = null; run.Job = null; run.Server = null; run.Sync = null; run.Discovered = false;
                     }
                     string host = request.Payload.GetProperty("host").GetString() ?? "";
                     int port = request.Payload.GetProperty("port").GetInt32();
-                    var matches = new FavoriteServers().Load().Where(s => s.InstanceId == instance.Id &&
-                        s.Host.Equals(host, StringComparison.OrdinalIgnoreCase) && s.Port == port && !string.IsNullOrWhiteSpace(s.SyncManifestUrl)).ToArray();
-                    if (matches.Length == 0) return Reply("Result", new { status = "ready" });
-                    if (matches.Length != 1) return Reply("Result", new { status = "error", code = "conflict", message = "Несколько настроек для этого сервера." });
                     if (IsSyncBusy(instance.Id)) return Reply("Result", new { status = "error", code = "busy" });
-                    run.Server = matches[0]; run.Sync = CreateServerSync(run.Server);
+                    (run.Server, run.Discovered) = await FindSyncServerAsync(instance, host, port, run.Trace, token);
+                    token.ThrowIfCancellationRequested();
+                    if (run.Server == null) return Reply("Result", new { status = "ready" });
+                    run.Sync = CreateServerSync(run.Server);
                     Report("Проверяю моды · " + run.Server.Name);
                     var plan = await run.Sync.PlanAsync(new Uri(run.Server.SyncManifestUrl!), instance, instances.GetGameDir(instance.Id), run.Server.AllowLocalSync, token);
                     token.ThrowIfCancellationRequested();
                     CheckSyncPlan(plan);
                     bool verifyRestart = restarted;
                     restarted = false;
-                    if (!plan.HasChanges) return Reply("Result", new { status = "ready" });
+                    if (!plan.HasChanges)
+                    {
+                        run.Trace?.Invoke($"MECHANICA_SYNC_UP_TO_DATE {run.Server.Address}");
+                        return Reply("Result", new { status = "ready" });
+                    }
                     if (verifyRestart) return Reply("Result", new { status = "error", code = "conflict", message = "Список модов изменился после обновления. Подключись ещё раз." });
-                    if (!await ApproveServerSyncAsync(run.Server, plan, token)) return Reply("Result", new { status = "cancelled" });
+                    if (!await ApproveServerSyncAsync(run.Server, plan, token, run.Discovered)) return Reply("Result", new { status = "cancelled" });
                     lock (run.StateGate)
                     {
                         token.ThrowIfCancellationRequested();
@@ -185,7 +227,7 @@ public sealed partial class GameSessions
                     var planId = approvedPlan.PlanId;
                     using var applyCancellation = CancellationTokenSource.CreateLinkedTokenSource(token, operationToken, syncLifetime.Token);
                     token = applyCancellation.Token;
-                    ValidateSyncServer(run.Server!);
+                    ValidateSyncServer(run.Server!, run.Discovered);
                     if (!syncBusy.TryAdd(instance.Id, run)) return Reply("Result", new { status = "error", code = "busy" });
                     try
                     {
@@ -273,7 +315,7 @@ public sealed partial class GameSessions
             var job = EnqueueCore("Установка · " + server.Name, instance.Id, async token =>
             {
                 if (Events.Active?.Ui?.AllowModInstall == false) throw new InvalidOperationException(Locale.Get("catalog.install_locked"));
-                ValidateSyncServer(server);
+                ValidateSyncServer(server, run.Discovered);
                 ValidateSyncInstance(instance);
                 lock (run.StateGate)
                     if (run.Generation != generation || !run.RestartRequested) throw new OperationCanceledException();

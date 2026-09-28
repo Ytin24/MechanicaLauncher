@@ -183,7 +183,7 @@ public sealed class InstalledContentIndex(ModrinthClient client)
                         var metadata = ReadToml(reader.ReadToEnd());
                         return (metadata.Name, metadata.Version == "${file.jarVersion}" ? ReadManifestVersion(zip) : metadata.Version);
                     }
-                    using var document = ModCompatibilityChecker.ReadFabricMetadata(input);
+                    using var document = ModCompatibilityChecker.ReadModMetadata(input);
                     var root = document.RootElement;
                     if (name == "fabric.mod.json") return (GetString(root, "name"), GetString(root, "version"));
                     if (name == "quilt.mod.json" && root.TryGetProperty("quilt_loader", out var loader))

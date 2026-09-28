@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -7,7 +8,10 @@ using System.Text.RegularExpressions;
 
 namespace MechanicaLauncher.Core.Servers;
 
-public sealed record ServerStatus(string Version, int Online, int Maximum, string Description, long LatencyMs);
+public sealed record ServerStatus(string Version, int Online, int Maximum, string Description, long LatencyMs)
+{
+    public string? SyncDescriptorUrl { get; init; }
+}
 
 public sealed partial class ServerStatusClient
 {
@@ -36,8 +40,9 @@ public sealed partial class ServerStatusClient
         if (await ReadVarIntAsync(data, token) != 0) throw new InvalidDataException("Invalid status response.");
         var length = await ReadVarIntAsync(data, token);
         if (length < 0 || length != data.Length - data.Position) throw new InvalidDataException("Invalid status length.");
-        using var json = JsonDocument.Parse(packet.AsMemory((int)data.Position, length));
+        using var json = ReadJson(packet.AsMemory((int)data.Position, length));
         var root = json.RootElement;
+        var descriptorUrl = ReadSyncDescriptor(root, host);
         var version = root.TryGetProperty("version", out var v) && v.TryGetProperty("name", out var n) ? n.GetString() ?? "?" : "?";
         int online = 0, maximum = 0;
         if (root.TryGetProperty("players", out var players))
@@ -55,8 +60,47 @@ public sealed partial class ServerStatusClient
         var pong = await ReadPacketAsync(stream, token);
         if (!ping.AsSpan().SequenceEqual(pong)) throw new InvalidDataException("Invalid ping response.");
         return new(version[..Math.Min(version.Length, 100)], Math.Max(0, online), Math.Max(0, maximum),
-            description[..Math.Min(description.Length, 1000)], clock.ElapsedMilliseconds);
+            description[..Math.Min(description.Length, 1000)], clock.ElapsedMilliseconds) { SyncDescriptorUrl = descriptorUrl };
     }
+
+    private static JsonDocument ReadJson(ReadOnlyMemory<byte> data)
+    {
+        try { return JsonDocument.Parse(data); }
+        catch (JsonException error) { throw new InvalidDataException("Некорректный ответ сервера.", error); }
+    }
+
+    private static string? ReadSyncDescriptor(JsonElement root, string requestedHost)
+    {
+        if (root.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Некорректный ответ сервера.");
+        if (!root.TryGetProperty("mechanica", out var advertisement)) return null;
+        if (advertisement.ValueKind != JsonValueKind.Object ||
+            root.EnumerateObject().Count(property => property.NameEquals("mechanica")) != 1 ||
+            advertisement.EnumerateObject().Count(property => property.NameEquals("protocol")) != 1 ||
+            advertisement.EnumerateObject().Count(property => property.NameEquals("descriptorUrl")) != 1)
+            throw new InvalidDataException("Некорректное объявление синхронизации сервера.");
+        var protocol = advertisement.GetProperty("protocol");
+        if (protocol.ValueKind != JsonValueKind.Number || !protocol.TryGetInt32(out int version) || version != 1)
+            throw new InvalidDataException("Сервер использует неподдерживаемую версию синхронизации.");
+        var value = advertisement.GetProperty("descriptorUrl");
+        if (value.ValueKind != JsonValueKind.String)
+            throw new InvalidDataException("Некорректный адрес синхронизации сервера.");
+        var url = value.GetString()!;
+        if (url.Length is 0 or > 2048 || !Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            !uri.IsWellFormedOriginalString() || uri.Host.Length == 0 || uri.Fragment.Length != 0 || uri.Port is < 1 or > 65535 ||
+            !url.StartsWith(uri.Scheme + "://", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Некорректный адрес синхронизации сервера.");
+        var authority = url.AsSpan(uri.Scheme.Length + 3);
+        int authorityEnd = authority.IndexOfAny('/', '?', '#');
+        if (authorityEnd >= 0) authority = authority[..authorityEnd];
+        if (authority.Contains('@')) throw new InvalidDataException("Адрес синхронизации не должен содержать данные входа.");
+        if (uri.Scheme != Uri.UriSchemeHttps &&
+            !(uri.Scheme == Uri.UriSchemeHttp && IsLiteralLoopback(requestedHost) && IsLiteralLoopback(uri.IdnHost)))
+            throw new InvalidDataException("Синхронизация сервера требует HTTPS.");
+        return url;
+    }
+
+    private static bool IsLiteralLoopback(string host) =>
+        IPAddress.TryParse(host, out var address) && IPAddress.IsLoopback(address);
 
     internal static async Task<byte[]> ReadPacketAsync(Stream stream, CancellationToken token)
     {

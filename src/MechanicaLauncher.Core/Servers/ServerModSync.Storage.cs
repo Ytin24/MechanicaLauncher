@@ -189,7 +189,7 @@ public sealed partial class ServerModSync
         if (zip.GetEntry("fabric.mod.json") is { } fabric)
         {
             using var input = new MemoryStream(EntryBytes(fabric, MaxJsonBytes));
-            using var doc = ModCompatibilityChecker.ReadFabricMetadata(input);
+            using var doc = ModCompatibilityChecker.ReadModMetadata(input);
             var root = doc.RootElement;
             Add(root, "id");
             if (root.TryGetProperty("provides", out var provides) && provides.ValueKind == JsonValueKind.Array)
@@ -229,7 +229,8 @@ public sealed partial class ServerModSync
             }
         if (zip.GetEntry("mcmod.info") is { } legacy)
         {
-            using var doc = JsonDocument.Parse(EntryBytes(legacy, MaxJsonBytes));
+            using var input = new MemoryStream(EntryBytes(legacy, MaxJsonBytes));
+            using var doc = ModCompatibilityChecker.ReadModMetadata(input);
             var root = doc.RootElement;
             if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("modList", out var list)) root = list;
             if (root.ValueKind == JsonValueKind.Array) foreach (var mod in root.EnumerateArray()) Add(mod, "modid");

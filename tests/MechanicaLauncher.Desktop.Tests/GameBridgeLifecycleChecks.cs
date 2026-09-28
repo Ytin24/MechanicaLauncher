@@ -43,6 +43,7 @@ internal static partial class Program
         try
         {
             using var bundle = new BridgeBundleFixture();
+            using var unlisted = new ServerDiscoveryPublisher { Advertisement = null };
             var fabric = bundle.Add("1.21.1", LoaderType.Fabric, "0.19.3", "1.0.0");
             var stubPackage = bundle.Add("window-fixture", LoaderType.Fabric, "0.19.3", "1.0.0");
             bundle.Manifest(fabric, stubPackage);
@@ -93,7 +94,7 @@ internal static partial class Program
                     Check(!sessions.IsBusy(instance.Id) && !File.Exists(installed), "cancel releases the instance and leaves its mod directory unchanged");
                     for (int retry = 0; retry < 2; retry++)
                     {
-                        var prepare = route(BridgeLifecycleRequest("PrepareConnection", new { host = "unlisted.example", port = 25565, knownRevision = 0 }), CancellationToken.None);
+                        var prepare = route(BridgeLifecycleRequest("PrepareConnection", new { host = "127.0.0.1", port = unlisted.GamePort, knownRevision = 0 }), CancellationToken.None);
                         Await(prepare, "preparing again after cancellation");
                         Check(BridgeLifecycleStatus(prepare.Result) == "ready", "cancelled bridge sessions accept subsequent connection attempts");
                     }

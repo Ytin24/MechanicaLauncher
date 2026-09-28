@@ -30,6 +30,7 @@ public sealed partial class LauncherModel
         }.Select(change => (change.Item2, Count: plan.Changes.Count(item => item.Kind == change.Item1)))
             .Where(change => change.Count > 0).Select(change => change.Item1 + ": " + change.Count).ToArray();
         string body = server.Name + " · " + (Instances.GetInstance(server.InstanceId)?.Name ?? InstanceName) + "\n" + string.Join(" · ", summary);
+        if (Uri.TryCreate(server.SyncManifestUrl, UriKind.Absolute, out var source)) body += "\n" + T("Источник: ", "Source: ") + source.Host;
         if (plan.DownloadBytes > 0) body += "\n" + T("Скачать: ", "Download: ") + Size(plan.DownloadBytes);
         if (Sessions.IsRunning(server.InstanceId)) body += "\n" + T("Minecraft перезапустится.", "Minecraft will restart.");
         return Confirm(T("Обновить моды сервера?", "Update server mods?"), body, T("Обновить", "Update"));
