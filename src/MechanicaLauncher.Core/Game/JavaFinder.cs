@@ -213,39 +213,34 @@ public static class JavaFinder
         var targetDir = FileDownloader.GetPath(gameDir, $"runtime/{component}/windows-x64/{component}");
         Directory.CreateDirectory(targetDir);
 
-        var fileList = files.EnumerateObject().ToList();
-        int downloaded = 0;
-
-        foreach (var file in fileList)
+        var downloads = new List<(string Url, string Path, string? Sha1, long Size)>();
+        foreach (var file in files.EnumerateObject())
         {
-            var relPath = file.Name.Replace('/', Path.DirectorySeparatorChar);
-            var fullPath = FileDownloader.GetPath(targetDir, relPath);
-
-            if (file.Value.TryGetProperty("type", out var type))
+            var fullPath = FileDownloader.GetPath(targetDir, file.Name.Replace('/', Path.DirectorySeparatorChar));
+            if (!file.Value.TryGetProperty("type", out var type)) continue;
+            if (type.GetString() == "directory") Directory.CreateDirectory(fullPath);
+            else if (type.GetString() == "file" &&
+                file.Value.TryGetProperty("downloads", out var fileDownloads) &&
+                fileDownloads.TryGetProperty("raw", out var raw) &&
+                raw.TryGetProperty("url", out var url))
             {
-                if (type.GetString() == "directory")
-                {
-                    Directory.CreateDirectory(fullPath);
-                    continue;
-                }
-
-                if (type.GetString() == "file")
-                {
-                    if (file.Value.TryGetProperty("downloads", out var downloads) &&
-                        downloads.TryGetProperty("raw", out var raw) &&
-                        raw.TryGetProperty("url", out var url))
-                    {
-                        var sha1 = raw.TryGetProperty("sha1", out var hash) ? hash.GetString() : null;
-                        var size = raw.TryGetProperty("size", out var length) ? length.GetInt64() : 0;
-                        await FileDownloader.EnsureAsync(Http, url.GetString()!, fullPath, sha1, size, cancellationToken);
-                    }
-                }
+                var sha1 = raw.TryGetProperty("sha1", out var hash) ? hash.GetString() : null;
+                var size = raw.TryGetProperty("size", out var length) ? length.GetInt64() : 0;
+                downloads.Add((url.GetString()!, fullPath, sha1, size));
             }
-
-            downloaded++;
-            if (downloaded % 20 == 0)
-                onProgress?.Invoke($"Java runtime ({downloaded}/{fileList.Count})...");
         }
+
+        // The runtime is several hundred small files; fetching them one by one was the slowest part of a first launch.
+        int downloaded = 0;
+        await Parallel.ForEachAsync(downloads, new ParallelOptions { MaxDegreeOfParallelism = 12, CancellationToken = cancellationToken },
+            async (file, token) =>
+            {
+                await FileDownloader.EnsureAsync(Http, file.Url, file.Path, file.Sha1, file.Size, token);
+                var count = Interlocked.Increment(ref downloaded);
+                if (count % 20 == 0 || count == downloads.Count)
+                    onProgress?.Invoke($"Java runtime ({count}/{downloads.Count})...");
+            });
+        VerifiedFiles.Flush();
 
         var javaw = Path.Combine(targetDir, "bin", "javaw.exe");
         if (!File.Exists(javaw)) return null;
