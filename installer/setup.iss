@@ -37,3 +37,11 @@ Root: HKA; Subkey: "Software\Classes\MechanicaLauncher.Modpack\shell\open\comman
 
 [Run]
 Filename: "{app}\MechanicaLauncher.exe"; Description: "Launch Mechanica Launcher"; Flags: nowait postinstall skipifsilent
+; In-app updates run setup with /VERYSILENT /RELAUNCH=1, so start the new version when done.
+Filename: "{app}\MechanicaLauncher.exe"; Flags: nowait; Check: ShouldRelaunch
+
+[Code]
+function ShouldRelaunch: Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:RELAUNCH|0}') = '1');
+end;

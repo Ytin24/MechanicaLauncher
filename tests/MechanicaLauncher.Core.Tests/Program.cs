@@ -720,6 +720,7 @@ await PresetTests.RunAsync(Check, testRoot);
 await BuildCreationTests.RunAsync(Check, testRoot);
 await DiscordTests.RunAsync(Check);
 await TLauncherTests.RunAsync(Check, testRoot);
+await LauncherUpdaterTests.RunAsync(Check, testRoot);
 
 Console.WriteLine($"{passed} passed, {failed} failed.");
 if (failed == 0 && Path.GetFullPath(testRoot).StartsWith(testParent + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))

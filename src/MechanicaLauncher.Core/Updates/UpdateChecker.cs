@@ -11,6 +11,12 @@ public sealed class UpdateInfo
     public string LatestVersion { get; set; } = "";
     public string? DownloadUrl { get; set; }
     public string? ReleaseUrl { get; set; }
+    /// <summary>Direct link to the Inno Setup installer asset, when the release has one.</summary>
+    public string? InstallerUrl { get; set; }
+    public string? InstallerName { get; set; }
+    public long InstallerSize { get; set; }
+    /// <summary>Lowercase hex SHA-256 published by GitHub for the installer asset, if known.</summary>
+    public string? InstallerSha256 { get; set; }
 }
 
 public static class UpdateChecker
@@ -51,6 +57,14 @@ public static class UpdateChecker
             var asset = release.Assets?.FirstOrDefault(a =>
                 a.Name?.Contains("setup", StringComparison.OrdinalIgnoreCase) == true);
             result.DownloadUrl = asset?.DownloadUrl ?? release.HtmlUrl;
+            if (asset?.DownloadUrl != null && asset.Name != null && asset.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                result.InstallerUrl = asset.DownloadUrl;
+                result.InstallerName = asset.Name;
+                result.InstallerSize = asset.Size;
+                if (asset.Digest?.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) == true)
+                    result.InstallerSha256 = asset.Digest[7..].ToLowerInvariant();
+            }
 
             if (IsNewer(latest, current))
                 result.IsAvailable = true;
@@ -60,7 +74,7 @@ public static class UpdateChecker
         return result;
     }
 
-    private static bool IsNewer(string latest, string current)
+    internal static bool IsNewer(string latest, string current)
     {
         var lParts = latest.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
         var cParts = current.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
@@ -96,4 +110,10 @@ file sealed class GitHubAsset
 
     [JsonPropertyName("browser_download_url")]
     public string? DownloadUrl { get; set; }
+
+    [JsonPropertyName("size")]
+    public long Size { get; set; }
+
+    [JsonPropertyName("digest")]
+    public string? Digest { get; set; }
 }
