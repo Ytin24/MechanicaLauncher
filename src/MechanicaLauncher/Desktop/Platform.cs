@@ -42,6 +42,16 @@ internal static class Platform
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != "https" || uri.UserInfo.Length != 0) return;
         Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
     }
+    public static void CopyText(string text)
+    {
+        try { Forms.Clipboard.SetText(text); }
+        catch (Exception ex) when (ex is ExternalException or ThreadStateException) { }
+    }
+    public static string? ClipboardText()
+    {
+        try { return Forms.Clipboard.ContainsText() ? Forms.Clipboard.GetText() : null; }
+        catch (Exception ex) when (ex is ExternalException or ThreadStateException) { return null; }
+    }
     public static string? SignIn(MicrosoftSignInRequest request)
     {
         using var form = new Forms.Form { Text = "Microsoft · Mechanica", Width = 600, Height = 760, StartPosition = Forms.FormStartPosition.CenterScreen };

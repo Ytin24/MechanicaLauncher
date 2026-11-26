@@ -110,6 +110,10 @@ public sealed class ModrinthClient
         return await Http.GetFromJsonAsync<ModrinthVersion>($"/v2/version/{Uri.EscapeDataString(versionId)}", cancellationToken);
     }
 
+    // Accepts a version id or a version number, as Modrinth's project-scoped endpoint does.
+    public Task<ModrinthVersion?> GetProjectVersionAsync(string projectId, string versionIdOrNumber, CancellationToken cancellationToken = default) =>
+        Http.GetFromJsonAsync<ModrinthVersion>($"/v2/project/{Uri.EscapeDataString(projectId)}/version/{Uri.EscapeDataString(versionIdOrNumber)}", cancellationToken);
+
     // Reverse-lookup a mod by its jar's sha1 hash → returns the owning project info (title + icon).
     // Modrinth caches aggressively; our own process-memory dict dedupes calls across the UI session.
     private static readonly Dictionary<string, ModrinthProjectInfo?> _hashCache = new();

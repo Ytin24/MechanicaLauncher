@@ -293,8 +293,18 @@ internal static partial class Program
             model.Home(); model.Library(); Check(model.Page == "home", "event blocks hidden page routes");
             int jobs = model.Sessions.Downloads.Jobs.Count; model.ImportPack("forbidden.mrpack");
             Check(model.Sessions.Downloads.Jobs.Count == jobs, "event blocks direct pack import");
+            model.ImportMenu(); Check(!model.DialogOpen, "event blocks the import menu");
+            _ = model.HandleCommand("PRESET|mechanica://pack?modrinth=blocked"); context.Drain();
+            Check(model.Sessions.Downloads.Jobs.Count == jobs && !model.DialogOpen, "event blocks shared instance links");
             model.ToggleLog(); Check(!model.ShowLog, "event blocks game log");
             model.Sessions.Events.Clear();
+            model.Library(); model.ImportMenu();
+            Check(model.DialogOpen && !model.DialogSearch && model.DialogChoices.Count == 2, "import menu offers a link and a file without search");
+            model.DialogChoices[0].Invoke();
+            Check(model.DialogOpen && model.DialogFields.Single().Id == "link", "link import asks for one link");
+            model.DialogFields.Single().Value = "https://example.com/not-a-pack.txt"; model.AcceptDialog(); Render();
+            Check(model.DialogOpen && model.DialogError.Length > 0 && model.Sessions.Downloads.Jobs.Count == jobs, "link import rejects non-pack links before any download");
+            model.CloseDialog();
             string screenshots = Path.Combine(instances.GetGameDir(instance.Id), "screenshots"); Directory.CreateDirectory(screenshots);
             string screenshot = Path.Combine(screenshots, "fixture.png");
             using (var bitmap = new System.Drawing.Bitmap(64, 32))

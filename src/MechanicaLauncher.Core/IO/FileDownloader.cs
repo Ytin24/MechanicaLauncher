@@ -6,7 +6,7 @@ namespace MechanicaLauncher.Core.IO;
 internal static class FileDownloader
 {
     public static async Task EnsureAsync(HttpClient http, string url, string path,
-        string? sha1 = null, long size = 0, CancellationToken cancellationToken = default, string? sha512 = null)
+        string? sha1 = null, long size = 0, CancellationToken cancellationToken = default, string? sha512 = null, long maxSize = 0)
     {
         if (await IsValidAsync(path, sha1, size, cancellationToken, sha512)) return;
         if (string.IsNullOrWhiteSpace(url))
@@ -24,6 +24,7 @@ internal static class FileDownloader
                 using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
                 response.EnsureSuccessStatusCode();
                 var expectedSize = size > 0 ? size : response.Content.Headers.ContentLength ?? 0;
+                if (maxSize > 0 && expectedSize > maxSize) throw new IOException($"Download is larger than allowed: {Path.GetFileName(path)}");
                 long received = 0;
                 job?.Progress(path, 0, expectedSize, 0);
                 await using (var input = await response.Content.ReadAsStreamAsync(timeout.Token))
@@ -36,6 +37,7 @@ internal static class FileDownloader
                     {
                         await output.WriteAsync(buffer.AsMemory(0, count), timeout.Token);
                         received += count;
+                        if (maxSize > 0 && received > maxSize) throw new IOException($"Download is larger than allowed: {Path.GetFileName(path)}");
                         job?.Progress(path, received, expectedSize, count);
                     }
                 }

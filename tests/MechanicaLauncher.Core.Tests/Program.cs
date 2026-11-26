@@ -716,6 +716,7 @@ await ModLoaderCompatibilityTests.RunAsync(Check, testRoot);
 await CatalogTests.RunAsync(Check, testRoot);
 await InstalledContentIndexTests.RunAsync(Check, testRoot);
 await FeatureTests.RunAsync(Check, testRoot);
+await PresetTests.RunAsync(Check, testRoot);
 await DiscordTests.RunAsync(Check);
 await TLauncherTests.RunAsync(Check, testRoot);
 

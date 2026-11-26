@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Nitidus.Native;
+using MechanicaLauncher.Core.Presets;
 using MechanicaLauncher.Core.Protocol;
 
 namespace MechanicaLauncher.Desktop;
@@ -85,6 +86,8 @@ internal static class Program
         var commandLine = new[] { Environment.ProcessPath ?? "MechanicaLauncher.exe" }.Concat(args).ToArray();
         var file = args.FirstOrDefault(a => a.EndsWith(".mrpack", StringComparison.OrdinalIgnoreCase) && File.Exists(a));
         if (file != null) return "MRPACK|" + Path.GetFullPath(file);
+        var preset = PresetLink.ParseArgs(commandLine);
+        if (preset != null) return "PRESET|" + preset.ProtocolUri;
         var evt = ProtocolHandler.ParseEvent(commandLine);
         if (evt != null) return "EVENT|" + evt.ConfigUrl;
         var connect = ProtocolHandler.ParseConnect(commandLine);
