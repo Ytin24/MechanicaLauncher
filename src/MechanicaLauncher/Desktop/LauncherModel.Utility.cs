@@ -152,7 +152,52 @@ public sealed partial class LauncherModel
         Title = language.Item2, Action = () => { Settings.Language = language.Item1; Settings.Save(); Locale.Init(language.Item1); CloseDialog(); Sessions.Discord.Configure(Settings, Locale.CurrentLanguage); RefreshInstances(); Changed(); }
     }));
     public void CheckUpdates() => Run(() => WithBusy(async () => { update = await UpdateChecker.CheckAsync(); UpdateStatus = update.IsAvailable ? T("Доступна версия ", "Available version ") + update.LatestVersion : T("Новых обновлений нет", "No updates available"); Changed(); }));
-    public void OpenUpdate() { if (update?.DownloadUrl != null) Platform.OpenUrl(update.DownloadUrl); }
+    /// <summary>Background check on startup: shows the update banner, never an error.</summary>
+    public void CheckUpdatesOnStartup() => Run(async () =>
+    {
+        var found = await UpdateChecker.CheckAsync();
+        if (disposed || !found.IsAvailable) return;
+        update = found; UpdateStatus = T("Доступна версия ", "Available version ") + found.LatestVersion;
+        updateBannerDismissed = false; Changed();
+    });
+    private bool updateBannerDismissed, installingUpdate;
+    public bool CanInstallUpdate => LauncherUpdater.CanInstall(update, AppContext.BaseDirectory);
+    public bool InstallingUpdate => installingUpdate;
+    public bool ShowUpdateBanner => HasUpdate && !updateBannerDismissed && !TLauncherBlocked;
+    public string UpdateBannerText => installingUpdate ? UpdateStatus
+        : T("Вышла новая версия лаунчера ", "A new launcher version is out: ") + update?.LatestVersion
+          + (CanInstallUpdate ? T(". Обновление займёт меньше минуты, сборки и настройки сохранятся.", ". Updating takes under a minute; instances and settings are kept.") : "");
+    public string UpdateActionLabel => CanInstallUpdate ? T("Обновить и перезапустить", "Update and restart") : T("Скачать обновление", "Download update");
+    public void DismissUpdateBanner() { updateBannerDismissed = true; Changed(); }
+    public void OpenUpdate()
+    {
+        if (!CanInstallUpdate) { if (update?.DownloadUrl != null) Platform.OpenUrl(update.DownloadUrl); return; }
+        if (installingUpdate || update == null) return;
+        if (Sessions.RunningCount > 0 || Sessions.Preparing || Sessions.Downloads.HasPending)
+        {
+            Notice(T("Закрой Minecraft и дождись окончания загрузок, затем обнови лаунчер.", "Close Minecraft and wait for downloads to finish, then update the launcher."));
+            return;
+        }
+        var target = update;
+        installingUpdate = true; Changed();
+        Run(async () =>
+        {
+            try
+            {
+                var progress = new Progress<double>(value => { UpdateStatus = T("Скачивание обновления… ", "Downloading update… ") + Math.Round(value) + "%"; Changed(); });
+                var installer = await new LauncherUpdater().DownloadAsync(target, progress);
+                UpdateStatus = T("Устанавливаю обновление, лаунчер перезапустится…", "Installing the update, the launcher will restart…"); Changed();
+                LauncherUpdater.StartInstaller(installer, AppContext.BaseDirectory);
+                Exit();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                installingUpdate = false;
+                UpdateStatus = T("Не удалось обновить: ", "Update failed: ") + ex.Message;
+                Notice(UpdateStatus + T(" Можно скачать установщик вручную в настройках.", " You can download the installer manually in Settings."), true);
+            }
+        });
+    }
     public void OpenDataFolder() => Platform.OpenPath(LauncherPaths.DataDirectory);
     public void LeaveEvent() { Sessions.Events.Clear(); Settings.ActiveEventUrl = null; Settings.Save(); Changed(); }
 

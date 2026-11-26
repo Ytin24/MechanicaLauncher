@@ -66,6 +66,7 @@ internal static class Program
                     await model.ResumePendingCommand();
                 });
                 _ = Poll(model, pendingFile, lifetime.Token);
+                if (Environment.GetEnvironmentVariable("MECHANICA_NO_UPDATE_CHECK") != "1") model.CheckUpdatesOnStartup();
                 TraceStartup("Startup callback completed");
             };
             window.Closed += lifetime.Cancel;

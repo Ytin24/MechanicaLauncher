@@ -49,6 +49,11 @@ view Shell(vm: LauncherModel) {
                         Text vm.Message Grow=1 Wrap=true Foreground=(vm.Error ? vm.Palette.Error : vm.Palette.Foreground)
                         Button "×" Width=34 Command=vm.DismissMessage
                     }
+                    Row #updateBanner Gap=12 Padding=12 Visible=vm.ShowUpdateBanner {
+                        Text vm.UpdateBannerText Grow=1 Wrap=true
+                        Button .primary #installUpdate Text=vm.UpdateActionLabel Width=220 Command=vm.OpenUpdate Enabled=(!vm.InstallingUpdate)
+                        Button "×" Width=34 Command=vm.DismissUpdateBanner Visible=(!vm.InstallingUpdate)
+                    }
                     Grid #home Grow=1 ColumnDefinitions="*" RowDefinitions="*" ClipToBounds=true Visible=(vm.Page == "home") {
                         Grid #homeSelected GridRow=0 GridColumn=0 Align=Stretch VerticalAlign=Stretch ColumnDefinitions="*" RowDefinitions=(GridTracks.Parse(vm.HasHeroImage || vm.ShowLog || vm.SessionStatus.Length > 0 || vm.Message.Length > 0 ? "*,Auto" : "Auto,Auto,*")) Visible=(vm.SelectedInstance != null) {
                             Grid #hero GridRow=0 GridColumn=0 Align=Stretch VerticalAlign=Stretch ColumnDefinitions="*" RowDefinitions=(GridTracks.Parse(vm.HasHeroImage || vm.ShowLog || vm.SessionStatus.Length > 0 || vm.Message.Length > 0 ? "*" : "Auto")) ClipToBounds=true {
@@ -442,7 +447,7 @@ view Shell(vm: LauncherModel) {
                                     Row Gap=8 {
                                         Button #checkUpdates Text=(vm.T("Проверить обновления", "Check updates")) Width=190 Command=vm.CheckUpdates Enabled=(!vm.Busy)
                                         Button #launcherData Text=(vm.T("Данные лаунчера", "Launcher data")) Width=168 Command=vm.OpenDataFolder
-                                        Button .primary Text=(vm.T("Скачать обновление", "Download update")) Width=190 Command=vm.OpenUpdate Visible=vm.HasUpdate
+                                        Button .primary Text=vm.UpdateActionLabel Width=220 Command=vm.OpenUpdate Visible=vm.HasUpdate Enabled=(!vm.InstallingUpdate)
                                     }
                                     Text .muted vm.UpdateStatus Wrap=true Visible=(vm.UpdateStatus.Length > 0)
                                     Row Gap=12 Visible=vm.EventActive {
