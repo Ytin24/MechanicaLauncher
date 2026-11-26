@@ -1,4 +1,5 @@
 using MechanicaLauncher.Core.Config;
+using MechanicaLauncher.Core.Presets;
 
 namespace MechanicaLauncher.Desktop;
 
@@ -42,6 +43,12 @@ public sealed partial class LauncherModel
         }
         if (command == "SHOW") return;
         if (command.StartsWith("MRPACK|", StringComparison.Ordinal)) { ImportPack(command[7..]); return; }
+        if (command.StartsWith("PRESET|", StringComparison.Ordinal))
+        {
+            // Not awaited: the confirmation waits for the player and must not stall command polling.
+            if (PresetLink.TryParse(command[7..], out var preset)) Run(() => OpenPreset(preset));
+            return;
+        }
         if (command.StartsWith("EVENT|", StringComparison.Ordinal))
         {
             string url = command[6..].Trim();

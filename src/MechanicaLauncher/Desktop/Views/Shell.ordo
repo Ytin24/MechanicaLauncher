@@ -41,7 +41,7 @@ view Shell(vm: LauncherModel) {
                             Button #contextInstance Text=vm.InstanceName Command=vm.SelectInstance Enabled=(vm.SelectedInstance != null || vm.ShowInstancesPage)
                         }
                         Row #libraryActions Width=256 Gap=8 Visible=(vm.Page == "instances") {
-                            Button Text=(vm.T("Импорт .mrpack", "Import .mrpack")) Width=136 Command=vm.ImportPack Enabled=vm.AllowCreate
+                            Button Text=(vm.T("Импорт", "Import")) Width=136 Command=vm.ImportMenu Enabled=vm.AllowCreate
                             Button .primary #newInstance Text=(vm.T("Создать", "Create")) Width=112 Command=vm.NewInstance Enabled=vm.AllowCreate
                         }
                     }
@@ -93,7 +93,7 @@ view Shell(vm: LauncherModel) {
                             Text #homeEmptyTitle Text=(vm.T("Сборок пока нет", "No instances yet")) FontSize=30 FontWeight=650 Wrap=true
                             Row #emptyActions Gap=10 Visible=vm.ShowInstancesPage {
                                 Button .primary #createFirst Text=(vm.T("Создать сборку", "Create instance")) Width=184 ControlHeight=44 Command=vm.NewInstance Enabled=vm.AllowCreate
-                                Button #importFirst Text=(vm.T("Импорт .mrpack", "Import .mrpack")) Width=164 ControlHeight=44 Command=vm.ImportPack Enabled=vm.AllowCreate
+                                Button #importFirst Text=(vm.T("Импорт сборки", "Import instance")) Width=164 ControlHeight=44 Command=vm.ImportMenu Enabled=vm.AllowCreate
                             }
                             Button .homeTool #browseModpacks Text=(vm.T("Найти модпак", "Find a modpack")) Width=154 TextAlignment=Left Command=vm.BrowseModpacks Visible=vm.ShowCatalogPage
                             Spacer Grow=1

@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Mechanica Launcher</title>
+<link rel="icon" href="../icon.png">
+<style>
+  :root {
+    --bg: #141a1b; --surface: #1e2728; --border: #344244; --fg: #e9efed; --muted: #a6b7b4;
+    --accent: #9bd5b1; --on-accent: #153321; --error: #ffb5a9;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #cdd3cf; --surface: #e0e5df; --border: #9aaa9f; --fg: #202d27; --muted: #495c50;
+      --accent: #2d6847; --on-accent: #ffffff; --error: #9c2c25; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px;
+    background: var(--bg); color: var(--fg); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+  main { width: 100%; max-width: 460px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 28px; }
+  h1 { font-size: 22px; margin: 0 0 6px; font-weight: 650; }
+  p { margin: 0 0 14px; color: var(--muted); }
+  .source { color: var(--fg); overflow-wrap: anywhere; }
+  .button { display: block; width: 100%; text-align: center; text-decoration: none; border: 0; cursor: pointer;
+    border-radius: 9px; padding: 11px 16px; font: inherit; font-weight: 600; margin-top: 10px; }
+  .primary { background: var(--accent); color: var(--on-accent); }
+  .secondary { background: transparent; color: var(--fg); border: 1px solid var(--border); }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 4px; }
+  input { width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--fg); font: inherit; }
+  output { display: block; margin-top: 14px; padding: 10px 12px; border-radius: 9px; background: var(--bg);
+    overflow-wrap: anywhere; min-height: 44px; }
+  .error { color: var(--error); }
+  [hidden] { display: none !important; }
+  small { display: block; margin-top: 18px; color: var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <section id="open" hidden>
+    <h1 data-t="openTitle"></h1>
+    <p><span data-t="from"></span> <span class="source" id="source"></span></p>
+    <a class="button primary" id="launch" data-t="launch"></a>
+    <div id="fallback" hidden>
+      <p style="margin-top:18px" data-t="noLauncher"></p>
+      <a class="button secondary" href="https://github.com/Ytin24/MechanicaLauncher/releases/latest" data-t="download"></a>
+    </div>
+    <small data-t="trust"></small>
+  </section>
+
+  <section id="make" hidden>
+    <h1 data-t="makeTitle"></h1>
+    <p data-t="makeHelp"></p>
+    <label for="target" data-t="targetLabel"></label>
+    <input id="target" placeholder="https://modrinth.com/modpack/…" autocomplete="off" spellcheck="false">
+    <label for="server" data-t="serverLabel"></label>
+    <input id="server" placeholder="play.example.com:25565" autocomplete="off" spellcheck="false">
+    <output id="result"></output>
+    <button class="button primary" id="copy" type="button" data-t="copy" disabled></button>
+  </section>
+</main>
+<script>
+(() => {
+  const ru = (navigator.language || "ru").toLowerCase().startsWith("ru");
+  const text = ru ? {
+    openTitle: "Сборка для Mechanica Launcher", from: "Источник:", launch: "Открыть в лаунчере",
+    noLauncher: "Лаунчер не открылся? Установи Mechanica Launcher и нажми кнопку ещё раз.",
+    download: "Скачать Mechanica Launcher",
+    trust: "Перед установкой лаунчер покажет название сборки и спросит подтверждение.",
+    makeTitle: "Ссылка на сборку", makeHelp: "Вставь страницу модпака на Modrinth или прямую HTTPS-ссылку на .mrpack. Получится ссылка для описания видео.",
+    targetLabel: "Modrinth или ссылка на .mrpack", serverLabel: "Сервер (необязательно)", copy: "Скопировать", copied: "Скопировано",
+    invalid: "Нужна страница модпака на Modrinth или HTTPS-ссылка на .mrpack.", badServer: "Адрес сервера: host или host:port.",
+    broken: "Ссылка повреждена. Попроси автора прислать её заново."
+  } : {
+    openTitle: "Mechanica Launcher instance", from: "Source:", launch: "Open in launcher",
+    noLauncher: "Nothing happened? Install Mechanica Launcher and press the button again.",
+    download: "Download Mechanica Launcher",
+    trust: "The launcher shows the instance name and asks before installing anything.",
+    makeTitle: "Instance link", makeHelp: "Paste a Modrinth modpack page or a direct HTTPS .mrpack link to get a link for your video description.",
+    targetLabel: "Modrinth page or .mrpack link", serverLabel: "Server (optional)", copy: "Copy", copied: "Copied",
+    invalid: "Use a Modrinth modpack page or an HTTPS .mrpack link.", badServer: "Server address: host or host:port.",
+    broken: "This link is damaged. Ask the creator to share it again."
+  };
+  if (!ru) document.documentElement.lang = "en";
+  document.querySelectorAll("[data-t]").forEach(node => node.textContent = text[node.dataset.t]);
+
+  // Mirrors PresetLink in the launcher; the launcher validates again before doing anything.
+  const project = /^[A-Za-z0-9_-]{1,64}$/, version = /^[A-Za-z0-9._+-]{1,64}$/, sha = /^[0-9a-fA-F]{128}$/;
+  const serverOk = value => {
+    const m = /^(\[[0-9a-fA-F:.]+\]|[A-Za-z0-9.-]{1,253})(?::(\d{1,5}))?$/.exec(value);
+    return !!m && (!m[2] || (+m[2] >= 1 && +m[2] <= 65535));
+  };
+  const httpsOk = value => { try { const u = new URL(value); return u.protocol === "https:" && !u.username && !u.password && !u.hash && value.length <= 2048; } catch { return false; } };
+
+  function fromQuery(search) {
+    const q = new URLSearchParams(search), link = {};
+    const server = q.get("server");
+    if (server) { if (!serverOk(server)) return null; link.server = server; }
+    if (q.get("modrinth")) {
+      if (!project.test(q.get("modrinth"))) return null;
+      link.modrinth = q.get("modrinth");
+      if (q.get("version")) { if (!version.test(q.get("version"))) return null; link.version = q.get("version"); }
+      return link;
+    }
+    if (q.get("url")) {
+      if (!httpsOk(q.get("url"))) return null;
+      link.url = q.get("url");
+      if (q.get("sha512")) { if (!sha.test(q.get("sha512"))) return null; link.sha512 = q.get("sha512").toLowerCase(); }
+      return link;
+    }
+    return undefined;
+  }
+
+  function toQuery(link) {
+    const parts = [];
+    const add = (key, value) => value && parts.push(key + "=" + encodeURIComponent(value));
+    if (link.modrinth) { add("modrinth", link.modrinth); add("version", link.version); }
+    else { add("url", link.url); add("sha512", link.sha512); }
+    add("server", link.server);
+    return "?" + parts.join("&");
+  }
+
+  function fromPasted(value) {
+    value = value.trim();
+    if (!value) return undefined;
+    try {
+      const u = new URL(value);
+      if (u.protocol === "mechanica:" || u.pathname.replace(/\/?$/, "/").endsWith("/p/")) return fromQuery(u.search || "?" + u.hash.slice(1));
+      if (u.protocol !== "https:") return null;
+      if (u.hostname === "modrinth.com" || u.hostname === "www.modrinth.com") {
+        const parts = u.pathname.split("/").filter(Boolean);
+        if (parts[0] !== "modpack" || !project.test(parts[1] || "")) return null;
+        const link = { modrinth: parts[1] };
+        if (parts[2] === "version" && parts[3]) { if (!version.test(decodeURIComponent(parts[3]))) return null; link.version = decodeURIComponent(parts[3]); }
+        return link;
+      }
+      return u.pathname.toLowerCase().endsWith(".mrpack") && httpsOk(value) ? { url: u.href } : null;
+    } catch { return null; }
+  }
+
+  const base = location.origin + location.pathname.replace(/[^/]*$/, "");
+  const link = fromQuery(location.search.length > 1 ? location.search : "?" + location.hash.slice(1));
+
+  if (link) {
+    const protocol = "mechanica://pack" + toQuery(link);
+    document.getElementById("open").hidden = false;
+    document.getElementById("source").textContent = link.modrinth ? "modrinth.com/modpack/" + link.modrinth : new URL(link.url).host;
+    const launch = document.getElementById("launch");
+    launch.href = protocol;
+    launch.addEventListener("click", () => setTimeout(showFallback, 1500));
+    const showFallback = () => { if (!document.hidden) document.getElementById("fallback").hidden = false; };
+    setTimeout(() => { location.href = protocol; setTimeout(showFallback, 1500); }, 300);
+  } else {
+    document.getElementById("make").hidden = false;
+    if (link === null) { const p = document.querySelector("#make p"); p.textContent = text.broken; p.classList.add("error"); }
+    const target = document.getElementById("target"), server = document.getElementById("server");
+    const result = document.getElementById("result"), copy = document.getElementById("copy");
+    let current = "";
+    const update = () => {
+      current = ""; copy.disabled = true; copy.textContent = text.copy; result.classList.remove("error");
+      const parsed = fromPasted(target.value);
+      if (parsed === undefined) { result.textContent = ""; return; }
+      if (!parsed) { result.textContent = text.invalid; result.classList.add("error"); return; }
+      const address = server.value.trim();
+      if (address) { if (!serverOk(address)) { result.textContent = text.badServer; result.classList.add("error"); return; } parsed.server = address; }
+      current = base + toQuery(parsed); result.textContent = current; copy.disabled = false;
+    };
+    target.addEventListener("input", update); server.addEventListener("input", update);
+    copy.addEventListener("click", async () => {
+      if (!current) return;
+      try { await navigator.clipboard.writeText(current); copy.textContent = text.copied; } catch { result.focus(); }
+    });
+  }
+})();
+</script>
+</body>
+</html>

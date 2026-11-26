@@ -352,7 +352,7 @@ public sealed class ModpackInstaller
         finally { AtomicFile.TryDelete(temporary); }
     }
 
-    private static void ValidateIndex(MrpackIndex index)
+    internal static void ValidateIndex(MrpackIndex index)
     {
         if (index.FormatVersion != 1 || index.Game != "minecraft")
             throw new InvalidDataException("Unsupported modpack format or game.");
