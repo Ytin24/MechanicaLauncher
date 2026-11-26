@@ -171,7 +171,7 @@ public sealed partial class LauncherModel : ObservableModel, IDisposable
         page = target; Message = "";
         if (target == "instances") RefreshLibrary();
         if (target == "catalog") ResumeCatalog();
-        if (target == "downloads") RefreshDownloads();
+        if (target == "downloads") RefreshDownloads(force: true);
         if (target == "servers") RefreshServers();
         if (target == "account") LoadAccount();
         Changed(); Navigated?.Invoke();
