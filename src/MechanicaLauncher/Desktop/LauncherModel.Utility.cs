@@ -14,30 +14,74 @@ public sealed partial class LauncherModel
     public ObservableCollection<ItemModel> ServerItems { get; } = [];
     public string DownloadFilter { get; private set; } = "all";
     public string DownloadsStatus => Sessions.Downloads.HasPending ? T("Загрузки продолжаются при переходе между экранами.", "Downloads continue while you browse.") : T("Нет активных загрузок", "No active downloads");
-    public void FilterDownloads(string filter) { DownloadFilter = filter; RefreshDownloads(); Changed(); }
-    public void RefreshDownloads()
+    public void FilterDownloads(string filter) { DownloadFilter = filter; RefreshDownloads(force: true); Changed(); }
+    private readonly Dictionary<Guid, double> downloadProgress = new();
+    private string downloadLayout = "";
+    private long downloadRefreshedAt;
+    private static readonly TimeSpan DownloadRefreshInterval = TimeSpan.FromMilliseconds(250);
+    // Updates download cards in place. Session events can arrive dozens of times per second while the game
+    // is being prepared, so progress-only refreshes are throttled; added/removed jobs and state changes apply at once.
+    public void RefreshDownloads(bool force = false)
     {
-        var jobs = Sessions.Downloads.Jobs.Reverse().Where(j => DownloadFilter switch { "active" => j.State is DownloadState.Queued or DownloadState.Running, "failed" => j.State is DownloadState.Failed or DownloadState.Cancelled, _ => true }).ToArray();
-        var ids = jobs.Select(j => j.Id.ToString()).ToHashSet();
+        var jobs = Sessions.Downloads.Jobs.Reverse().Select(j => (Job: j, Snapshot: j.Snapshot()))
+            .Where(j => DownloadFilter switch { "active" => j.Snapshot.State is DownloadState.Queued or DownloadState.Running, "failed" => j.Snapshot.State is DownloadState.Failed or DownloadState.Cancelled, _ => true }).ToArray();
+        var layout = DownloadFilter + "|" + string.Join(",", jobs.Select(j => j.Job.Id.ToString("N") + ":" + (int)j.Snapshot.State));
+        if (!force && layout == downloadLayout && Stopwatch.GetElapsedTime(downloadRefreshedAt) < DownloadRefreshInterval) return;
+        downloadLayout = layout;
+        downloadRefreshedAt = Stopwatch.GetTimestamp();
+
+        var ids = jobs.Select(j => j.Job.Id.ToString()).ToHashSet();
         foreach (var old in DownloadItems.Where(i => !ids.Contains(i.Id)).ToArray()) DownloadItems.Remove(old);
+        foreach (var id in downloadProgress.Keys.Where(id => !ids.Contains(id.ToString())).ToArray()) downloadProgress.Remove(id);
         for (int index = 0; index < jobs.Length; index++)
         {
-            var job = jobs[index];
-            var snapshot = job.Snapshot();
-            var row = DownloadItems.FirstOrDefault(i => i.Id == job.Id.ToString());
-            if (row == null) { row = new() { Id = job.Id.ToString() }; DownloadItems.Insert(index, row); }
-            else if (DownloadItems.IndexOf(row) != index) DownloadItems.Move(DownloadItems.IndexOf(row), index);
-            row.Title = snapshot.Title;
-            row.Meta = L("downloads." + snapshot.State.ToString().ToLowerInvariant()) + " · " + Size(snapshot.Received) + (snapshot.Total > 0 ? " / " + Size(snapshot.Total) : "") + (snapshot.BytesPerSecond > 0 ? " · " + Size(snapshot.BytesPerSecond) + "/s" : "");
-            row.Description = snapshot.Error ?? string.Join(" · ", snapshot.Files.Where(f => !f.Complete).Take(2).Select(f => f.Name));
-            row.HasProgress = snapshot.State == DownloadState.Running;
-            row.Progress = snapshot.Total > 0 ? (double)snapshot.Received / snapshot.Total * 100 : 0;
-            row.Primary = snapshot.State is DownloadState.Running or DownloadState.Queued ? T("Отменить", "Cancel") : snapshot.CanRetry ? T("Повторить", "Retry") : "";
-            row.Action = () => { if (job.State is DownloadState.Running or DownloadState.Queued) job.Cancel(); else Sessions.Downloads.Retry(job); RefreshDownloads(); };
-            row.Secondary = snapshot.InstanceId != null && Instances.GetInstance(snapshot.InstanceId) != null ? T("К сборке", "Open instance") : "";
-            row.Action2 = () => { if (snapshot.InstanceId != null) EditInstance(snapshot.InstanceId); };
-            row.Changed();
+            var (job, snapshot) = jobs[index];
+            var id = job.Id.ToString();
+            int current = -1;
+            for (int i = 0; i < DownloadItems.Count; i++) if (DownloadItems[i].Id == id) { current = i; break; }
+            ItemModel row;
+            if (current < 0)
+            {
+                row = new() { Id = id };
+                row.Action = () => { if (job.State is DownloadState.Running or DownloadState.Queued) job.Cancel(); else Sessions.Downloads.Retry(job); RefreshDownloads(force: true); };
+                row.Action2 = () => { var instanceId = job.ResultInstanceId ?? job.InstanceId; if (instanceId != null) EditInstance(instanceId); };
+                DownloadItems.Insert(index, row);
+            }
+            else
+            {
+                row = DownloadItems[current];
+                if (current != index) DownloadItems.Move(current, index);
+            }
+            ApplyDownload(row, snapshot);
         }
+    }
+    private void ApplyDownload(ItemModel row, DownloadSnapshot snapshot)
+    {
+        bool running = snapshot.State == DownloadState.Running;
+        int files = snapshot.Files.Count, done = snapshot.Files.Count(f => f.Complete);
+        // Byte totals are unknown until every file reports its size; fall back to the file count, and never
+        // move the bar backwards when newly discovered files grow the total.
+        double progress = snapshot.Total > 0 ? (double)snapshot.Received / snapshot.Total * 100 : files > 0 ? (double)done / files * 100 : 0;
+        if (running) downloadProgress[snapshot.Id] = progress = Math.Clamp(Math.Max(progress, downloadProgress.GetValueOrDefault(snapshot.Id)), 0, 100);
+        else downloadProgress.Remove(snapshot.Id);
+
+        row.Title = snapshot.Title;
+        row.Meta = L("downloads." + snapshot.State.ToString().ToLowerInvariant())
+            + (snapshot.Received > 0 ? " · " + Size(snapshot.Received) + (snapshot.Total > 0 ? " / " + Size(snapshot.Total) : "") : "")
+            + (running && snapshot.BytesPerSecond > 0 ? " · " + Size(snapshot.BytesPerSecond) + "/s" : "");
+        // A short, single-line summary instead of the names of files in flight: those changed several times
+        // per second and re-wrapped the card, which made the whole list jump.
+        row.Description = snapshot.Error ?? snapshot.State switch
+        {
+            DownloadState.Queued => T("Ждёт своей очереди", "Waiting in queue"),
+            DownloadState.Running => files == 0 ? T("Подготовка…", "Preparing…") : T($"Файлы: {done} из {files}", $"Files: {done} of {files}"),
+            DownloadState.Completed => files == 0 ? T("Готово", "Done") : T($"Готово · файлов: {files}", $"Done · {files} files"),
+            _ => T("Готовые файлы сохранены", "Completed files were kept")
+        };
+        row.HasProgress = running;
+        row.Progress = running ? Math.Round(progress, 1) : 0;
+        row.Primary = snapshot.State is DownloadState.Running or DownloadState.Queued ? T("Отменить", "Cancel") : snapshot.CanRetry ? T("Повторить", "Retry") : "";
+        row.Secondary = snapshot.InstanceId != null && Instances.GetInstance(snapshot.InstanceId) != null ? T("К сборке", "Open instance") : "";
     }
     private static string Size(double bytes) => bytes >= 1_073_741_824 ? $"{bytes / 1_073_741_824:0.0} GB" : bytes >= 1_048_576 ? $"{bytes / 1_048_576:0.0} MB" : bytes >= 1024 ? $"{bytes / 1024:0.0} KB" : $"{bytes:0} B";
     public void CancelDownloads() => Run(async () => { if (await Confirm(T("Отменить загрузки?", "Cancel downloads?"), T("Готовые файлы сохранятся.", "Completed files will be kept."), T("Отменить все", "Cancel all"))) Sessions.Downloads.CancelAll(); });
