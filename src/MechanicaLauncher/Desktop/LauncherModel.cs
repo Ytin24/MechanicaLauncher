@@ -102,7 +102,11 @@ public sealed partial class LauncherModel : ObservableModel, IDisposable
             return new(background.R * .85f + accent.R * .15f, background.G * .85f + accent.G * .15f, background.B * .85f + accent.B * .15f);
         }
     }
-    public string PlayLabel => Sessions.Preparing ? T("Отменить подготовку", "Cancel preparation") : SelectedInstance == null ? T("Создать сборку", "Create instance") : Sessions.IsRunning(SelectedInstance.Id) ? T("Завершить игру", "Stop game") : T("Играть", "Play");
+    private string? launchAfterPreparation;
+    private bool BackgroundPreparingSelected => SelectedInstance is { } selected && Sessions.BackgroundPreparation(selected.Id) != null;
+    public string PlayLabel => Sessions.Preparing && BackgroundPreparingSelected
+        ? launchAfterPreparation == SelectedInstance!.Id ? T("Отменить запуск", "Cancel launch") : T("Играть после загрузки", "Play when ready")
+        : Sessions.Preparing ? T("Отменить подготовку", "Cancel preparation") : SelectedInstance == null ? T("Создать сборку", "Create instance") : Sessions.IsRunning(SelectedInstance.Id) ? T("Завершить игру", "Stop game") : T("Играть", "Play");
     public string SessionStatus => Sessions.Status;
     public double LaunchProgress => Sessions.Progress;
     public bool LaunchPreparing => Sessions.Preparing;
@@ -120,6 +124,7 @@ public sealed partial class LauncherModel : ObservableModel, IDisposable
         contentIndex = new(CatalogClient);
         this.modUpdates = modUpdates ?? new(CatalogClient);
         Locale.Init(settings.Language);
+        VerifiedFiles.Attach(Path.Combine(Instances.SharedDir, "verified-files.json"));
         Sessions = new(settings, Instances);
         Sessions.ConfirmServerSync = ConfirmServerSyncOnUi;
         Sessions.Changed += OnSessionChanged;
@@ -171,7 +176,7 @@ public sealed partial class LauncherModel : ObservableModel, IDisposable
         page = target; Message = "";
         if (target == "instances") RefreshLibrary();
         if (target == "catalog") ResumeCatalog();
-        if (target == "downloads") RefreshDownloads();
+        if (target == "downloads") RefreshDownloads(force: true);
         if (target == "servers") RefreshServers();
         if (target == "account") LoadAccount();
         Changed(); Navigated?.Invoke();
@@ -196,6 +201,18 @@ public sealed partial class LauncherModel : ObservableModel, IDisposable
     public void Play() => Run(async () =>
     {
         if (TLauncherBlocked) return;
+        if (SelectedInstance is { } selected && Sessions.BackgroundPreparation(selected.Id) is { } pending)
+        {
+            // The instance is still downloading in the background: start the game as soon as it is ready.
+            if (launchAfterPreparation == selected.Id) { launchAfterPreparation = null; Changed(); return; }
+            launchAfterPreparation = selected.Id; Changed();
+            await pending.Completion;
+            bool launch = launchAfterPreparation == selected.Id && pending.State == DownloadState.Completed;
+            launchAfterPreparation = null; Changed();
+            if (launch && Instances.GetInstance(selected.Id) is { } ready) await Launch(ready);
+            else if (pending.State == DownloadState.Failed) Notice(pending.Snapshot().Error ?? T("Подготовка не удалась", "Preparation failed"), error: true);
+            return;
+        }
         if (Sessions.Preparing) { Sessions.Cancel(); return; }
         if (SelectedInstance is not { } instance) { NewInstance(); return; }
         if (Sessions.IsRunning(instance.Id))

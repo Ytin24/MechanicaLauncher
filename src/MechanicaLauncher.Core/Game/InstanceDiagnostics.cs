@@ -75,6 +75,7 @@ public static class InstanceDiagnostics
                 Fix = async () =>
                 {
                     var meta = await vm.GetVersionMetaAsync(inst.McVersion);
+                    VerifiedFiles.Clear(); // a repair re-hashes everything instead of trusting the cache
                     await new AssetDownloader(im.SharedDir, gameDir).DownloadVersionAsync(meta);
                 }
             });

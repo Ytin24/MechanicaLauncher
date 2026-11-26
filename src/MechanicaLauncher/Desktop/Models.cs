@@ -19,18 +19,24 @@ public abstract class ObservableModel : INotifyPropertyChanged
 public sealed class ItemModel : ObservableModel
 {
     public string Id { get; init; } = Guid.NewGuid().ToString("N");
-    public string Title { get; set; } = "";
-    public string Meta { get; set; } = "";
-    public string Description { get; set; } = "";
-    public string Primary { get; set; } = "";
-    public string Secondary { get; set; } = "";
-    public string Tertiary { get; set; } = "";
-    public bool Enabled { get; set; } = true;
-    public bool Selected { get; set; }
-    public bool Compact { get; set; }
-    public bool HasProgress { get; set; }
-    public double Progress { get; set; }
-    public ImageSource Image { get; set; } = ImageSource.Empty;
+    // Setters notify only when the value really changes, so in-place updates (download progress, speed)
+    // refresh just the bound property instead of re-evaluating the whole card.
+    private string title = "", meta = "", description = "", primary = "", secondary = "", tertiary = "";
+    private bool enabled = true, selected, compact, hasProgress;
+    private double progress;
+    private ImageSource image = ImageSource.Empty;
+    public string Title { get => title; set => Set(ref title, value); }
+    public string Meta { get => meta; set => Set(ref meta, value); }
+    public string Description { get => description; set => Set(ref description, value); }
+    public string Primary { get => primary; set => Set(ref primary, value); }
+    public string Secondary { get => secondary; set => Set(ref secondary, value); }
+    public string Tertiary { get => tertiary; set => Set(ref tertiary, value); }
+    public bool Enabled { get => enabled; set => Set(ref enabled, value); }
+    public bool Selected { get => selected; set => Set(ref selected, value); }
+    public bool Compact { get => compact; set => Set(ref compact, value); }
+    public bool HasProgress { get => hasProgress; set => Set(ref hasProgress, value); }
+    public double Progress { get => progress; set => Set(ref progress, value); }
+    public ImageSource Image { get => image; set { if (Set(ref image, value)) Changed(nameof(HasImage)); } }
     public bool HasImage => !ReferenceEquals(Image, ImageSource.Empty);
     public Action? Action { get; set; }
     public Action? Action2 { get; set; }

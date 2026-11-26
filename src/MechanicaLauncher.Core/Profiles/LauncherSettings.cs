@@ -44,6 +44,15 @@ public sealed class LauncherSettings
     [JsonPropertyName("showSnapshots")]
     public bool ShowSnapshots { get; set; }
 
+    [JsonPropertyName("prepareAfterCreate")]
+    public bool PrepareAfterCreate { get; set; } = true;
+
+    [JsonPropertyName("lastLoader")]
+    public string? LastLoader { get; set; }
+
+    [JsonPropertyName("lastMinecraftVersion")]
+    public string? LastMinecraftVersion { get; set; }
+
     [JsonPropertyName("theme")]
     public string Theme { get; set; } = "Dark";
 

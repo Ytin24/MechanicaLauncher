@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
 using MechanicaLauncher.Core.IO;
@@ -21,6 +22,10 @@ public sealed class AssetDownloader
 
     public event Action<string, double>? ProgressChanged;
 
+    // Mojang's CDN and Maven mirrors handle this comfortably; most files are small, so latency dominates.
+    internal const int LibraryParallelism = 8;
+    internal const int AssetParallelism = 16;
+
     public async Task DownloadVersionAsync(VersionMeta meta, CancellationToken cancellationToken = default)
     {
         if (meta.Logging.TryGetValue("client", out var logging))
@@ -32,20 +37,39 @@ public sealed class AssetDownloader
         {
             var jarPath = FileDownloader.GetPath(_instanceGameDir, $"versions/{meta.Id}/{meta.Id}.jar");
             ProgressChanged?.Invoke("Checking client...", -1);
-            await FileDownloader.EnsureAsync(_http, client.Url, jarPath, client.Sha1, client.Size, cancellationToken);
+            await EnsureClientAsync(client, jarPath, cancellationToken);
         }
 
         var librariesDir = Path.Combine(_sharedDir, "libraries");
-        var libs = meta.Libraries.Where(ShouldIncludeLibrary).ToList();
-        for (int i = 0; i < libs.Count; i++)
+        var artifacts = meta.Libraries.Where(ShouldIncludeLibrary)
+            .SelectMany(lib => new[] { GetArtifact(lib), GetNativeArtifact(lib) })
+            .OfType<LibraryArtifact>()
+            .DistinctBy(a => a.Path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        int librariesDone = 0;
+        ExceptionDispatchInfo? libraryFailure = null;
+        await Parallel.ForEachAsync(artifacts, new ParallelOptions
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            ProgressChanged?.Invoke($"Libraries ({i + 1}/{libs.Count})", (double)(i + 1) / libs.Count * 70);
-            if (GetArtifact(libs[i]) is { } artifact)
-                await DownloadArtifactAsync(artifact);
-            if (GetNativeArtifact(libs[i]) is { } native)
-                await DownloadArtifactAsync(native);
-        }
+            MaxDegreeOfParallelism = LibraryParallelism,
+            CancellationToken = cancellationToken
+        }, async (artifact, token) =>
+        {
+            try
+            {
+                await FileDownloader.EnsureAsync(_http, artifact.Url, FileDownloader.GetPath(librariesDir, artifact.Path),
+                    artifact.Sha1, artifact.Size, token);
+            }
+            catch (Exception ex) when (!token.IsCancellationRequested)
+            {
+                // Let the other downloads finish so a retry only fetches what actually failed.
+                Interlocked.CompareExchange(ref libraryFailure, ExceptionDispatchInfo.Capture(ex), null);
+                return;
+            }
+            var count = Interlocked.Increment(ref librariesDone);
+            ProgressChanged?.Invoke($"Libraries ({count}/{artifacts.Count})", (double)count / artifacts.Count * 70);
+        });
+        VerifiedFiles.Flush();
+        libraryFailure?.Throw();
 
         ExtractNatives(meta, cancellationToken);
 
@@ -62,7 +86,7 @@ public sealed class AssetDownloader
             int completed = 0;
             await Parallel.ForEachAsync(objects, new ParallelOptions
             {
-                MaxDegreeOfParallelism = 6,
+                MaxDegreeOfParallelism = AssetParallelism,
                 CancellationToken = cancellationToken
             }, async (obj, token) =>
             {
@@ -78,10 +102,23 @@ public sealed class AssetDownloader
             });
         }
 
+        VerifiedFiles.Flush();
         ProgressChanged?.Invoke("Done!", 100);
+    }
 
-        Task DownloadArtifactAsync(LibraryArtifact artifact) => FileDownloader.EnsureAsync(_http,
-            artifact.Url, FileDownloader.GetPath(librariesDir, artifact.Path), artifact.Sha1, artifact.Size, cancellationToken);
+    // The client jar is identical for every instance of a Minecraft version: keep one verified copy in the
+    // shared cache and copy it locally instead of downloading ~25 MB again for each new instance.
+    private async Task EnsureClientAsync(DownloadInfo client, string jarPath, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(client.Sha1) || await FileDownloader.IsValidAsync(jarPath, client.Sha1, client.Size, cancellationToken))
+        {
+            await FileDownloader.EnsureAsync(_http, client.Url, jarPath, client.Sha1, client.Size, cancellationToken);
+            return;
+        }
+        var sharedJar = FileDownloader.GetPath(_sharedDir, $"versions/{Path.GetFileName(Path.GetDirectoryName(jarPath))}/{Path.GetFileName(jarPath)}");
+        await FileDownloader.EnsureAsync(_http, client.Url, sharedJar, client.Sha1, client.Size, cancellationToken);
+        if (!await FileDownloader.TryCopyVerifiedAsync(sharedJar, jarPath, client.Sha1, client.Size, cancellationToken))
+            await FileDownloader.EnsureAsync(_http, client.Url, jarPath, client.Sha1, client.Size, cancellationToken);
     }
 
     private void ExtractNatives(VersionMeta meta, CancellationToken cancellationToken)

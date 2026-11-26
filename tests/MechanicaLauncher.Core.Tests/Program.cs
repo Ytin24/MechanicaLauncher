@@ -717,6 +717,7 @@ await CatalogTests.RunAsync(Check, testRoot);
 await InstalledContentIndexTests.RunAsync(Check, testRoot);
 await FeatureTests.RunAsync(Check, testRoot);
 await PresetTests.RunAsync(Check, testRoot);
+await BuildCreationTests.RunAsync(Check, testRoot);
 await DiscordTests.RunAsync(Check);
 await TLauncherTests.RunAsync(Check, testRoot);
 
@@ -792,12 +793,13 @@ static byte[] NativeArchive(string content)
 sealed class FakeHttp : HttpMessageHandler
 {
     private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _handler;
-    public int Calls { get; private set; }
+    private int calls;
+    public int Calls => Volatile.Read(ref calls);
     public FakeHttp(Func<HttpRequestMessage, HttpResponseMessage> handler) : this((request, _) => Task.FromResult(handler(request))) { }
     public FakeHttp(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler) => _handler = handler;
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        Calls++;
+        Interlocked.Increment(ref calls);
         return _handler(request, cancellationToken);
     }
 }

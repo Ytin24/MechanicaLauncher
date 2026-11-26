@@ -1,5 +1,6 @@
 using MechanicaLauncher.Core.Game;
 using MechanicaLauncher.Core.Mods;
+using MechanicaLauncher.Core.Models;
 
 namespace MechanicaLauncher.Desktop;
 
@@ -85,25 +86,45 @@ public sealed partial class LauncherModel
         Title = loader.Length == 0 ? T("Все загрузчики", "All loaders") : loader,
         Action = () => { libraryLoader = loader; CloseDialog(); RefreshLibrary(); }
     }));
+    public string NewNameLabel => T($"Название · по умолчанию «{DefaultInstanceName}»", $"Name · defaults to \"{DefaultInstanceName}\"");
+    private string DefaultInstanceName => NewVersion.Length == 0 ? NewLoader : $"{NewLoader} {NewVersion}";
+    public bool PrepareAfterCreate { get => Settings.PrepareAfterCreate; set { Settings.PrepareAfterCreate = value; Settings.Save(); Changed(); } }
+    public string CreateHint => PrepareAfterCreate
+        ? T("Java и файлы игры начнут скачиваться сразу. Общие файлы берутся из кеша, поэтому вторая сборка на той же версии готовится за секунды.", "Java and game files start downloading right away. Shared files come from the cache, so another instance on the same version is ready in seconds.")
+        : T("Java и файлы игры установятся при первом запуске. Vanilla — для игры без модов.", "Java and game files install on first launch. Choose Vanilla to play without mods.");
     public void NewInstance()
     {
         if (!AllowCreate) return;
-        NewName = ""; NewVersion = ""; NewLoader = "Vanilla"; CreateStatus = "";
+        NewName = ""; CreateStatus = "";
+        NewLoader = Settings.LastLoader is "Vanilla" or "Fabric" or "Quilt" or "Forge" or "NeoForge" ? Settings.LastLoader : "Vanilla";
+        // Keep the last choice when it is still offered; the list itself refreshes in the background.
+        if (!minecraftVersions.Contains(Settings.LastMinecraftVersion ?? "")) NewVersion = minecraftVersions.FirstOrDefault() ?? "";
+        else NewVersion = Settings.LastMinecraftVersion!;
         Navigate("create"); LoadMinecraftVersions();
+    }
+    private IReadOnlyList<string> ReleaseIds(VersionManifest manifest) =>
+        manifest.Versions.Where(v => v.Type == "release" || Settings.ShowSnapshots && v.Type == "snapshot").Select(v => v.Id).ToArray();
+    private void ApplyVersions(IReadOnlyList<string> versions)
+    {
+        minecraftVersions = versions;
+        if (!minecraftVersions.Contains(NewVersion))
+            NewVersion = minecraftVersions.Contains(Settings.LastMinecraftVersion ?? "") ? Settings.LastMinecraftVersion! : minecraftVersions.FirstOrDefault() ?? "";
     }
     public void LoadMinecraftVersions() => Run(async () =>
     {
         var token = PageToken;
-        CreateStatus = T("Загружаю версии…", "Loading versions…"); Changed();
+        var manager = new VersionManager(Instances.SharedDir);
+        // Show the cached list instantly; the network refresh only adds versions released since.
+        if (minecraftVersions.Count == 0 && manager.TryGetCachedManifest() is { } cached) ApplyVersions(ReleaseIds(cached));
+        CreateStatus = minecraftVersions.Count == 0 ? T("Загружаю версии…", "Loading versions…") : ""; Changed();
         try
         {
-            var manifest = await new VersionManager(Instances.SharedDir).GetManifestAsync(token);
+            var manifest = await manager.GetManifestAsync(token);
             token.ThrowIfCancellationRequested();
-            minecraftVersions = manifest.Versions.Where(v => v.Type == "release" || Settings.ShowSnapshots && v.Type == "snapshot").Select(v => v.Id).ToArray();
-            NewVersion = minecraftVersions.FirstOrDefault() ?? "";
+            ApplyVersions(ReleaseIds(manifest));
             CreateStatus = NewVersion.Length == 0 ? T("Нет доступных версий", "No versions available") : "";
         }
-        catch (Exception ex) when (ex is not OperationCanceledException) { CreateStatus = ex.Message; }
+        catch (Exception ex) when (ex is not OperationCanceledException) { if (minecraftVersions.Count == 0) CreateStatus = ex.Message; }
         Changed();
     });
     public void ChooseMinecraft() => ShowChoices(T("Версия Minecraft", "Minecraft version"), minecraftVersions.Select(version => new ItemModel
@@ -118,10 +139,10 @@ public sealed partial class LauncherModel
     {
         if (!AllowCreate) throw new InvalidOperationException(L("catalog.install_locked"));
         var token = PageToken;
-        if (string.IsNullOrWhiteSpace(NewName)) throw new InvalidDataException(T("Введи название сборки.", "Enter an instance name."));
         if (!minecraftVersions.Contains(NewVersion)) throw new InvalidDataException(T("Выбери версию Minecraft.", "Choose a Minecraft version."));
-        string name = NewName.Trim(), version = NewVersion;
+        string name = string.IsNullOrWhiteSpace(NewName) ? DefaultInstanceName : NewName.Trim(), version = NewVersion;
         var loader = NewLoader == "Vanilla" ? LoaderType.None : Enum.Parse<LoaderType>(NewLoader);
+        CreateStatus = loader == LoaderType.None ? "" : T($"Ищу подходящую версию {loader}…", $"Finding a {loader} version…"); Changed();
         string? loaderVersion = loader switch
         {
             LoaderType.Fabric => (await new FabricInstaller(Instances.SharedDir, "").GetLoaderVersionsAsync(version).WaitAsync(token)).OrderByDescending(v => v.Stable).FirstOrDefault()?.Version,
@@ -131,9 +152,17 @@ public sealed partial class LauncherModel
             _ => null
         };
         token.ThrowIfCancellationRequested();
+        CreateStatus = "";
         if (loader != LoaderType.None && string.IsNullOrWhiteSpace(loaderVersion)) throw new InvalidOperationException(T($"{loader} недоступен для Minecraft {version}.", $"{loader} is not available for Minecraft {version}."));
         var instance = Instances.CreateInstance(name, version, loader, loaderVersion);
-        SetInstance(instance.Id); Home(); Notice(T("Сборка создана. Игра и Java скачаются при первом запуске.", "Instance created. Minecraft and Java will download on first launch."));
+        Settings.LastLoader = NewLoader; Settings.LastMinecraftVersion = version; Settings.Save();
+        SetInstance(instance.Id); Home();
+        if (PrepareAfterCreate)
+        {
+            Sessions.PrepareInBackground(instance, T("Подготовка сборки ", "Preparing ") + instance.Name, T("Сборка готова к запуску", "Instance is ready to play"));
+            Notice(T("Сборка создана. Игра уже скачивается — можно сразу нажать «Играть».", "Instance created. The game is downloading — you can press Play right away."));
+        }
+        else Notice(T("Сборка создана. Игра и Java скачаются при первом запуске.", "Instance created. Minecraft and Java will download on first launch."));
     }));
     public void EditInstance(string id)
     {

@@ -122,7 +122,7 @@ view Shell(vm: LauncherModel) {
                             }
                             Column #create Grow=1 Gap=18 Visible=(vm.Page == "create") {
                                 Card Gap=16 {
-                                    TextField #newName Text=(vm.T("Название", "Name")) Value <=> vm.NewName ShowError=false MaxLength=80
+                                    TextField #newName Text=vm.NewNameLabel Value <=> vm.NewName ShowError=false MaxLength=80
                                     Form Columns=2 Gap=16 {
                                         Column Gap=8 {
                                             Text .muted "Minecraft"
@@ -133,7 +133,8 @@ view Shell(vm: LauncherModel) {
                                             Button #newLoader Text=vm.NewLoader Command=vm.ChooseLoader
                                         }
                                     }
-                                    Text .muted Text=(vm.T("Java и файлы игры установятся при первом запуске. Vanilla — для игры без модов.", "Java and game files install on first launch. Choose Vanilla to play without mods.")) Wrap=true
+                                    ToggleSwitch #prepareAfterCreate Text=(vm.T("Скачать игру сразу после создания", "Download the game right after creating")) IsChecked <=> vm.PrepareAfterCreate
+                                    Text .muted Text=vm.CreateHint Wrap=true
                                     Text vm.CreateStatus Wrap=true Visible=(vm.CreateStatus.Length > 0)
                                     Row Gap=8 {
                                         Button .primary #createInstance Text=(vm.T("Создать сборку", "Create instance")) Width=190 Command=vm.CreateInstance Enabled=(!vm.Busy)

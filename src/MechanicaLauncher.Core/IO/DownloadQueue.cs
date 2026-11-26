@@ -91,7 +91,9 @@ public sealed class DownloadJob
             var elapsed = _clock.Elapsed.TotalSeconds;
             if (elapsed - _sampleTime >= .5)
             {
-                _speed = (_traffic - _sampleTraffic) / (elapsed - _sampleTime);
+                // Exponential smoothing keeps the displayed speed from jumping on every sample.
+                var sample = (_traffic - _sampleTraffic) / (elapsed - _sampleTime);
+                _speed = _speed <= 0 ? sample : _speed * .6 + sample * .4;
                 _sampleTraffic = _traffic;
                 _sampleTime = elapsed;
             }

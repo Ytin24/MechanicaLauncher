@@ -17,6 +17,19 @@ public sealed class VersionManager
         Http = http ?? DefaultHttp;
     }
 
+    // The last downloaded manifest, for showing the version list instantly before the network refresh.
+    public VersionManifest? TryGetCachedManifest()
+    {
+        try
+        {
+            var path = Path.Combine(_sharedDir, "version_manifest.json");
+            if (!File.Exists(path)) return null;
+            var manifest = JsonSerializer.Deserialize<VersionManifest>(File.ReadAllText(path));
+            return manifest?.Versions.Count > 0 ? manifest : null;
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { return null; }
+    }
+
     public async Task<VersionManifest> GetManifestAsync(CancellationToken cancellationToken = default)
     {
         var cachePath = Path.Combine(_sharedDir, "version_manifest.json");
