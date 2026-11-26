@@ -36,7 +36,8 @@ public sealed partial class GameSessions(LauncherSettings settings, InstanceMana
     }
     public bool IsBusy(string id) => preparingId == id || running.ContainsKey(id) || IsSyncBusy(id) || Downloads.Jobs.Any(j => j.InstanceId == id && j.State is DownloadState.Queued or DownloadState.Running);
     public void Cancel() => preparation?.Cancel();
-    private void Report(string status, double progress = 0) { Status = status; Progress = Math.Clamp(progress, 0, 100); Changed?.Invoke(); }
+    // A negative progress means "status only": keep the bar where it is instead of snapping it back to zero.
+    private void Report(string status, double progress = 0) { Status = status; if (progress >= 0) Progress = Math.Clamp(progress, 0, 100); Changed?.Invoke(); }
     public void Stop(string id)
     {
         if (running.TryGetValue(id, out var process))
@@ -47,6 +48,20 @@ public sealed partial class GameSessions(LauncherSettings settings, InstanceMana
         }
     }
     public DownloadJob Enqueue(string title, string? instanceId, Func<CancellationToken, Task> work) => EnqueueCore(title, instanceId, work, false);
+    private readonly ConcurrentDictionary<string, DownloadJob> backgroundPreparations = new();
+    public DownloadJob? BackgroundPreparation(string id) =>
+        backgroundPreparations.TryGetValue(id, out var job) && job.State is DownloadState.Queued or DownloadState.Running ? job : null;
+    // Downloads Java, the game and the loader right after an instance is created, so the first Play starts at once.
+    public DownloadJob PrepareInBackground(GameInstance instance, string title, string readyStatus)
+    {
+        var job = Enqueue(title, instance.Id, async token =>
+        {
+            await GamePreparer.PrepareAsync(instance, instances, Report, token);
+            Report(readyStatus, 100);
+        });
+        backgroundPreparations[instance.Id] = job;
+        return job;
+    }
     private DownloadJob EnqueueCore(string title, string? instanceId, Func<CancellationToken, Task> work, bool serverSync) => Downloads.Enqueue(title, instanceId, async token =>
     {
         await preparationGate.WaitAsync(token);
@@ -101,44 +116,7 @@ public sealed partial class GameSessions(LauncherSettings settings, InstanceMana
                     settings.MsRefreshToken = auth.RefreshToken ?? settings.MsRefreshToken; settings.Save();
                 }
             }
-            var versions = new VersionManager(instances.SharedDir);
-            var vanilla = await versions.GetVersionMetaAsync(instance.McVersion, token);
-            var component = vanilla.JavaVersion?.Component ?? "jre-legacy";
-            int requiredJava = vanilla.JavaVersion?.MajorVersion ?? 8;
-            var java = !string.IsNullOrEmpty(instance.JavaPath) ? instance.JavaPath : JavaFinder.FindJava(component, requiredJava);
-            java ??= await JavaFinder.DownloadJavaAsync(component, instances.SharedDir, status => Report(status), token);
-            if (java == null) throw new InvalidOperationException("Java download failed.");
-            JavaFinder.ValidateJava(java, requiredJava);
-            var downloader = new AssetDownloader(instances.SharedDir, gameDir);
-            downloader.ProgressChanged += Report;
-            await Task.Run(() => downloader.DownloadVersionAsync(vanilla, token), token);
-            bool modded = instance.Loader != LoaderType.None;
-            string versionId = instance.GetEffectiveVersionId();
-            if (modded)
-            {
-                if (string.IsNullOrWhiteSpace(instance.LoaderVersion)) throw new InvalidOperationException("No mod loader version selected.");
-                var versionDir = Path.Combine(gameDir, "versions", versionId);
-                if (!File.Exists(Path.Combine(versionDir, versionId + ".json")) || !File.Exists(Path.Combine(versionDir, ".complete")))
-                {
-                    switch (instance.Loader)
-                    {
-                        case LoaderType.Fabric:
-                            var fabric = new FabricInstaller(instances.SharedDir, gameDir); fabric.ProgressChanged += Report;
-                            await fabric.InstallAsync(instance.McVersion, instance.LoaderVersion, token); break;
-                        case LoaderType.Quilt:
-                            var quilt = new QuiltInstaller(instances.SharedDir, gameDir); quilt.ProgressChanged += Report;
-                            await quilt.InstallAsync(instance.McVersion, instance.LoaderVersion, token); break;
-                        case LoaderType.Forge:
-                            var forge = new ForgeInstaller(instances.SharedDir, gameDir); forge.ProgressChanged += Report;
-                            await forge.InstallAsync(instance.McVersion, instance.LoaderVersion, java, token); break;
-                        case LoaderType.NeoForge:
-                            var neo = new NeoForgeInstaller(instances.SharedDir, gameDir); neo.ProgressChanged += Report;
-                            await neo.InstallAsync(instance.McVersion, instance.LoaderVersion, java, token); break;
-                    }
-                }
-            }
-            var meta = modded ? await versions.GetMergedMetaAsync(versionId, gameDir, token) : vanilla;
-            if (modded) await Task.Run(() => downloader.DownloadVersionAsync(new VersionMeta { Id = instance.McVersion, Libraries = meta.Libraries }, token), token);
+            var (meta, java, modded) = await GamePreparer.PrepareAsync(instance, instances, Report, token);
             if (Events.Active?.Integrity is { CheckBeforeLaunch: true })
             {
                 var integrity = await IntegrityChecker.VerifyAsync(Events.Active, gameDir);
